@@ -1,0 +1,20 @@
+#VSCode Setting
+.vscode/
+
+#Build files
+misc/
+project/code/build_mac.txt
+project/build
+*.ctm
+*.exe
+
+#External libs and Wwise Project folder
+project/external
+
+#Visual Studio files
+*.pdb
+*.ilk
+project/build/libexp
+
+#Windows misc
+desktop.ini
