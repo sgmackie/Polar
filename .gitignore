@@ -8,8 +8,8 @@ project/build
 *.ctm
 *.exe
 
-#External libs and Wwise Project folder
-project/external
+#External audio frameworks
+project/external/win32
 
 #Visual Studio files
 *.pdb
