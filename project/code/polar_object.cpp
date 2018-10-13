@@ -27,13 +27,22 @@ void polar_object_DestroyObject(POLAR_OBJECT Object)
     }
 }
 
-void polar_object_SubmitObject(POLAR_OBJECT &Object, RENDER_STREAM *Stream)
+void polar_object_SubmitObject(POLAR_OBJECT &Object, RENDER_STREAM *Stream, PLR_OSC_WAVEFORM Flags)
 {
     Object.StreamHandle = Stream;
 
     if(Object.ObjectType == POLAR_OBJECT_TYPE::PLR_OSC)
     {
-        dsp_wave_InitOscillator(Object.WaveOscillator, Object.StreamHandle->getAudioFormat()->getSampleRateInHz());
+        if(Flags == PLR_OSC_WAVEFORM::SINE)
+        {
+            dsp_wave_InitOscillator(Object.WaveOscillator, WAVEFORM::SINE, Object.StreamHandle->getAudioFormat()->getSampleRateInHz());
+        }
+
+        if(Flags == PLR_OSC_WAVEFORM::SQUARE)
+        {
+            dsp_wave_InitOscillator(Object.WaveOscillator, WAVEFORM::SQUARE, Object.StreamHandle->getAudioFormat()->getSampleRateInHz());
+        }
+
         Stream->ObjectHandle = Object.WaveOscillator;
     }
 }

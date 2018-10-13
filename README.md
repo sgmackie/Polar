@@ -15,10 +15,11 @@ Primary use is as a test bed for any DSP projects I'm currently working on and t
     - Polar:
         - Began to seperate the rendering streams & threads away from the WASAPI layer to be more platform independent
         - Created the POLAR_BUFFER object that is used to write and read audio data
+        - Added ability to switch between waveforms (sine or square)
     
 - v0.1:
     - WASAPI:
-        - Created platform initial layer (multi-threaded)
+        - Created  initial platform layer (multi-threaded)
     - Polar:
-        - Created basic interface functions to the WASAPI layer
-        - Created POLAR_OBJECTS that are used to store audio data
+        - Created basic interface functions to call the WASAPI layer
+        - Created POLAR_OBJECTS that hold the name and type of audio to render
