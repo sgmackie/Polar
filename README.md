@@ -1,14 +1,17 @@
-# Polar:
+# Polar
 
-### About:
+- [About](#about)
+- [Changelog](#changelog)
 
-Simple real-time audio engine in C/C++. Currently using WASAPI for Windows playback.
+### About: <a name="about"></a>
 
-Primary use is as a test platform for any DSP projects I'm currently working on.
+Simple real-time audio engine in C/C++. Currently using WASAPI for Windows playback with plans to expand to MacOS (CoreAudio).
 
-### Changelog:
+Primary use is as a test bed for any DSP projects I'm currently working on and to experiment with game audio concepts related to audio engine design.
 
-- v0.5 (Current):
+### Changelog: <a name="changelog"></a>
+
+- v0.2 (Current):
     - Polar:
         - Began to seperate the rendering streams & threads away from the WASAPI layer to be more platform independent
         - Created the POLAR_BUFFER object that is used to write and read audio data
@@ -16,7 +19,6 @@ Primary use is as a test platform for any DSP projects I'm currently working on.
 - v0.1:
     - WASAPI:
         - Created platform initial layer (multi-threaded)
-    
     - Polar:
         - Created basic interface functions to the WASAPI layer
         - Created POLAR_OBJECTS that are used to store audio data
