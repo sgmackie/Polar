@@ -23,7 +23,7 @@ void polar_WASAPI_Stop()
 
 
 
-RENDER_STREAM *polar_WASAPI_CreateStream()
+RENDER_STREAM *polar_WASAPI_CreateStream(f64 Amplitude)
 {
     IMMDevice *Device = wasapi_device_CreateRenderDevice();
     if(!Device)
@@ -32,7 +32,7 @@ RENDER_STREAM *polar_WASAPI_CreateStream()
         return nullptr;
     }
 
-    RENDER_STREAM *Stream = wasapi_render_CreateRenderStream(Device);
+    RENDER_STREAM *Stream = wasapi_render_CreateRenderStream(Device, Amplitude);
     if(!Stream)
     {
         print("WASAPI: Failed to create rendering stream!");

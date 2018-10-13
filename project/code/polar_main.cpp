@@ -97,7 +97,7 @@ int main(int argc, char *argv[])
     polar_WASAPI_Start(0);
 
     //Create output stream
-    RENDER_STREAM *OutputStream = polar_WASAPI_CreateStream();
+    RENDER_STREAM *OutputStream = polar_WASAPI_CreateStream(0.75);
 
     //Create audio objects
     POLAR_OBJECT Object01 = polar_object_CreateObject(1, "SineOsc", POLAR_OBJECT_TYPE::PLR_OSC);
