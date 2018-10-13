@@ -23,6 +23,7 @@ typedef struct POLAR_OBJECT
 } POLAR_OBJECT;
 
 POLAR_OBJECT polar_object_CreateObject(u64 ID, char *Name, POLAR_OBJECT_TYPE Type);
+void polar_object_DestroyObject(POLAR_OBJECT Object);
 void polar_object_SubmitObject(POLAR_OBJECT &Object, RENDER_STREAM *Stream);
 
 #endif

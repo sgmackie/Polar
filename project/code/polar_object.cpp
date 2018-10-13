@@ -34,5 +34,6 @@ void polar_object_SubmitObject(POLAR_OBJECT &Object, RENDER_STREAM *Stream)
     if(Object.ObjectType == POLAR_OBJECT_TYPE::PLR_OSC)
     {
         dsp_wave_InitOscillator(Object.WaveOscillator, Object.StreamHandle->getAudioFormat()->getSampleRateInHz());
+        Stream->ObjectHandle = Object.WaveOscillator;
     }
 }

@@ -26,6 +26,7 @@
 #include "../external/win32/wasapi.h"
 
 //Unity build
+#include "polar_render.cpp"
 #include "polar_object.cpp"
 #include "polar_WASAPI.cpp"
 #include "polar_log.cpp"
