@@ -97,11 +97,11 @@ int main(int argc, char *argv[])
     polar_WASAPI_Start(0);
 
     //Create output stream
-    RENDER_STREAM *OutputStream = polar_WASAPI_CreateStream(0.15);
+    RENDER_STREAM *OutputStream = polar_WASAPI_CreateStream(0.25);
 
     //Create audio objects
-    POLAR_OBJECT Object01 = polar_object_CreateObject(1, "SineOsc", POLAR_OBJECT_TYPE::PLR_OSC);
-    polar_object_SubmitObject(Object01, OutputStream, PLR_OSC_WAVEFORM::SINE); //Assigns audio object to a rendering stream
+    POLAR_OBJECT Object01 = polar_object_CreateObject(1, "Wave Oscillator", POLAR_OBJECT_TYPE::PLR_OSC);
+    polar_object_SubmitObject(Object01, OutputStream, PLR_OSC_WAVEFORM::TRIANGLE); //Assigns audio object to a rendering stream
     
     //Print info
     polar_log_PrintAudioFormat(*OutputStream->getAudioFormat());

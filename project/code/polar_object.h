@@ -11,6 +11,9 @@ typedef enum struct PLR_OSC_WAVEFORM
 {
     SINE,
     SQUARE,
+    SAWDOWN,
+    SAWUP,
+    TRIANGLE,
 } PLR_OSC_WAVEFORM;
 
 typedef struct POLAR_OBJECT
