@@ -1,11 +1,14 @@
 ﻿//TODO: Wishlist:
 //! Look up Somberg's state machine 
-//TODO: Add option to change WAVEFORMAT
+//TODO: Add option to change WAVEFORMATEX
 //TODO: Add option to record to wav
 //TODO: Add ability to load and play wav
 //TODO: Create audio object structure that's a union of an OSCILLATOR or audio file
 //TODO: Finish removing C++ classes and std:: calls
 //TODO: More logging (log to text files)
+
+#define POLAR_ASSERT(Expression) if(!(Expression)) {*(int *)0 = 0;}
+#define POLAR_MAX_OBJECTS 5
 
 //CRT
 #include <stdlib.h>
@@ -31,12 +34,13 @@
 #include "polar_WASAPI.cpp"
 #include "polar_log.cpp"
 
-//TODO: Pass array of POLAR_OBJECTs and update individual elements
+
+//TODO: Pass array of POLAR_OBJECTs and update individual elements (currently breaking at atomic value?)
 void polar_UpdateAndRender(bool &RunningState, KEY_INPUT &Input, POLAR_OBJECT &Object)
 {
     //Call for current keyboard input
     KEY KeyCurrent = KeyPress(Input);
-    
+
     switch(KeyCurrent)
     {
         case Up:
@@ -76,20 +80,8 @@ void polar_UpdateAndRender(bool &RunningState, KEY_INPUT &Input, POLAR_OBJECT &O
 
 int main(int argc, char *argv[])
 {
-    // Layout:
-
-    // Create the audio engine with flag WASAPI
-    // Initialise WASAPI with sample rate, channels etc (this can be a struct we create)
-    // Allocate for audio objects, eg audio files or oscillators
-    // Start the game loop
-    //     Pass audio objects to WASAPI
-    //     Convert user input to parameters for the objects
-    //     Log their states / memory usage
-    // Quit via console key
-    // Free all memory
-
     //Console input
-    SetConsoleTitle("Polar v0.1");
+    SetConsoleTitle("Polar v0.2");
     KEY_INPUT ConsoleInput = {};
     ConsoleInput.WindowsConsole = GetStdHandle(STD_INPUT_HANDLE); //Get windows terminal handle
     
@@ -100,31 +92,34 @@ int main(int argc, char *argv[])
     RENDER_STREAM *OutputStream = polar_WASAPI_CreateStream(0.25);
 
     //Create audio objects
-    POLAR_OBJECT Object01 = polar_object_CreateObject(1, "Wave Oscillator", POLAR_OBJECT_TYPE::PLR_OSC);
-    polar_object_SubmitObject(Object01, OutputStream, PLR_OSC_WAVEFORM::TRIANGLE); //Assigns audio object to a rendering stream
+    //TODO: Add file reading ("https://social.msdn.microsoft.com/forums/windowsdesktop/en-US/de39afdb-d2fe-40df-98af-12ae446dcf69/basic-wasapi-rendering-audio-question-newbie-stuff") ("https://gist.github.com/fukuroder/7823555") ("https://docs.microsoft.com/en-us/windows/desktop/CoreAudio/rendering-a-stream")
+    POLAR_OBJECT_ARRAY ObjectArray = polar_object_CreateObjectArray(POLAR_MAX_OBJECTS);
+    POLAR_OBJECT Object01 = polar_object_CreateObject(1, "Wave Oscillator", PLR_OSC);
     
+    //TODO: Only one object per-stream; how to mix objects?
+    polar_object_SubmitObject(ObjectArray, Object01, OutputStream, PLR_SINE); //Assigns audio object to a rendering stream
+
     //Print info
     polar_log_PrintAudioFormat(*OutputStream->getAudioFormat());
-    polar_log_PrintObjectState(Object01);
+    polar_log_PrintObjectState(*ObjectArray.Objects[0]);
 
     //Create rendering thread
-    // RENDER_THREAD *OutputThread = polar_WASAPI_CreateThread(*OutputStream, *SineOsc);
     //TODO: Pull out RENDER_STREAM/THREAD into POLAR generic structs so they don't depend on the WASAPI integration to pass audio objects to
-    RENDER_THREAD OutputThread(*OutputStream, *Object01.WaveOscillator);
+    RENDER_THREAD OutputThread(*OutputStream);
     OutputThread.StartThread();
 
     //Game loop
     bool GlobalRunning = true;
     do
     {
-        polar_UpdateAndRender(GlobalRunning, ConsoleInput, Object01);
+        polar_UpdateAndRender(GlobalRunning, ConsoleInput, *ObjectArray.Objects[0]);
     } while(GlobalRunning);
 
     //Stop rendering thread
     OutputThread.StopThread();
 
     //Free allocated structs and data
-    polar_object_DestroyObject(Object01);
+    polar_object_DestroyObject(*ObjectArray.Objects[0]);
     polar_WASAPI_DestroyStream(OutputStream);
 
     //Stop WASAPI

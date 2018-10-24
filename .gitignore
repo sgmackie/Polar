@@ -16,6 +16,13 @@ project/external/win32
 *.ilk
 project/build/libexp
 
+#Audio data
+*.wav
+
 #Windows misc
 desktop.ini
-WASAPISample/
+Examples/
+*.pdf
+
+#Profiling
+profile/

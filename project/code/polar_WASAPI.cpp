@@ -5,7 +5,7 @@ void polar_WASAPI_Start(bool PrintDevices)
     //Initialise COM instance
     if(FAILED(CoInitializeEx(NULL, COINIT_MULTITHREADED)))
     {
-        print("WASAPI: Failed to initalise COM object!");
+        debug_PrintLine(Console, "WASAPI: Failed to initalise COM object!");
     }
   
     if(PrintDevices)
@@ -28,14 +28,14 @@ RENDER_STREAM *polar_WASAPI_CreateStream(f64 Amplitude)
     IMMDevice *Device = wasapi_device_CreateRenderDevice();
     if(!Device)
     {
-        print("WASAPI: Failed to create rendering device!");
+        debug_PrintLine(Console, "WASAPI: Failed to create rendering device!");
         return nullptr;
     }
 
     RENDER_STREAM *Stream = wasapi_render_CreateRenderStream(Device, Amplitude);
     if(!Stream)
     {
-        print("WASAPI: Failed to create rendering stream!");
+        debug_PrintLine(Console, "WASAPI: Failed to create rendering stream!");
         return nullptr;
     }
 

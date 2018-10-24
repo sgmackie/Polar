@@ -16,6 +16,7 @@ Primary use is as a test bed for any DSP projects I'm currently working on and t
         - Began to seperate the rendering streams & threads away from the WASAPI layer to be more platform independent
         - Created the POLAR_BUFFER object that is used to write and read audio data
         - Added ability to select waveforms (sine, square, sawtooth and triangle)
+        - Began to implement POLAR_OBJECT_ARRAYS to collate sets of audio objects 
     
 - v0.1:
     - WASAPI:
