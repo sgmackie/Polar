@@ -12,9 +12,10 @@ Primary use is as a test bed for any DSP projects I'm currently working on and t
 ### Changelog: <a name="changelog"></a>
     
 - v0.1 (Current, rolled back from v0.2):
-    - WASAPI:
-        - Re-wrote WASAPI implementation (now included in source)
     - Polar:
         - Preliminary POLAR_DATA struct to hold platform audio API data and critical audio device properties (channels / sampling rate)
-    - General:
+    - Windows:
+        - Create Window to process input messages and display debug information
         - Added performance timing counters
+            - WASAPI:
+                - Re-wrote WASAPI implementation (now included in source)

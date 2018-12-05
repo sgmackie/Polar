@@ -155,14 +155,12 @@ LRESULT CALLBACK win32_MainCallback(HWND Window, UINT UserMessage, WPARAM WParam
 
 int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int CommandShow)
 {
-	WNDCLASS WindowClass = {};
+    WNDCLASS WindowClass = {};
 
-	WindowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC; //Create unique device context for this window
+    WindowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC; //Create unique device context for this window
     WindowClass.lpfnWndProc = win32_MainCallback; //Call the window process
     WindowClass.hInstance = Instance; //Handle instance passed from win32_WinMain
     WindowClass.lpszClassName = "PolarWindowClass"; //Name of Window class
-
-
 
 	if(RegisterClass(&WindowClass))
     {
@@ -173,30 +171,16 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             //Specified CS_OWNDC so get one device context and use it forever
             HDC DeviceContext = GetDC(Window);
 
-
-
-
-
-
-			POLAR_DATA PolarEngine = {};
-
-			PolarEngine.WASAPI = polar_WASAPI_Create(PolarEngine.Buffer);
-			PolarEngine.Channels = PolarEngine.WASAPI->OutputWaveFormat->Format.nChannels;
-			PolarEngine.SampleRate = PolarEngine.WASAPI->OutputWaveFormat->Format.nSamplesPerSec;
-
-			OSCILLATOR *Osc = dsp_wave_CreateOscillator();
-			dsp_wave_InitOscillator(Osc, SINE, PolarEngine.SampleRate);
-			Osc->FrequencyCurrent = 880;
-
-
-
-
-
-
-
-			GlobalRunning = true;
-
-
+            POLAR_DATA PolarEngine = {};
+            PolarEngine.WASAPI = polar_WASAPI_Create(PolarEngine.Buffer);
+            PolarEngine.Channels = PolarEngine.WASAPI->OutputWaveFormat->Format.nChannels;
+            PolarEngine.SampleRate = PolarEngine.WASAPI->OutputWaveFormat->Format.nSamplesPerSec;
+            
+            OSCILLATOR *Osc = dsp_wave_CreateOscillator();
+            dsp_wave_InitOscillator(Osc, SINE, PolarEngine.SampleRate);
+            Osc->FrequencyCurrent = 880;
+            
+            GlobalRunning = true;
 #if WIN32_METRICS
 			LARGE_INTEGER PerformanceCounterFrequencyResult;
 			QueryPerformanceFrequency(&PerformanceCounterFrequencyResult);
@@ -217,18 +201,16 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                 {
                     if(Messages.message == WM_QUIT)
                     {
-						PolarEngine.WASAPI->DeviceState = Stopped;
+                        PolarEngine.WASAPI->DeviceState = Stopped;
                         GlobalRunning = false;
                     }
 
                     TranslateMessage(&Messages);
                     DispatchMessage(&Messages);
                 }
-
-				polar_WASAPI_Render(PolarEngine.WASAPI, PolarEngine.Buffer, Osc);
-
-				ReleaseDC(Window, DeviceContext);
-				
+                
+                polar_WASAPI_Render(PolarEngine.WASAPI, PolarEngine.Buffer, Osc);
+                ReleaseDC(Window, DeviceContext);
 #if WIN32_METRICS
         		LARGE_INTEGER EndCounter;
         		QueryPerformanceCounter(&EndCounter);
