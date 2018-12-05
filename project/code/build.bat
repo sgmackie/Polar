@@ -1,7 +1,7 @@
 @echo off
 
 :: Set name of the main .cpp file for unity building
-set Main=polar_main
+set Main=win32_polar
 
 :: Begin CTime on main .cpp file
 ctime -begin %Main%.ctm
@@ -31,7 +31,7 @@ set ObjDir=.\obj\
 :: -DDEBUG_WIN32 for Windows API function debugging
 :: -DWIN32_METRICS for frame timing information printed to Visual Studio/Code debug console
 :: -Fe to set .exe name
-set CompilerFlags=-Zi -FC -MT -Fo%ObjDir% -DDEBUG -DDEBUG_CRT=1 -DDEBUG_WIN32=1 -DWIN32_METRICS=1 -Fe"polar.exe"
+set CompilerFlags=-Zi -FC -MT -Fo%ObjDir% -DDEBUG -DDEBUG_CRT=1 -DDEBUG_WIN32=0 -DWIN32_METRICS=1 -Fe"polar.exe"
 
 :: Set debug path for logging files
 set DebugDir=%~dp0..\build\debug

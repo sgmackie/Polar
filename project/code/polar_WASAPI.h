@@ -65,7 +65,7 @@ global const TCHAR *wasapi_HRString(HRESULT Result)
 #define HR_TO_RETURN(Result, Text, Type)				                    \
 	if(FAILED(Result))								                        \
 	{												                        \
-		debug_PrintLine(Console, Text "\t[%s]", wasapi_HRString(Result));   \
+		debug_PrintLine(Text "\t[%s]", wasapi_HRString(Result));   \
 		return Type;								                        \
 	}
 

@@ -53,21 +53,21 @@ void wasapi_PrintDefaultDevice(HRESULT &HR, IMMDevice *Device)
 	HR = DevicePropertyStore->GetValue(PKEY_Device_FriendlyName, &DeviceName);
 	HR_TO_RETURN(HR, "Failed to get device value for printing", NONE);
 
-	debug_PrintLine(Console, "Audio Endpoint\tUsing default endpoint:\t\t\t%S\t[%S]", DeviceName.pwszVal, DeviceID);
+	debug_PrintLine("Audio Endpoint\tUsing default endpoint:\t\t\t%S\t[%S]", DeviceName.pwszVal, DeviceID);
 }
 
 //Print waveformat information
 void wasapi_PrintWaveFormat(WAVEFORMATEXTENSIBLE &WaveFormat)
 {   
-	debug_PrintLine(Console, "\tCurrent Format\tFormat:\t\t\t\t\t%s", wasapi_FormatTagString(WaveFormat.Format.wFormatTag, WaveFormat.SubFormat));
-	debug_PrintLine(Console, "\tCurrent Format\tChannels:\t\t\t\t%u", WaveFormat.Format.nChannels);
-	debug_PrintLine(Console, "\tCurrent Format\tChannel Mask:\t\t\t\t%s", wasapi_ChannelMaskTagString(WaveFormat.dwChannelMask));
-	debug_PrintLine(Console, "\tCurrent Format\tSample Rate:\t\t\t\t%u", WaveFormat.Format.nSamplesPerSec);
-	debug_PrintLine(Console, "\tCurrent Format\tAverage bytes per second:\t\t%li bytes\t%f kilobytes\t%f megabytes", WaveFormat.Format.nAvgBytesPerSec, Kilobytes(WaveFormat.Format.nAvgBytesPerSec), Megabytes(WaveFormat.Format.nAvgBytesPerSec));
-	debug_PrintLine(Console, "\tCurrent Format\tBlock alignment:\t\t\t%u", WaveFormat.Format.nBlockAlign);
-	debug_PrintLine(Console, "\tCurrent Format\tBit Depth:\t\t\t\t%u", WaveFormat.Format.wBitsPerSample);
-	debug_PrintLine(Console, "\tCurrent Format\tBits per sample:\t\t\t%u", WaveFormat.Samples.wValidBitsPerSample);
-	debug_PrintLine(Console, "\tCurrent Format\tSize for additional data:\t\t%u", WaveFormat.Format.cbSize);
+	debug_PrintLine("\tCurrent Format\tFormat:\t\t\t\t\t%s", wasapi_FormatTagString(WaveFormat.Format.wFormatTag, WaveFormat.SubFormat));
+	debug_PrintLine("\tCurrent Format\tChannels:\t\t\t\t%u", WaveFormat.Format.nChannels);
+	debug_PrintLine("\tCurrent Format\tChannel Mask:\t\t\t\t%s", wasapi_ChannelMaskTagString(WaveFormat.dwChannelMask));
+	debug_PrintLine("\tCurrent Format\tSample Rate:\t\t\t\t%u", WaveFormat.Format.nSamplesPerSec);
+	debug_PrintLine("\tCurrent Format\tAverage bytes per second:\t\t%li bytes\t%f kilobytes\t%f megabytes", WaveFormat.Format.nAvgBytesPerSec, Kilobytes(WaveFormat.Format.nAvgBytesPerSec), Megabytes(WaveFormat.Format.nAvgBytesPerSec));
+	debug_PrintLine("\tCurrent Format\tBlock alignment:\t\t\t%u", WaveFormat.Format.nBlockAlign);
+	debug_PrintLine("\tCurrent Format\tBit Depth:\t\t\t\t%u", WaveFormat.Format.wBitsPerSample);
+	debug_PrintLine("\tCurrent Format\tBits per sample:\t\t\t%u", WaveFormat.Samples.wValidBitsPerSample);
+	debug_PrintLine("\tCurrent Format\tSize for additional data:\t\t%u", WaveFormat.Format.cbSize);
 }
 
 //Get default audio endpoint
@@ -116,17 +116,17 @@ bool wasapi_GetWaveFormat(HRESULT &HR, WASAPI_DATA &Interface, WAVEFORMATEXTENSI
 	
 	if(HR == AUDCLNT_E_UNSUPPORTED_FORMAT)
 	{
-		debug_PrintLine(Console, "\tCurrent Format\tCannot use this format in exclusive mode");
+		debug_PrintLine("\tCurrent Format\tCannot use this format in exclusive mode");
 	}
 
 	else if(HR == S_FALSE)
 	{
-		debug_PrintLine(Console, "\tCurrent Format\tUsing adjusted format");
+		debug_PrintLine("\tCurrent Format\tUsing adjusted format");
 	}
 
 	else
 	{
-		debug_PrintLine(Console, "\tCurrent Format\tUser format is valid");
+		debug_PrintLine("\tCurrent Format\tUser format is valid");
 	}
 
 	Interface.OutputWaveFormat = (WAVEFORMATEXTENSIBLE *) Adjusted;
@@ -170,11 +170,11 @@ bool wasapi_InitDevice(HRESULT &HR, WASAPI_DATA &Interface)
 
 	if((Interface.UsingDefaultWaveFormat = wasapi_GetWaveFormat(HR, Interface, nullptr, true)) == true)
 	{
-		debug_PrintLine(Console, "\tWASAPI: Using default output wave format");
+		debug_PrintLine("\tWASAPI: Using default output wave format");
 	}
 	else
 	{
-		debug_PrintLine(Console, "\tWASAPI: Using user defined output wave format");
+		debug_PrintLine("\tWASAPI: Using user defined output wave format");
 	}
 
 	VirtualFree(UserWaveFormat, 0, MEM_RELEASE);
@@ -186,15 +186,15 @@ bool wasapi_InitDevice(HRESULT &HR, WASAPI_DATA &Interface)
 	HR = Interface.AudioClient->GetDevicePeriod(&DevicePeriod, &DevicePeriodMin);
 	HR_TO_RETURN(HR, "Failed to get device period for callback buffer", false);
 
-	debug_PrintLine(Console, "\tDevice\t\tBuffer period:\t\t\t\t%lli hns", DevicePeriod);
-	debug_PrintLine(Console, "\tDevice\t\tMinimum buffer period:\t\t\t%lli hns", DevicePeriodMin);
+	debug_PrintLine("\tDevice\t\tBuffer period:\t\t\t\t%lli hns", DevicePeriod);
+	debug_PrintLine("\tDevice\t\tMinimum buffer period:\t\t\t%lli hns", DevicePeriodMin);
 	
 	//Outbut buffer device period
 	f64 DevicePeriodInSeconds;
 	DevicePeriodInSeconds = DevicePeriod / (10000.0 * 1000.0);
 	Interface.OutputBufferPeriod = (Interface.OutputWaveFormat->Format.nSamplesPerSec * DevicePeriodInSeconds + 0.5);
 	
-	debug_PrintLine(Console, "\tDevice\t\tOutput buffer period:\t\t\t%u s", Interface.OutputBufferPeriod);
+	debug_PrintLine("\tDevice\t\tOutput buffer period:\t\t\t%u s", Interface.OutputBufferPeriod);
 	Interface.DeviceFlags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
 
 	HR = Interface.AudioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, Interface.DeviceFlags, DevicePeriod, 0, &Interface.OutputWaveFormat->Format, nullptr);
@@ -213,13 +213,13 @@ bool wasapi_InitDevice(HRESULT &HR, WASAPI_DATA &Interface)
 	HR = Interface.AudioClient->GetBufferSize(&Interface.OutputBufferFrames);
 	HR_TO_RETURN(HR, "Failed to get maximum read buffer size for audio client", false);
 
-	debug_PrintLine(Console, "\tDevice\t\tBuffer size:\t\t\t\t%u frames", Interface.OutputBufferFrames);
+	debug_PrintLine("\tDevice\t\tBuffer size:\t\t\t\t%u frames", Interface.OutputBufferFrames);
 
 	REFERENCE_TIME StreamLatency = 0;
 	HR = Interface.AudioClient->GetStreamLatency(&StreamLatency);
 	Interface.OutputLatency = (1000 * StreamLatency) / REF_TIMES_PER_SECOND;
 
-	debug_PrintLine(Console, "\tDevice\t\tOutput latency:\t\t\t\t%f frames", Interface.OutputLatency);
+	debug_PrintLine("\tDevice\t\tOutput latency:\t\t\t\t%f frames", Interface.OutputLatency);
 
 	HR = Interface.AudioClient->GetService(__uuidof(IAudioRenderClient), (void**) &Interface.AudioRenderClient);
 	HR_TO_RETURN(HR, "Failed to assign client to render client", false);	
@@ -231,7 +231,7 @@ bool wasapi_InitDevice(HRESULT &HR, WASAPI_DATA &Interface)
 	HR_TO_RETURN(HR, "Failed to start audio client", false);
 
 	Interface.DeviceState = Playing;
-	debug_PrintLine(Console, "\tDevice\t\tState:\t\t\t\t\tPlaying");
+	debug_PrintLine("\tDevice\t\tState:\t\t\t\t\tPlaying");
 
 	return true;
 }
