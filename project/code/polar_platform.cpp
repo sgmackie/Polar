@@ -5,14 +5,11 @@
 
 //Create and initialise WASAPI struct
 WASAPI_DATA *polar_WASAPI_Create(WASAPI_BUFFER &Buffer)
-{
-	//Windows error result
-	HRESULT HR = S_FALSE;
-	
+{	
 	WASAPI_DATA *WASAPI = wasapi_CreateDataInterface();
 	wasapi_InitDataInterface(*WASAPI);
 
-	if((WASAPI->DeviceReady = wasapi_InitDevice(HR, *WASAPI)) == false)
+	if((WASAPI->DeviceReady = wasapi_InitDevice(WASAPI->HR, *WASAPI)) == false)
 	{
 		debug_PrintLine("WASAPI: Failed to configure output device! Exiting...");
 		wasapi_DeinitDevice(*WASAPI);
@@ -27,11 +24,11 @@ WASAPI_DATA *polar_WASAPI_Create(WASAPI_BUFFER &Buffer)
 	Buffer.Data = nullptr;
 
 	// Initial zero fill	
-	HR = WASAPI->AudioRenderClient->GetBuffer(WASAPI->OutputBufferFrames, &Buffer.Data);
-	HR_TO_RETURN(HR, "Couldn't get WASAPI buffer for zero fill", nullptr);
+	WASAPI->HR = WASAPI->AudioRenderClient->GetBuffer(WASAPI->OutputBufferFrames, &Buffer.Data);
+	HR_TO_RETURN(WASAPI->HR, "Couldn't get WASAPI buffer for zero fill", nullptr);
 
-	HR = WASAPI->AudioRenderClient->ReleaseBuffer(WASAPI->OutputBufferFrames, AUDCLNT_BUFFERFLAGS_SILENT);
-	HR_TO_RETURN(HR, "Couldn't release WASAPI buffer for zero fill", nullptr);
+	WASAPI->HR = WASAPI->AudioRenderClient->ReleaseBuffer(WASAPI->OutputBufferFrames, AUDCLNT_BUFFERFLAGS_SILENT);
+	HR_TO_RETURN(WASAPI->HR, "Couldn't release WASAPI buffer for zero fill", nullptr);
 
 	return WASAPI;
 }
@@ -44,27 +41,39 @@ void polar_WASAPI_Destroy(WASAPI_DATA *WASAPI)
 }
 
 //Get WASAPI buffer and release after filling with specified amount of samples
-void polar_WASAPI_Render(WASAPI_DATA *WASAPI, WASAPI_BUFFER &Buffer, OSCILLATOR *Osc)
+void polar_WASAPI_PrepareBuffer(WASAPI_DATA *WASAPI, WASAPI_BUFFER &Buffer)
 {
 	if(WASAPI->DeviceState == Playing)
 	{
-		HRESULT HR = S_FALSE;
-
 		WaitForSingleObject(WASAPI->RenderEvent, INFINITE);
 
-		HR = WASAPI->AudioClient->GetCurrentPadding(&Buffer.FramePadding);
-		HR_TO_RETURN(HR, "Couldn't get current padding", NONE);
+		WASAPI->HR = WASAPI->AudioClient->GetCurrentPadding(&Buffer.FramePadding);
+		HR_TO_RETURN(WASAPI->HR, "Couldn't get current padding", NONE);
 
 		Buffer.FramesAvailable = WASAPI->OutputBufferFrames - Buffer.FramePadding;
 
-		HR = WASAPI->AudioRenderClient->GetBuffer(Buffer.FramesAvailable, &Buffer.Data);
-		HR_TO_RETURN(HR, "Couldn't get WASAPI buffer", NONE);
-
-		wasapi_FillBuffer(*WASAPI, Buffer.FramesAvailable, Buffer.Data, Osc, 0.25);
-
-		HR = WASAPI->AudioRenderClient->ReleaseBuffer(Buffer.FramesAvailable, 0);
-		HR_TO_RETURN(HR, "Couldn't release WASAPI buffer", NONE);	
+		WASAPI->HR = WASAPI->AudioRenderClient->GetBuffer(Buffer.FramesAvailable, &Buffer.Data);
+		HR_TO_RETURN(WASAPI->HR, "Couldn't get WASAPI buffer", NONE);
 	}
+}
+
+void polar_WASAPI_ReleaseBuffer(WASAPI_DATA *WASAPI, WASAPI_BUFFER &Buffer)
+{
+	if(WASAPI->DeviceState == Playing)
+	{
+		//?Because the BYTE buffer is filled outside this function in the Polar render (and stored as a struct), it doesn't need to be called here and the buffer can still be released as expected
+
+		WASAPI->HR = WASAPI->AudioRenderClient->ReleaseBuffer(Buffer.FramesAvailable, 0);
+		HR_TO_RETURN(WASAPI->HR, "Couldn't release WASAPI buffer", NONE);	
+	}
+}
+
+
+//Update the audio clock's position in the current stream
+void polar_WASAPI_UpdateClock(WASAPI_DATA &Interface, WASAPI_CLOCK Clock)
+{
+    Interface.AudioClock->GetFrequency(&Clock.PositionFrequency);
+    Interface.AudioClock->GetPosition(&Clock.PositionUnits, 0);
 }
 
 

@@ -20,13 +20,10 @@ project/build/libexp
 #Audio data
 *.wav
 
-#Windows misc
-desktop.ini
-Examples/
-*.pdf
-
 #Profiling
 profile/
 
 #WIP files
 OLD/
+Examples/
+*.pdf

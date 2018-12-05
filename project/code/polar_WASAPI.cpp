@@ -19,6 +19,7 @@ void wasapi_DestroyDataInterface(WASAPI_DATA *WASAPI)
 //Set/reset WASAPI data struct
 void wasapi_InitDataInterface(WASAPI_DATA &Interface)
 {
+	Interface.HR = S_FALSE;
 	Interface.DeviceEnumerator = nullptr;
 	Interface.AudioDevice = nullptr;
 	Interface.AudioClient = nullptr;
@@ -224,6 +225,9 @@ bool wasapi_InitDevice(HRESULT &HR, WASAPI_DATA &Interface)
 	HR = Interface.AudioClient->GetService(__uuidof(IAudioRenderClient), (void**) &Interface.AudioRenderClient);
 	HR_TO_RETURN(HR, "Failed to assign client to render client", false);	
 
+	HR = Interface.AudioClient->GetService(__uuidof(IAudioClock), (void**) &Interface.AudioClock);
+	HR_TO_RETURN(HR, "Failed to assign clock to render client", false);	
+
 	HR = Interface.AudioClient->Reset();
 	HR_TO_RETURN(HR, "Failed to reset audio client before playback", false);
 
@@ -256,6 +260,11 @@ void wasapi_DeinitDevice(WASAPI_DATA &Interface)
 		Interface.AudioDevice->Release();
 	}
 
+	if(Interface.AudioDevice)
+	{
+		Interface.AudioClock->Release();
+	}
+
 	if(Interface.RenderEvent)
 	{
 		CloseHandle(Interface.RenderEvent);
@@ -265,22 +274,5 @@ void wasapi_DeinitDevice(WASAPI_DATA &Interface)
 	wasapi_InitDataInterface(Interface);
 	CoUninitialize();
 }
-
-//Fill WASAPI buffer with callback to audio renderer
-void wasapi_FillBuffer(WASAPI_DATA &Interface, u32 FramesToWrite, BYTE *Data, OSCILLATOR * Osc, f32 Amplitude)
-{
-	f32 *FloatData = reinterpret_cast<f32 *>(Data);
-
-	for(u32 FrameIndex = 0; FrameIndex < FramesToWrite; ++FrameIndex) 
-	{
-    	f32 CurrentSample = Osc->Tick(Osc) * Amplitude;
-
-    	for(int ChannelIndex = 0; ChannelIndex < Interface.OutputWaveFormat->Format.nChannels; ++ChannelIndex) 
-		{
-    	    *FloatData++ = CurrentSample;
-    	}      
-	}
-}
-
 
 #endif

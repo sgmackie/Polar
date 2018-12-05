@@ -124,6 +124,9 @@ enum WASAPI_STATE
 //Structure containing common properties defined by WASAPI
 typedef struct WASAPI_DATA
 {
+	//Windows error reporting
+	HRESULT HR;
+
 	//Device endpoints
 	IMMDeviceEnumerator *DeviceEnumerator;
 	IMMDevice *AudioDevice;
@@ -131,6 +134,9 @@ typedef struct WASAPI_DATA
 	//Rendering clients
 	IAudioClient *AudioClient;
 	IAudioRenderClient *AudioRenderClient;
+
+	//Audio clock
+	IAudioClock* AudioClock;
 
 	//Device state
 	bool UsingDefaultDevice;
@@ -157,6 +163,14 @@ typedef struct WASAPI_BUFFER
 	u32 FramesAvailable;
 	BYTE *Data;
 } WASAPI_BUFFER;
+
+
+
+typedef struct WASAPI_CLOCK
+{
+	UINT64 PositionFrequency;
+	UINT64 PositionUnits;
+} WASAPI_CLOCK;
 
 //Prototypes
 //Create struct for WASAPI properties including output/rendering device info
@@ -185,8 +199,5 @@ bool wasapi_InitDevice(HRESULT &HR, WASAPI_DATA &Interface);
 
 //Remove WASAPI device
 void wasapi_DeinitDevice(WASAPI_DATA &Interface);
-
-//Fill WASAPI buffer with callback to audio renderer
-void wasapi_FillBuffer(WASAPI_DATA &Interface, u32 FramesToWrite, BYTE *Data, OSCILLATOR * Osc, f32 Amplitude);
 
 #endif

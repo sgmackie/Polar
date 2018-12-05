@@ -17,7 +17,7 @@ pushd %BuildDir%
 
 :: Set compiler arguments
 set Files=..\..\project\code\%Main%.cpp
-set Libs=User32.lib Ole32.lib Avrt.lib
+set Libs=User32.lib Ole32.lib Avrt.lib Gdi32.lib
 set ObjDir=.\obj\
 
 :: Set Visual compiler flags:

@@ -16,18 +16,14 @@
 
 //Polar
 #include "polar_platform.cpp"
+#include "polar_render.cpp"
 
 //Current running state
 global bool GlobalRunning = false;
 
-//Struct to hold platform specific audio API important engine properties
-typedef struct POLAR_DATA
-{
-	WASAPI_DATA *WASAPI;
-	WASAPI_BUFFER Buffer;
-	i8 Channels;
-	i32 SampleRate;
-} POLAR_DATA;
+//!Test variables!
+global f32 Amplitude = 0.25f;
+
 
 //Windows callback for message processing
 LRESULT CALLBACK win32_MainCallback(HWND Window, UINT UserMessage, WPARAM WParam, LPARAM LParam)
@@ -104,10 +100,12 @@ LRESULT CALLBACK win32_MainCallback(HWND Window, UINT UserMessage, WPARAM WParam
                 else if(VKCode == VK_UP)
                 {
                     OutputDebugString("Up\n");
+                    Amplitude = Amplitude + 0.1;
                 }
                 else if(VKCode == VK_DOWN)
                 {
                     OutputDebugString("Down\n");
+                    Amplitude = Amplitude - 0.1;
                 }
                 else if(VKCode == VK_LEFT)
                 {
@@ -139,7 +137,7 @@ LRESULT CALLBACK win32_MainCallback(HWND Window, UINT UserMessage, WPARAM WParam
 
         case WM_PAINT: 
         {
-
+            //TODO: Visualise WASAPI buffer fills
         }
 
         default:
@@ -171,6 +169,17 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             //Specified CS_OWNDC so get one device context and use it forever
             HDC DeviceContext = GetDC(Window);
 
+            i32 Win32RefreshRate = GetDeviceCaps(DeviceContext, VREFRESH);
+            i32 MonitorRefreshRate = 60;
+            
+            //If GetDeviceCaps fails, use default 60Hz 
+            if(Win32RefreshRate > 1)
+            {
+                MonitorRefreshRate = Win32RefreshRate;
+            }
+
+            f32 EngineUpdateRate = (MonitorRefreshRate / 2.0f);
+
             POLAR_DATA PolarEngine = {};
             PolarEngine.WASAPI = polar_WASAPI_Create(PolarEngine.Buffer);
             PolarEngine.Channels = PolarEngine.WASAPI->OutputWaveFormat->Format.nChannels;
@@ -180,6 +189,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             dsp_wave_InitOscillator(Osc, SINE, PolarEngine.SampleRate);
             Osc->FrequencyCurrent = 880;
             
+
             GlobalRunning = true;
 #if WIN32_METRICS
 			LARGE_INTEGER PerformanceCounterFrequencyResult;
@@ -209,9 +219,13 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                     DispatchMessage(&Messages);
                 }
                 
-                polar_WASAPI_Render(PolarEngine.WASAPI, PolarEngine.Buffer, Osc);
+                //TODO: To pass variables to change over time, HH025 Win32ProcessPendingMessages        
+                polar_UpdateRender(PolarEngine, Osc, Amplitude);
+
                 ReleaseDC(Window, DeviceContext);
 #if WIN32_METRICS
+                polar_WASAPI_UpdateClock(*PolarEngine.WASAPI, PolarEngine.Clock);                
+
         		LARGE_INTEGER EndCounter;
         		QueryPerformanceCounter(&EndCounter);
                 
@@ -224,7 +238,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
         		f32 MegaHzCyclesPerFrame = (f32) (CyclesElapsed / (1000.0f * 1000.0f));
 
         		char MetricsBuffer[256];
-        		sprintf(MetricsBuffer, "Polar: %0.2f ms/frame\t %0.2f FPS\t %0.2f cycles(MHz)/frame\n", MSPerFrame, FramesPerSecond, MegaHzCyclesPerFrame);
+        		sprintf(MetricsBuffer, "Polar: %0.2f ms/frame\t %0.2f FPS\t %0.2f cycles(MHz)/frame\t %llu\t %llu\n", MSPerFrame, FramesPerSecond, MegaHzCyclesPerFrame, PolarEngine.Clock.PositionFrequency, PolarEngine.Clock.PositionUnits);
         		OutputDebugString(MetricsBuffer);
 
         		LastCounter = EndCounter;
@@ -241,3 +255,6 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
 	return 0;
 }
+
+
+
