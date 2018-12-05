@@ -55,7 +55,7 @@ global const TCHAR *wasapi_HRString(HRESULT Result)
 		case E_POINTER:									return TEXT("E_POINTER");
 		case E_INVALIDARG:								return TEXT("E_INVALIDARG");
 		case E_OUTOFMEMORY:								return TEXT("E_OUTOFMEMORY");
-		default:                                        return TEXT("UNKNOWN");
+		default:										return TEXT("UNKNOWN");
 	}
 }
 
@@ -75,22 +75,22 @@ global const TCHAR *wasapi_FormatTagString(WORD Format, GUID SubFormat)
     switch(Format)
     {
 		case WAVE_FORMAT_UNKNOWN:						return TEXT("WAVE_FORMAT_UNKNOWN");
-        case WAVE_FORMAT_IEEE_FLOAT:    				return TEXT("WAVE_FORMAT_IEEE_FLOAT");
-        case WAVE_FORMAT_PCM:           				return TEXT("WAVE_FORMAT_PCM");
+    	case WAVE_FORMAT_IEEE_FLOAT:					return TEXT("WAVE_FORMAT_IEEE_FLOAT");
+    	case WAVE_FORMAT_PCM:							return TEXT("WAVE_FORMAT_PCM");
 		case WAVE_FORMAT_ADPCM:							return TEXT("WAVE_FORMAT_ADPCM");
 		case WAVE_FORMAT_FLAC:							return TEXT("WAVE_FORMAT_FLAC");
 		case WAVE_FORMAT_EXTENSIBLE:
         {
             if(SubFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT)
             {
-                                        				return TEXT("WAVE_FORMAT_EXTENSIBLE || KSDATAFORMAT_SUBTYPE_IEEE_FLOAT");
+            											return TEXT("WAVE_FORMAT_EXTENSIBLE || KSDATAFORMAT_SUBTYPE_IEEE_FLOAT");
             }
             else if(SubFormat == KSDATAFORMAT_SUBTYPE_PCM)
             {
-                                        				return TEXT("WAVE_FORMAT_EXTENSIBLE || KSDATAFORMAT_SUBTYPE_PCM");
+            											return TEXT("WAVE_FORMAT_EXTENSIBLE || KSDATAFORMAT_SUBTYPE_PCM");
             }
         } 
-        default:                        				return TEXT("UNKNOWN");
+        default:										return TEXT("UNKNOWN");
     }
 }
 
@@ -108,7 +108,7 @@ global const TCHAR *wasapi_ChannelMaskTagString(WORD ChannelMask)
         case KSAUDIO_SPEAKER_7POINT1:					return TEXT("KSAUDIO_SPEAKER_7POINT1");
         case KSAUDIO_SPEAKER_5POINT1_SURROUND:			return TEXT("KSAUDIO_SPEAKER_5POINT1_SURROUND");
         case KSAUDIO_SPEAKER_7POINT1_SURROUND:			return TEXT("KSAUDIO_SPEAKER_7POINT1_SURROUND");
-        default:                        				return TEXT("UNKNOWN");
+        default:										return TEXT("UNKNOWN");
     }
 }
 
@@ -125,12 +125,12 @@ enum WASAPI_STATE
 typedef struct WASAPI_DATA
 {
 	//Device endpoints
-    IMMDeviceEnumerator *DeviceEnumerator;
-    IMMDevice *AudioDevice;
-    
+	IMMDeviceEnumerator *DeviceEnumerator;
+	IMMDevice *AudioDevice;
+
 	//Rendering clients
 	IAudioClient *AudioClient;
-    IAudioRenderClient *AudioRenderClient;
+	IAudioRenderClient *AudioRenderClient;
 
 	//Device state
 	bool UsingDefaultDevice;
@@ -142,13 +142,12 @@ typedef struct WASAPI_DATA
 	//Output properties
 	WAVEFORMATEXTENSIBLE *OutputWaveFormat;
 	bool UsingDefaultWaveFormat;
-    u32 OutputBufferFrames;
-    u32 OutputBufferPeriod;
-    f32 OutputLatency;
+	u32 OutputBufferFrames;
+	u32 OutputBufferPeriod;
+	f32 OutputLatency;
 
 	//Rendering state
-	HANDLE RenderEvent;
-    
+	HANDLE RenderEvent;  
 } WASAPI_DATA;
 
 //BYTE buffer passed to WASAPI for rendering

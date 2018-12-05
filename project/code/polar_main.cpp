@@ -41,20 +41,19 @@ int main(int argc, char *argv[])
 
 //TODO: How to flip this from 0 to 1 instead of using a defined name?
 #if WIN32_METRICS
-    LARGE_INTEGER PerformanceCounterFrequencyResult;
-    QueryPerformanceFrequency(&PerformanceCounterFrequencyResult);
-    i64 PerformanceCounterFrequency = PerformanceCounterFrequencyResult.QuadPart;
-        
+	LARGE_INTEGER PerformanceCounterFrequencyResult;
+	QueryPerformanceFrequency(&PerformanceCounterFrequencyResult);
+	i64 PerformanceCounterFrequency = PerformanceCounterFrequencyResult.QuadPart;
+	
 	LARGE_INTEGER LastCounter;
-    QueryPerformanceCounter(&LastCounter);
-    u64 LastCycleCount = __rdtsc();
+	QueryPerformanceCounter(&LastCounter);
+	u64 LastCycleCount = __rdtsc();
 #endif
 
 	//TODO: Create audio callback function
 	while(GlobalRunning)
 	{
 		polar_WASAPI_Render(PolarEngine.WASAPI, PolarEngine.Buffer, Osc);
-
 #if WIN32_METRICS
         LARGE_INTEGER EndCounter;
         QueryPerformanceCounter(&EndCounter);
