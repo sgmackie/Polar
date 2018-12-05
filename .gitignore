@@ -7,6 +7,7 @@ project/code/build_mac.txt
 project/build
 *.ctm
 *.exe
+*.lnk
 
 #External audio frameworks
 project/external/win32
@@ -26,3 +27,6 @@ Examples/
 
 #Profiling
 profile/
+
+#WIP files
+OLD/

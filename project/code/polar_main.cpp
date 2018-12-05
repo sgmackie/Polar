@@ -1,127 +1,83 @@
-﻿//TODO: Wishlist:
-//! Look up Somberg's state machine 
-//TODO: Add option to change WAVEFORMATEX
-//TODO: Add option to record to wav
-//TODO: Add ability to load and play wav
-//TODO: Create audio object structure that's a union of an OSCILLATOR or audio file
-//TODO: Finish removing C++ classes and std:: calls
-//TODO: More logging (log to text files)
-
-#define POLAR_ASSERT(Expression) if(!(Expression)) {*(int *)0 = 0;}
-#define POLAR_MAX_OBJECTS 5
+﻿//TODO: Get .wav playback working before copying over Polar_main and POLAR objects
 
 //CRT
 #include <stdlib.h>
 #include <Windows.h>
 
 //Type defines
-#include "../../../misc/includes/win32_types.h"
+#include "misc/includes/win32_types.h"
 
 //Debug
-#include "../../../library/debug/debug_macros.h"
+#include "library/debug/debug_macros.h"
 
 //Includes
 //Libraries
-#include "../../../library/dsp/dsp_wave.h"
-#include "../../../library/math/math_vector.h"
+#include "library/dsp/dsp_wave.h"
 
-//Audio frameworks
-#include "../external/win32/wasapi.h"
+//Polar
+#include "polar_platform.cpp"
 
-//Unity build
-#include "polar_render.cpp"
-#include "polar_object.cpp"
-#include "polar_WASAPI.cpp"
-#include "polar_log.cpp"
+global bool GlobalRunning = true;
 
-
-//TODO: Pass array of POLAR_OBJECTs and update individual elements (currently breaking at atomic value?)
-void polar_UpdateAndRender(bool &RunningState, KEY_INPUT &Input, POLAR_OBJECT &Object)
+typedef struct POLAR_DATA
 {
-    //Call for current keyboard input
-    KEY KeyCurrent = KeyPress(Input);
-
-    switch(KeyCurrent)
-    {
-        case Up:
-        {            
-            //TODO: Interpolate not working over the delta time?
-            Object.StreamHandle->AmplitudeCurrent = vector_InterpolateLinear((Object.StreamHandle->AmplitudeCurrent + 0.05f), Object.StreamHandle->AmplitudeCurrent, 0.01f);
-            break;
-        }
-        case Down:
-        {
-            Object.StreamHandle->AmplitudeCurrent = vector_InterpolateLinear((Object.StreamHandle->AmplitudeCurrent - 0.05f), Object.StreamHandle->AmplitudeCurrent, 0.01f);
-            break;
-        }
-        case Right:
-        {
-            Object.WaveOscillator->FrequencyCurrent = vector_InterpolateLinear((Object.WaveOscillator->FrequencyCurrent + 10.0f), Object.WaveOscillator->FrequencyCurrent, 5.0f);
-            break;
-        }
-        case Left:
-        {
-            Object.WaveOscillator->FrequencyCurrent = vector_InterpolateLinear((Object.WaveOscillator->FrequencyCurrent - 10.0f), Object.WaveOscillator->FrequencyCurrent, 5.0f);
-            break;
-        }
-        case Q:
-        {
-            RunningState = false;
-            break;
-        }
-    }
-
-    //Print states when keyboard input is pressed
-    if(KeyCurrent != None)
-    {
-        polar_log_PrintObjectState(Object);
-    }
-}
+	WASAPI_DATA *WASAPI;
+	WASAPI_BUFFER Buffer;
+	i8 Channels;
+	i32 SampleRate;
+} POLAR_DATA;
 
 int main(int argc, char *argv[])
 {
-    //Console input
-    SetConsoleTitle("Polar v0.2");
-    KEY_INPUT ConsoleInput = {};
-    ConsoleInput.WindowsConsole = GetStdHandle(STD_INPUT_HANDLE); //Get windows terminal handle
-    
-    //Start WASAPI
-    polar_WASAPI_Start(0);
+	POLAR_DATA PolarEngine = {};
 
-    //Create output stream
-    RENDER_STREAM *OutputStream = polar_WASAPI_CreateStream(0.25);
+	PolarEngine.WASAPI = polar_WASAPI_Create(PolarEngine.Buffer);
+	PolarEngine.Channels = PolarEngine.WASAPI->OutputWaveFormat->Format.nChannels;
+	PolarEngine.SampleRate = PolarEngine.WASAPI->OutputWaveFormat->Format.nSamplesPerSec;
 
-    //Create audio objects
-    //TODO: Add file reading ("https://social.msdn.microsoft.com/forums/windowsdesktop/en-US/de39afdb-d2fe-40df-98af-12ae446dcf69/basic-wasapi-rendering-audio-question-newbie-stuff") ("https://gist.github.com/fukuroder/7823555") ("https://docs.microsoft.com/en-us/windows/desktop/CoreAudio/rendering-a-stream")
-    POLAR_OBJECT_ARRAY ObjectArray = polar_object_CreateObjectArray(POLAR_MAX_OBJECTS);
-    POLAR_OBJECT Object01 = polar_object_CreateObject(1, "Wave Oscillator", PLR_OSC);
-    
-    //TODO: Only one object per-stream; how to mix objects?
-    polar_object_SubmitObject(ObjectArray, Object01, OutputStream, PLR_SINE); //Assigns audio object to a rendering stream
+	OSCILLATOR *Osc = dsp_wave_CreateOscillator();
+	dsp_wave_InitOscillator(Osc, SINE, PolarEngine.SampleRate);
+	Osc->FrequencyCurrent = 880;
 
-    //Print info
-    polar_log_PrintAudioFormat(*OutputStream->getAudioFormat());
-    polar_log_PrintObjectState(*ObjectArray.Objects[0]);
+//TODO: How to flip this from 0 to 1 instead of using a defined name?
+#if WIN32_METRICS
+    LARGE_INTEGER PerformanceCounterFrequencyResult;
+    QueryPerformanceFrequency(&PerformanceCounterFrequencyResult);
+    i64 PerformanceCounterFrequency = PerformanceCounterFrequencyResult.QuadPart;
+        
+	LARGE_INTEGER LastCounter;
+    QueryPerformanceCounter(&LastCounter);
+    u64 LastCycleCount = __rdtsc();
+#endif
 
-    //Create rendering thread
-    //TODO: Pull out RENDER_STREAM/THREAD into POLAR generic structs so they don't depend on the WASAPI integration to pass audio objects to
-    RENDER_THREAD OutputThread(*OutputStream);
-    OutputThread.StartThread();
+	//TODO: Create audio callback function
+	while(GlobalRunning)
+	{
+		polar_WASAPI_Render(PolarEngine.WASAPI, PolarEngine.Buffer, Osc);
 
-    //Game loop
-    bool GlobalRunning = true;
-    do
-    {
-        polar_UpdateAndRender(GlobalRunning, ConsoleInput, *ObjectArray.Objects[0]);
-    } while(GlobalRunning);
+#if WIN32_METRICS
+        LARGE_INTEGER EndCounter;
+        QueryPerformanceCounter(&EndCounter);
+                
+        u64 EndCycleCount = __rdtsc();
 
-    //Stop rendering thread
-    OutputThread.StopThread();
+        i64 CounterElapsed = EndCounter.QuadPart - LastCounter.QuadPart;
+        u64 CyclesElapsed = EndCycleCount - LastCycleCount;
+        f32 MSPerFrame = (f32) (((1000.0f * (f32) CounterElapsed) / (f32) PerformanceCounterFrequency));
+        f32 FramesPerSecond = (f32) PerformanceCounterFrequency / (f32) CounterElapsed;
+        f32 MegaHzCyclesPerFrame = (f32) (CyclesElapsed / (1000.0f * 1000.0f));
 
-    //Free allocated structs and data
-    polar_object_DestroyObject(*ObjectArray.Objects[0]);
-    polar_WASAPI_DestroyStream(OutputStream);
+        char MetricsBuffer[256];
+        sprintf(MetricsBuffer, "WASAPI: %0.2f ms/frame\t %0.2f FPS\t %0.2f cycles(MHz)/frame\n", MSPerFrame, FramesPerSecond, MegaHzCyclesPerFrame);
+        OutputDebugString(MetricsBuffer);
 
-    //Stop WASAPI
-    polar_WASAPI_Stop();
+        LastCounter = EndCounter;
+        LastCycleCount = EndCycleCount;	
+#endif		
+	}
+
+	dsp_wave_DestroyOscillator(Osc);
+	polar_WASAPI_Destroy(PolarEngine.WASAPI);
+
+	return 0;
 }

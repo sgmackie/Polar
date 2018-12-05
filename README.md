@@ -10,17 +10,11 @@ Simple real-time audio engine in C/C++. Currently using WASAPI for Windows playb
 Primary use is as a test bed for any DSP projects I'm currently working on and to experiment with game audio concepts related to audio engine design.
 
 ### Changelog: <a name="changelog"></a>
-
-- v0.2 (Current):
-    - Polar:
-        - Began to seperate the rendering streams & threads away from the WASAPI layer to be more platform independent
-        - Created the POLAR_BUFFER object that is used to write and read audio data
-        - Added ability to select waveforms (sine, square, sawtooth and triangle)
-        - Began to implement POLAR_OBJECT_ARRAYS to collate sets of audio objects 
     
-- v0.1:
+- v0.1 (Current, rolled back from v0.2):
     - WASAPI:
-        - Created initial platform layer (multi-threaded)
+        - Re-wrote WASAPI implementation (now included in source)
     - Polar:
-        - Created basic interface functions to call the WASAPI layer
-        - Created POLAR_OBJECTS that hold the name and type of audio to render
+        - Preliminary POLAR_DATA struct to hold platform audio API data and critical audio device properties (channels / sampling rate)
+    - General:
+        - Added performance timing counters
