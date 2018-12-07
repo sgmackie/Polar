@@ -1,4 +1,4 @@
-﻿#ifndef polar_platform_h
+#ifndef polar_platform_h
 #define polar_platform_h
 
 #include "polar_WASAPI.cpp"

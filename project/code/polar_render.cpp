@@ -1,4 +1,4 @@
-﻿#ifndef polar_render_cpp
+#ifndef polar_render_cpp
 #define polar_render_cpp
 
 #include "polar_render.h"
@@ -27,14 +27,14 @@ void polar_render_FillBuffer(i8 ChannelCount, u32 FramesToWrite, f32 *SampleBuff
 	//? Check how exactly reinterpret_cast works
 	SampleBuffer = reinterpret_cast<f32 *>(ByteBuffer);
 
-	for(i32 FrameIndex = 0; FrameIndex < FramesToWrite; ++FrameIndex) 
+	for(i32 FrameIndex = 0; FrameIndex < FramesToWrite; ++FrameIndex)
 	{
 		f32 CurrentSample = Osc->Tick(Osc);
 
-		for(i8 ChannelIndex = 0; ChannelIndex < ChannelCount; ++ChannelIndex) 
+		for(i8 ChannelIndex = 0; ChannelIndex < ChannelCount; ++ChannelIndex)
 		{
 			*SampleBuffer++ = CurrentSample * polar_render_GetPanPosition(ChannelIndex, Amplitude, PanValue);
-		}      
+		}
 	}
 
     // char MetricsBuffer[256];

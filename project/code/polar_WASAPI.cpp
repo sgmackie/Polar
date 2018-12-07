@@ -1,4 +1,4 @@
-﻿#ifndef polar_WASAPI_cpp
+#ifndef polar_WASAPI_cpp
 #define polar_WASAPI_cpp
 
 #include "polar_WASAPI.h"

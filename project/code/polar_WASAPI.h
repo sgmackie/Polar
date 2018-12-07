@@ -1,4 +1,4 @@
-﻿#ifndef polar_WASAPI_h
+#ifndef polar_WASAPI_h
 #define polar_WASAPI_h
 
 //WASAPI

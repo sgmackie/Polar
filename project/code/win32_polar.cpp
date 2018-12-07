@@ -1,4 +1,4 @@
-﻿//TODO: Get .wav playback working before copying over Polar_main and POLAR objects
+//TODO: Get .wav playback working before copying over Polar_main and POLAR objects
 
 //CRT
 #include <stdlib.h>

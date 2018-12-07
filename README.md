@@ -14,7 +14,7 @@ Primary use is as a test bed for any DSP projects I'm currently working on and t
 - v0.1 (Current, rolled back from v0.2):
     - Polar:
         - Preliminary POLAR_DATA struct to hold platform audio API data and critical audio device properties (channels / sampling rate)
-        - Stereo panning from a float value (-1 - 1)
+        - Stereo panning from a float value
     - Windows:
         - Create Window to process input messages and display debug information
         - Added performance timing counters
