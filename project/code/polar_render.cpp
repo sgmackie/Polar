@@ -29,12 +29,12 @@ void polar_render_FillBuffer(i8 ChannelCount, u32 FramesToWrite, f32 *SampleBuff
 
 	for(i32 FrameIndex = 0; FrameIndex < FramesToWrite; ++FrameIndex) 
 	{
-    	f32 CurrentSample = Osc->Tick(Osc);
+		f32 CurrentSample = Osc->Tick(Osc);
 
-    	for(i8 ChannelIndex = 0; ChannelIndex < ChannelCount; ++ChannelIndex) 
+		for(i8 ChannelIndex = 0; ChannelIndex < ChannelCount; ++ChannelIndex) 
 		{
 			*SampleBuffer++ = CurrentSample * polar_render_GetPanPosition(ChannelIndex, Amplitude, PanValue);
-    	}      
+		}      
 	}
 
     // char MetricsBuffer[256];
