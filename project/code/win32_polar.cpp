@@ -23,6 +23,7 @@ global bool GlobalRunning = false;
 
 //!Test variables!
 global f32 Amplitude = 0.25f;
+global f32 Pan = 0;
 
 
 //Windows callback for message processing
@@ -220,7 +221,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                 }
                 
                 //TODO: To pass variables to change over time, HH025 Win32ProcessPendingMessages        
-                polar_UpdateRender(PolarEngine, Osc, Amplitude);
+                polar_UpdateRender(PolarEngine, Osc, Amplitude, Pan);
 
                 ReleaseDC(Window, DeviceContext);
 #if WIN32_METRICS

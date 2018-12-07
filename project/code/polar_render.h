@@ -11,6 +11,7 @@ typedef struct POLAR_DATA
 	i32 SampleRate;
 } POLAR_DATA;
 
+f32 polar_render_GetPanPosition(i8 Position, f32 Amplitude, f32 PanFactor);
 void polar_render_FillBuffer(i8 ChannelCount, u32 FramesToWrite, BYTE *Data, OSCILLATOR *Osc, f32 Amplitude);
 void polar_UpdateRender(WASAPI_DATA *WASAPI, WASAPI_BUFFER &Buffer, OSCILLATOR *Osc);
 

@@ -161,7 +161,8 @@ typedef struct WASAPI_BUFFER
 {
 	u32 FramePadding;
 	u32 FramesAvailable;
-	BYTE *Data;
+	f32 *SampleBuffer;
+	BYTE *ByteBuffer;
 } WASAPI_BUFFER;
 
 

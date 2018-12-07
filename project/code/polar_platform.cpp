@@ -19,12 +19,14 @@ WASAPI_DATA *polar_WASAPI_Create(WASAPI_BUFFER &Buffer)
 
 	debug_PrintLine("\t\t\t\t\tWASAPI: Configured output device! Playing...");
 
+	//TODO: Create function for this
 	Buffer.FramePadding = 0;
 	Buffer.FramesAvailable = 0;
-	Buffer.Data = nullptr;
+	Buffer.SampleBuffer = (f32 *) VirtualAlloc(0, ((sizeof *Buffer.SampleBuffer) * ((WASAPI->OutputBufferFrames * WASAPI->OutputWaveFormat->Format.nChannels))), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+	Buffer.ByteBuffer = nullptr;
 
 	// Initial zero fill	
-	WASAPI->HR = WASAPI->AudioRenderClient->GetBuffer(WASAPI->OutputBufferFrames, &Buffer.Data);
+	WASAPI->HR = WASAPI->AudioRenderClient->GetBuffer(WASAPI->OutputBufferFrames, &Buffer.ByteBuffer);
 	HR_TO_RETURN(WASAPI->HR, "Couldn't get WASAPI buffer for zero fill", nullptr);
 
 	WASAPI->HR = WASAPI->AudioRenderClient->ReleaseBuffer(WASAPI->OutputBufferFrames, AUDCLNT_BUFFERFLAGS_SILENT);
@@ -52,8 +54,11 @@ void polar_WASAPI_PrepareBuffer(WASAPI_DATA *WASAPI, WASAPI_BUFFER &Buffer)
 
 		Buffer.FramesAvailable = WASAPI->OutputBufferFrames - Buffer.FramePadding;
 
-		WASAPI->HR = WASAPI->AudioRenderClient->GetBuffer(Buffer.FramesAvailable, &Buffer.Data);
-		HR_TO_RETURN(WASAPI->HR, "Couldn't get WASAPI buffer", NONE);
+		if(Buffer.FramesAvailable != 0)
+		{
+			WASAPI->HR = WASAPI->AudioRenderClient->GetBuffer(Buffer.FramesAvailable, &Buffer.ByteBuffer);
+			HR_TO_RETURN(WASAPI->HR, "Couldn't get WASAPI buffer", NONE);
+		}
 	}
 }
 
