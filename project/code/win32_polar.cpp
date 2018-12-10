@@ -5,14 +5,18 @@
 #include <Windows.h>
 
 //Type defines
-#include "misc/includes/win32_types.h"
+#include "misc/includes/typedefs.h"
 
 //Debug
 #include "library/debug/debug_macros.h"
 
 //Includes
 //Libraries
-#include "library/dsp/dsp_wave.h"
+#include "library/dsp/dsp.h"
+
+#define DR_WAV_IMPLEMENTATION
+#include "dr_wav.h"
+
 
 //Polar
 #include "polar_platform.cpp"
@@ -23,7 +27,7 @@ global bool GlobalRunning = false;
 
 //!Test variables!
 global f32 Amplitude = 0.25f;
-global f32 Pan = 0;
+global f32 Pan = 1;
 
 
 //Windows callback for message processing
@@ -185,11 +189,15 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             PolarEngine.WASAPI = polar_WASAPI_Create(PolarEngine.Buffer);
             PolarEngine.Channels = PolarEngine.WASAPI->OutputWaveFormat->Format.nChannels;
             PolarEngine.SampleRate = PolarEngine.WASAPI->OutputWaveFormat->Format.nSamplesPerSec;
+            PolarEngine.BitRate = PolarEngine.WASAPI->OutputWaveFormat->Format.wBitsPerSample;
             
             OSCILLATOR *Osc = dsp_wave_CreateOscillator();
             dsp_wave_InitOscillator(Osc, SINE, PolarEngine.SampleRate);
-            Osc->FrequencyCurrent = 880;
-            
+            Osc->FrequencyCurrent = 440;
+
+            POLAR_WAV *TestFile = polar_render_OpenWAVWrite("Polar_Output.wav", &PolarEngine);
+            //TODO: Check allocation size (too much?)
+            TestFile->Data = (f32 *) VirtualAlloc(0, ((sizeof *TestFile->Data) * ((PolarEngine.WASAPI->OutputBufferFrames * PolarEngine.WASAPI->OutputWaveFormat->Format.nChannels))), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
             GlobalRunning = true;
 #if WIN32_METRICS
@@ -200,9 +208,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 			LARGE_INTEGER LastCounter;
 			QueryPerformanceCounter(&LastCounter);
 			u64 LastCycleCount = __rdtsc();
-#endif
-
-
+#endif 
 			while(GlobalRunning)
             {
                 MSG Messages;
@@ -219,9 +225,9 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                     TranslateMessage(&Messages);
                     DispatchMessage(&Messages);
                 }
-                
+
                 //TODO: To pass variables to change over time, HH025 Win32ProcessPendingMessages        
-                polar_UpdateRender(PolarEngine, Osc, Amplitude, Pan);
+                polar_UpdateRender(PolarEngine, TestFile, Osc, Amplitude, Pan);
 
                 ReleaseDC(Window, DeviceContext);
 #if WIN32_METRICS
@@ -247,7 +253,10 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 #endif	
 			}
 
-		dsp_wave_DestroyOscillator(Osc);
+        polar_render_CloseWAVWrite(TestFile);
+        VirtualFree(TestFile->Data, 0, MEM_RELEASE);
+        
+        dsp_wave_DestroyOscillator(Osc);
 		polar_WASAPI_Destroy(PolarEngine.WASAPI);
 
 		}
