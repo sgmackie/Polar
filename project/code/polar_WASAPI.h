@@ -166,7 +166,6 @@ typedef struct WASAPI_BUFFER
 } WASAPI_BUFFER;
 
 
-
 typedef struct WASAPI_CLOCK
 {
 	UINT64 PositionFrequency;
