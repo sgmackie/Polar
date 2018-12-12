@@ -1,23 +1,21 @@
 #ifndef polar_WASAPI_cpp
 #define polar_WASAPI_cpp
 
-#include "polar_WASAPI.h"
-
 //Create struct for WASAPI properties including output/rendering device info
-WASAPI_DATA *wasapi_CreateDataInterface()
+WASAPI_DATA *wasapi_InterfaceCreate()
 {
 	WASAPI_DATA *Result = (WASAPI_DATA *) VirtualAlloc(0, (sizeof *Result), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 	return Result;
 }
 
 //Destroy WASAPI data struct
-void wasapi_DestroyDataInterface(WASAPI_DATA *WASAPI)
+void wasapi_InterfaceDestroy(WASAPI_DATA *WASAPI)
 {
 	VirtualFree(WASAPI, 0, MEM_RELEASE);
 }
 
 //Set/reset WASAPI data struct
-void wasapi_InitDataInterface(WASAPI_DATA &Interface)
+void wasapi_InterfaceInit(WASAPI_DATA &Interface)
 {
 	Interface.HR = S_FALSE;
 	Interface.DeviceEnumerator = nullptr;
@@ -39,7 +37,7 @@ void wasapi_InitDataInterface(WASAPI_DATA &Interface)
 }
 
 //Print default audio endpoint
-void wasapi_PrintDefaultDevice(HRESULT &HR, IMMDevice *Device)
+void wasapi_DevicePrint(HRESULT &HR, IMMDevice *Device)
 {
 	IPropertyStore* DevicePropertyStore = nullptr;
 	PROPVARIANT DeviceName;
@@ -58,7 +56,7 @@ void wasapi_PrintDefaultDevice(HRESULT &HR, IMMDevice *Device)
 }
 
 //Print waveformat information
-void wasapi_PrintWaveFormat(WAVEFORMATEXTENSIBLE &WaveFormat)
+void wasapi_FormatPrint(WAVEFORMATEXTENSIBLE &WaveFormat)
 {   
 	debug_PrintLine("\tCurrent Format\tFormat:\t\t\t\t\t%s", wasapi_FormatTagString(WaveFormat.Format.wFormatTag, WaveFormat.SubFormat));
 	debug_PrintLine("\tCurrent Format\tChannels:\t\t\t\t%u", WaveFormat.Format.nChannels);
@@ -72,14 +70,14 @@ void wasapi_PrintWaveFormat(WAVEFORMATEXTENSIBLE &WaveFormat)
 }
 
 //Get default audio endpoint
-bool wasapi_GetDefaultDevice(HRESULT &HR, WASAPI_DATA &Interface, bool PrintDefaultDevice)
+bool wasapi_DeviceGetDefault(HRESULT &HR, WASAPI_DATA &Interface, bool PrintDefaultDevice)
 {
 	HR = Interface.DeviceEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &Interface.AudioDevice);
 	HR_TO_RETURN(HR, "Failed to get default audio endpoint", false);
 	
 	if(PrintDefaultDevice)
 	{
-	    wasapi_PrintDefaultDevice(HR, Interface.AudioDevice);
+	    wasapi_DevicePrint(HR, Interface.AudioDevice);
 	}
 
 	HR = Interface.AudioDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**) &Interface.AudioClient);
@@ -89,7 +87,7 @@ bool wasapi_GetDefaultDevice(HRESULT &HR, WASAPI_DATA &Interface, bool PrintDefa
 }
 
 //Get default waveformat or use user defined one
-bool wasapi_GetWaveFormat(HRESULT &HR, WASAPI_DATA &Interface, WAVEFORMATEXTENSIBLE *Custom, bool PrintDefaultWaveFormat)
+bool wasapi_FormatGet(HRESULT &HR, WASAPI_DATA &Interface, WAVEFORMATEXTENSIBLE *Custom, bool PrintDefaultWaveFormat)
 {
 	if(Custom == nullptr)
 	{
@@ -102,7 +100,7 @@ bool wasapi_GetWaveFormat(HRESULT &HR, WASAPI_DATA &Interface, WAVEFORMATEXTENSI
 
 		if(PrintDefaultWaveFormat)
 		{
-			wasapi_PrintWaveFormat(*Interface.OutputWaveFormat);
+			wasapi_FormatPrint(*Interface.OutputWaveFormat);
 		}
 
 		return true;
@@ -134,7 +132,7 @@ bool wasapi_GetWaveFormat(HRESULT &HR, WASAPI_DATA &Interface, WAVEFORMATEXTENSI
 
 	if(PrintDefaultWaveFormat)
 	{
-		wasapi_PrintWaveFormat(*Interface.OutputWaveFormat);
+		wasapi_FormatPrint(*Interface.OutputWaveFormat);
 	}
 
 	return false;
@@ -142,7 +140,7 @@ bool wasapi_GetWaveFormat(HRESULT &HR, WASAPI_DATA &Interface, WAVEFORMATEXTENSI
 
 //TODO: Add verbosity controls to print certain properties
 //Initialise WASAPI device 
-bool wasapi_InitDevice(HRESULT &HR, WASAPI_DATA &Interface)
+bool wasapi_DeviceInit(HRESULT &HR, WASAPI_DATA &Interface)
 {
 	//TODO: COINIT_MULTITHREADED or COINIT_SPEED_OVER_MEMORY?
 	HR = CoInitializeEx(0, COINIT_MULTITHREADED);
@@ -151,7 +149,7 @@ bool wasapi_InitDevice(HRESULT &HR, WASAPI_DATA &Interface)
 	HR = CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator), (void**) &Interface.DeviceEnumerator);
 	HR_TO_RETURN(HR, "Failed to create device COM", false);
 
-	if((Interface.UsingDefaultDevice = wasapi_GetDefaultDevice(HR, Interface, true)) == false)
+	if((Interface.UsingDefaultDevice = wasapi_DeviceGetDefault(HR, Interface, true)) == false)
 	{
 		return false;
 	}
@@ -169,7 +167,7 @@ bool wasapi_InitDevice(HRESULT &HR, WASAPI_DATA &Interface)
 	UserWaveFormat->dwChannelMask = KSAUDIO_SPEAKER_STEREO;
 	UserWaveFormat->SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
 
-	if((Interface.UsingDefaultWaveFormat = wasapi_GetWaveFormat(HR, Interface, nullptr, true)) == true)
+	if((Interface.UsingDefaultWaveFormat = wasapi_FormatGet(HR, Interface, nullptr, true)) == true)
 	{
 		debug_PrintLine("\tWASAPI: Using default output wave format");
 	}
@@ -241,7 +239,7 @@ bool wasapi_InitDevice(HRESULT &HR, WASAPI_DATA &Interface)
 }
 
 //Remove WASAPI device
-void wasapi_DeinitDevice(WASAPI_DATA &Interface)
+void wasapi_DeviceDeInit(WASAPI_DATA &Interface)
 {
 	if(Interface.AudioRenderClient)
 	{
@@ -271,7 +269,7 @@ void wasapi_DeinitDevice(WASAPI_DATA &Interface)
 		Interface.RenderEvent = nullptr;
 	}
 
-	wasapi_InitDataInterface(Interface);
+	wasapi_InterfaceInit(Interface);
 	CoUninitialize();
 }
 

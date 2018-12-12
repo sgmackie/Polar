@@ -1,7 +1,14 @@
-#ifndef polar_WASAPI_h
-#define polar_WASAPI_h
+#ifndef polar_h
+#define polar_h
 
-//WASAPI
+//TODO: Finish rest of the comments
+
+/*                  */
+/*  WASAPI code     */
+/*                  */
+
+//TODO: Move this to an "internal" header, not the polar.h (ie, private)
+//WASAPI includes
 #include <audioclient.h>                    //WASAPI
 #include <mmdeviceapi.h>                    //Audio endpoints
 #include <Functiondiscoverykeys_devpkey.h>  //Used for getting "FriendlyNames" from audio endpoints
@@ -94,7 +101,6 @@ global const TCHAR *wasapi_FormatTagString(WORD Format, GUID SubFormat)
     }
 }
 
-
 //Convert channel configurations to text
 global const TCHAR *wasapi_ChannelMaskTagString(WORD ChannelMask)
 {
@@ -111,6 +117,7 @@ global const TCHAR *wasapi_ChannelMaskTagString(WORD ChannelMask)
         default:										return TEXT("UNKNOWN");
     }
 }
+
 
 //Store current state of WASAPI
 enum WASAPI_STATE
@@ -173,31 +180,86 @@ typedef struct WASAPI_CLOCK
 } WASAPI_CLOCK;
 
 //Prototypes
-//Create struct for WASAPI properties including output/rendering device info
-WASAPI_DATA *wasapi_CreateDataInterface();
+WASAPI_DATA *wasapi_InterfaceCreate();                                                                                  //Create struct for WASAPI properties including output/rendering device info
+void wasapi_InterfaceDestroy(WASAPI_DATA *WASAPI);                                                                      //Destroy WASAPI data struct
+void wasapi_InterfaceInit(WASAPI_DATA &Interface);                                                                      //Set/reset WASAPI data struct
+void wasapi_DevicePrint(HRESULT &HR, IMMDevice *Device);                                                                //Print default audio endpoint
+void wasapi_FormatPrint(WAVEFORMATEXTENSIBLE &WaveFormat);                                                              //Print waveformat information
+bool wasapi_DeviceGetDefault(HRESULT &HR, WASAPI_DATA &Interface, bool PrintDefaultDevice);                             //Get default audio endpoint
+bool wasapi_FormatGet(HRESULT &HR, WASAPI_DATA &Interface, WAVEFORMATEXTENSIBLE *Custom, bool PrintDefaultWaveFormat);  //Get default waveformat or use user defined one
+bool wasapi_DeviceInit(HRESULT &HR, WASAPI_DATA &Interface);                                                            //Initialise WASAPI device
+void wasapi_DeviceDeInit(WASAPI_DATA &Interface);                                                                       //Release WASAPI devices
 
-//Destroy WASAPI data struct
-void wasapi_DestroyDataInterface(WASAPI_DATA *WASAPI);
 
-//Set/reset WASAPI data struct
-void wasapi_InitDataInterface(WASAPI_DATA &Interface);
+/*                  */
+/*  Platform code   */
+/*                  */
 
-//Print default audio endpoint
-void wasapi_PrintDefaultDevice(HRESULT &HR, IMMDevice *Device);
+//Prototypes
+//WASAPI
+WASAPI_DATA *polar_WASAPI_Create(WASAPI_BUFFER &Buffer);                        //Create and initialise WASAPI struct
+void polar_WASAPI_Destroy(WASAPI_DATA *WASAPI);                                 //Remove WASAPI struct
+void polar_WASAPI_BufferGet(WASAPI_DATA *WASAPI, WASAPI_BUFFER &Buffer);        //Get WASAPI buffer and the maxium samples to fill
+void polar_WASAPI_BufferRelease(WASAPI_DATA *WASAPI, WASAPI_BUFFER &Buffer);    //Release byte buffer after the rendering loop
+void polar_WASAPI_ClockUpdate(WASAPI_DATA &Interface, WASAPI_CLOCK Clock);      //Update the audio clock's position in the current stream
 
-//Print waveformat information
-void wasapi_PrintWaveFormat(WAVEFORMATEXTENSIBLE &WaveFormat);
 
-//Get default audio endpoint
-bool wasapi_GetDefaultDevice(HRESULT &HR, WASAPI_DATA &Interface, bool PrintDefaultDevice);
+/*                  */
+/*  Rendering code  */
+/*                  */
 
-//Get default waveformat or use user defined one
-bool wasapi_GetWaveFormat(HRESULT &HR, WASAPI_DATA &Interface, WAVEFORMATEXTENSIBLE *Custom, bool PrintDefaultWaveFormat);
+//Defines
+//64 bit max size
+//TODO: Check on x86 builds
+#define WAV_FILE_MAX_SIZE  ((u64)0xFFFFFFFFFFFFFFFF)
 
-//Initialise WASAPI device 
-bool wasapi_InitDevice(HRESULT &HR, WASAPI_DATA &Interface);
+//Structs
+typedef struct POLAR_DATA       //Struct to hold platform specific audio API important engine properties
+{
+	//TODO: Create union for different audio API (CoreAudio)
+	WASAPI_DATA *WASAPI;        //WASAPI data
+	WASAPI_BUFFER Buffer;       //Float and BYTE buffers for rendering
+	WASAPI_CLOCK Clock;         //Struct to hold WASAPI stream clock position
+	u16 Channels;               //Engine current channels
+	u32 SampleRate;             //Engine current sampling rate
+	u16 BitRate;                //Engine current bitrate
+} POLAR_DATA;
 
-//Remove WASAPI device
-void wasapi_DeinitDevice(WASAPI_DATA &Interface);
+typedef struct POLAR_WAV_HEADER //WAV file specification "http://www-mmsp.ece.mcgill.ca/Documents/AudioFormats/WAVE/WAVE.html"
+{
+	u16 AudioFormat;		    //1 for WAVE_FORMAT_PCM, 3 for WAVE_FORMAT_IEEE_FLOAT
+	u16 NumChannels;		    //2
+	u32 SampleRate;			    //192000
+	u32 ByteRate;			    //SampleRate * NumChannels * BitsPerSample/8
+	u16 BlockAlign;			    //NumChannels * BitsPerSample/8
+	u16 BitsPerSample;		    //32
+	u64 DataChunkDataSize;	    //Overall size of the "data" chunk
+	u64 DataChunkDataStart;	    //Starting byte of the data chunk
+} POLAR_WAV_HEADER;
+
+typedef struct POLAR_WAV
+{
+	FILE *WAVFile;              //Handle to a file
+	POLAR_WAV_HEADER WAVHeader; //Struct to store WAV header properties
+    //TODO: Support i16/i32 data
+	f32 *Data;                  //Floating point sample buffer
+	u64 TotalSampleCount;       //Total samples in a file when read
+} POLAR_WAV;
+
+//Protypes
+//File writing
+//TODO: Go through these functions and pull out allocations (create / destroy)
+i8 polar_render_WAVWriteStart(POLAR_WAV *File, POLAR_DATA *Engine);
+POLAR_WAV *polar_render_WAVWriteOpen(const char *FilePath, POLAR_DATA *Engine);
+void polar_render_WAVWriteClose(POLAR_WAV *File);
+size_t polar_render_WAVWriteRaw(POLAR_WAV *File, size_t BytesToWrite, const void *FileData);
+u64 polar_render_WAVWriteFloat(POLAR_WAV *File, u64 SamplesToWrite, const void *FileData);
+u32 polar_render_RIFFChunkRound(u64 RIFFChunkSize);
+u32 polar_render_DataChunkRound(u64 DataChunkSize);
+
+//Rendering
+f32 polar_render_PanPositionGet(u16 Position, f32 Amplitude, f32 PanFactor);    //Calculate stereo pan position
+void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, BYTE *ByteBuffer, f32 *FileSamples, OSCILLATOR *Osc, f32 Amplitude, f32 PanValue);
+void polar_render_BufferCopy(POLAR_DATA &Engine, POLAR_WAV *File, OSCILLATOR *Osc, f32 Amplitude, f32 PanValue);
 
 #endif

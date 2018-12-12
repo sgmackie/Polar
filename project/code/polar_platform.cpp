@@ -6,14 +6,14 @@
 //Create and initialise WASAPI struct
 WASAPI_DATA *polar_WASAPI_Create(WASAPI_BUFFER &Buffer)
 {	
-	WASAPI_DATA *WASAPI = wasapi_CreateDataInterface();
-	wasapi_InitDataInterface(*WASAPI);
+	WASAPI_DATA *WASAPI = wasapi_InterfaceCreate();
+	wasapi_InterfaceInit(*WASAPI);
 
-	if((WASAPI->DeviceReady = wasapi_InitDevice(WASAPI->HR, *WASAPI)) == false)
+	if((WASAPI->DeviceReady = wasapi_DeviceInit(WASAPI->HR, *WASAPI)) == false)
 	{
 		debug_PrintLine("WASAPI: Failed to configure output device! Exiting...");
-		wasapi_DeinitDevice(*WASAPI);
-		wasapi_DestroyDataInterface(WASAPI);
+		wasapi_DeviceDeInit(*WASAPI);
+		wasapi_InterfaceDestroy(WASAPI);
 		return nullptr;
 	}
 
@@ -38,12 +38,12 @@ WASAPI_DATA *polar_WASAPI_Create(WASAPI_BUFFER &Buffer)
 //Remove WASAPI struct
 void polar_WASAPI_Destroy(WASAPI_DATA *WASAPI)
 {
-	wasapi_DeinitDevice(*WASAPI);
-	wasapi_DestroyDataInterface(WASAPI);
+	wasapi_DeviceDeInit(*WASAPI);
+	wasapi_InterfaceDestroy(WASAPI);
 }
 
 //Get WASAPI buffer and release after filling with specified amount of samples
-void polar_WASAPI_PrepareBuffer(WASAPI_DATA *WASAPI, WASAPI_BUFFER &Buffer)
+void polar_WASAPI_BufferGet(WASAPI_DATA *WASAPI, WASAPI_BUFFER &Buffer)
 {
 	if(WASAPI->DeviceState == Playing)
 	{
@@ -62,7 +62,7 @@ void polar_WASAPI_PrepareBuffer(WASAPI_DATA *WASAPI, WASAPI_BUFFER &Buffer)
 	}
 }
 
-void polar_WASAPI_ReleaseBuffer(WASAPI_DATA *WASAPI, WASAPI_BUFFER &Buffer)
+void polar_WASAPI_BufferRelease(WASAPI_DATA *WASAPI, WASAPI_BUFFER &Buffer)
 {
 	if(WASAPI->DeviceState == Playing)
 	{
@@ -75,7 +75,7 @@ void polar_WASAPI_ReleaseBuffer(WASAPI_DATA *WASAPI, WASAPI_BUFFER &Buffer)
 
 
 //Update the audio clock's position in the current stream
-void polar_WASAPI_UpdateClock(WASAPI_DATA &Interface, WASAPI_CLOCK Clock)
+void polar_WASAPI_ClockUpdate(WASAPI_DATA &Interface, WASAPI_CLOCK Clock)
 {
     Interface.AudioClock->GetFrequency(&Clock.PositionFrequency);
     Interface.AudioClock->GetPosition(&Clock.PositionUnits, 0);

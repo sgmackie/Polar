@@ -1,10 +1,8 @@
 #ifndef polar_render_cpp
 #define polar_render_cpp
 
-#include "polar_render.h"
-
 //TODO: Possible to remove CRT functions like fwrite and fseek?
-i32 polar_render_StartWrite(POLAR_WAV *File, POLAR_DATA *Engine)
+i8 polar_render_WAVWriteStart(POLAR_WAV *File, POLAR_DATA *Engine)
 {
 	//Assign engine values to the file header
 	File->WAVHeader.AudioFormat = 3;
@@ -55,7 +53,7 @@ i32 polar_render_StartWrite(POLAR_WAV *File, POLAR_DATA *Engine)
 }
 
 
-POLAR_WAV *polar_render_OpenWAVWrite(const char *FilePath, POLAR_DATA *Engine)
+POLAR_WAV *polar_render_WAVWriteOpen(const char *FilePath, POLAR_DATA *Engine)
 {
 	//TODO: Check where allocations are taking place (create seperate function? Move sample data allocation into this function?)
 	POLAR_WAV *File = (POLAR_WAV *) VirtualAlloc(0, (sizeof *File), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
@@ -69,7 +67,7 @@ POLAR_WAV *polar_render_OpenWAVWrite(const char *FilePath, POLAR_DATA *Engine)
 		return nullptr;
 	}
 
-	if(polar_render_StartWrite(File, Engine) != 0)
+	if(polar_render_WAVWriteStart(File, Engine) != 0)
 	{
 		fclose(File->WAVFile);
 		return nullptr;
@@ -78,7 +76,7 @@ POLAR_WAV *polar_render_OpenWAVWrite(const char *FilePath, POLAR_DATA *Engine)
 	return File;
 }
 
-size_t polar_render_WriteRawWAV(POLAR_WAV *File, size_t BytesToWrite, const void *FileData)
+size_t polar_render_WAVWriteRaw(POLAR_WAV *File, size_t BytesToWrite, const void *FileData)
 {
 	if(File == nullptr || BytesToWrite == 0 || FileData == nullptr)
 	{
@@ -93,7 +91,7 @@ size_t polar_render_WriteRawWAV(POLAR_WAV *File, size_t BytesToWrite, const void
 }
 
 
-u64 polar_render_WriteFloatWAV(POLAR_WAV *File, u64 SamplesToWrite, const void *FileData)
+u64 polar_render_WAVWriteFloat(POLAR_WAV *File, u64 SamplesToWrite, const void *FileData)
 {
 	if(File == nullptr || SamplesToWrite == 0 || FileData == nullptr)
 	{
@@ -121,7 +119,7 @@ u64 polar_render_WriteFloatWAV(POLAR_WAV *File, u64 SamplesToWrite, const void *
 		}
 
 		//Write the raw sample data
-		size_t BytesWritten = polar_render_WriteRawWAV(File, (size_t)BytesToWriteThisIteration, RawData);
+		size_t BytesWritten = polar_render_WAVWriteRaw(File, (size_t)BytesToWriteThisIteration, RawData);
 		
 		if(BytesWritten == 0)
 		{
@@ -165,7 +163,7 @@ u32 polar_render_DataChunkRound(u64 DataChunkSize)
 }
 
 
-void polar_render_CloseWAVWrite(POLAR_WAV *File)
+void polar_render_WAVWriteClose(POLAR_WAV *File)
 {
 	if(File == nullptr)
 	{
@@ -193,7 +191,7 @@ void polar_render_CloseWAVWrite(POLAR_WAV *File)
 }
 
 
-f32 polar_render_GetPanPosition(u16 Position, f32 Amplitude, f32 PanFactor)
+f32 polar_render_PanPositionGet(u16 Position, f32 Amplitude, f32 PanFactor)
 {
 	f32 PanPosition = Amplitude; 
 
@@ -212,7 +210,7 @@ f32 polar_render_GetPanPosition(u16 Position, f32 Amplitude, f32 PanFactor)
 	return PanPosition;
 }
 
-void polar_render_FillBuffer(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, BYTE *ByteBuffer, f32 *FileSamples, OSCILLATOR *Osc, f32 Amplitude, f32 PanValue)
+void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, BYTE *ByteBuffer, f32 *FileSamples, OSCILLATOR *Osc, f32 Amplitude, f32 PanValue)
 {
 	//Cast from float pointer to BYTE pointer
 	SampleBuffer = reinterpret_cast<f32 *>(ByteBuffer);
@@ -223,7 +221,7 @@ void polar_render_FillBuffer(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuf
 		
 		for(i8 ChannelIndex = 0; ChannelIndex < ChannelCount; ++ChannelIndex)
 		{
-			f32 PanAmp = polar_render_GetPanPosition(ChannelIndex, Amplitude, PanValue);
+			f32 PanAmp = polar_render_PanPositionGet(ChannelIndex, Amplitude, PanValue);
 
 			//TODO: Merge these into one buffer (with memcpy for WASAPI call?)
 			*SampleBuffer++ = CurrentSample * PanAmp;
@@ -233,19 +231,19 @@ void polar_render_FillBuffer(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuf
 }
 
 
-void polar_UpdateRender(POLAR_DATA &Engine, POLAR_WAV *File, OSCILLATOR *Osc, f32 Amplitude, f32 PanValue)
+void polar_render_BufferCopy(POLAR_DATA &Engine, POLAR_WAV *File, OSCILLATOR *Osc, f32 Amplitude, f32 PanValue)
 {
-	polar_WASAPI_PrepareBuffer(Engine.WASAPI, Engine.Buffer);
+	polar_WASAPI_BufferGet(Engine.WASAPI, Engine.Buffer);
 
-	polar_render_FillBuffer(Engine.Channels, Engine.Buffer.FramesAvailable, Engine.Buffer.SampleBuffer, Engine.Buffer.ByteBuffer, File->Data, Osc, Amplitude, PanValue);
+	polar_render_BufferFill(Engine.Channels, Engine.Buffer.FramesAvailable, Engine.Buffer.SampleBuffer, Engine.Buffer.ByteBuffer, File->Data, Osc, Amplitude, PanValue);
 
-	u64 SamplesWrittenToFile = polar_render_WriteFloatWAV(File, (Engine.Buffer.FramesAvailable * Engine.Channels), File->Data);
+	u64 SamplesWrittenToFile = polar_render_WAVWriteFloat(File, (Engine.Buffer.FramesAvailable * Engine.Channels), File->Data);
 
 	char MetricsBuffer[256];
 	sprintf_s(MetricsBuffer, "File: %llu\n", SamplesWrittenToFile);
 	OutputDebugString(MetricsBuffer);
 
-	polar_WASAPI_ReleaseBuffer(Engine.WASAPI, Engine.Buffer);
+	polar_WASAPI_BufferRelease(Engine.WASAPI, Engine.Buffer);
 }
 
 #endif

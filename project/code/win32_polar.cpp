@@ -13,6 +13,7 @@
 #include "library/dsp/dsp.h"
 
 //Polar
+#include "polar.h"
 #include "polar_platform.cpp"
 #include "polar_render.cpp"
 
@@ -193,7 +194,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             dsp_wave_InitOscillator(Osc, SINE, PolarEngine.SampleRate);
             Osc->FrequencyCurrent = 880;
 
-            POLAR_WAV *TestFile = polar_render_OpenWAVWrite("Polar_Output.wav", &PolarEngine);
+            POLAR_WAV *TestFile = polar_render_WAVWriteOpen("Polar_Output.wav", &PolarEngine);
             //TODO: Check allocation size (too much?)
             TestFile->Data = (f32 *) VirtualAlloc(0, ((sizeof *TestFile->Data) * ((PolarEngine.WASAPI->OutputBufferFrames * PolarEngine.WASAPI->OutputWaveFormat->Format.nChannels))), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
@@ -225,12 +226,12 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                 }
 
                 //TODO: To pass variables to change over time, HH025 Win32ProcessPendingMessages        
-                polar_UpdateRender(PolarEngine, TestFile, Osc, Amplitude, Pan);
+                polar_render_BufferCopy(PolarEngine, TestFile, Osc, Amplitude, Pan);
 
                 ReleaseDC(Window, DeviceContext);
 #if WIN32_METRICS
                 //!Fix clock! Stream position is not updating (both 0)
-                polar_WASAPI_UpdateClock(*PolarEngine.WASAPI, PolarEngine.Clock);                
+                polar_WASAPI_ClockUpdate(*PolarEngine.WASAPI, PolarEngine.Clock);                
 
                 LARGE_INTEGER EndCounter;
                 QueryPerformanceCounter(&EndCounter);
@@ -253,7 +254,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 			}
 
             VirtualFree(TestFile->Data, 0, MEM_RELEASE);
-            polar_render_CloseWAVWrite(TestFile);
+            polar_render_WAVWriteClose(TestFile);
             
 
             dsp_wave_DestroyOscillator(Osc);
