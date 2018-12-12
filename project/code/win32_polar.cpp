@@ -9,8 +9,8 @@
 #include "library/debug/debug_macros.h"
 
 //Includes
-//Libraries
-#include "library/dsp/dsp.h"
+//Synthesis
+#include "library/entropy/entropy.h"
 
 //Polar
 #include "polar.h"
@@ -186,17 +186,17 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
             POLAR_DATA PolarEngine = {};
             PolarEngine.WASAPI = polar_WASAPI_Create(PolarEngine.Buffer);
+            PolarEngine.BufferFrames = PolarEngine.WASAPI->OutputBufferFrames;
             PolarEngine.Channels = PolarEngine.WASAPI->OutputWaveFormat->Format.nChannels;
             PolarEngine.SampleRate = PolarEngine.WASAPI->OutputWaveFormat->Format.nSamplesPerSec;
             PolarEngine.BitRate = PolarEngine.WASAPI->OutputWaveFormat->Format.wBitsPerSample;
             
-            OSCILLATOR *Osc = dsp_wave_CreateOscillator();
-            dsp_wave_InitOscillator(Osc, SINE, PolarEngine.SampleRate);
+            OSCILLATOR *Osc = entropy_wave_OscillatorCreate();
+            entropy_wave_OscillatorInit(Osc, SINE, PolarEngine.SampleRate);
             Osc->FrequencyCurrent = 880;
 
-            POLAR_WAV *TestFile = polar_render_WAVWriteOpen("Polar_Output.wav", &PolarEngine);
-            //TODO: Check allocation size (too much?)
-            TestFile->Data = (f32 *) VirtualAlloc(0, ((sizeof *TestFile->Data) * ((PolarEngine.WASAPI->OutputBufferFrames * PolarEngine.WASAPI->OutputWaveFormat->Format.nChannels))), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            POLAR_WAV *OutputRenderFile = polar_render_WAVWriteOpen("Polar_Output.wav", &PolarEngine);
+            OutputRenderFile->Data = (f32 *) VirtualAlloc(0, ((sizeof *OutputRenderFile->Data) * ((PolarEngine.BufferFrames * PolarEngine.Channels))), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
             GlobalRunning = true;
 #if WIN32_METRICS
@@ -226,7 +226,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                 }
 
                 //TODO: To pass variables to change over time, HH025 Win32ProcessPendingMessages        
-                polar_render_BufferCopy(PolarEngine, TestFile, Osc, Amplitude, Pan);
+                polar_render_BufferCopy(PolarEngine, OutputRenderFile, Osc, Amplitude, Pan);
 
                 ReleaseDC(Window, DeviceContext);
 #if WIN32_METRICS
@@ -253,11 +253,16 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 #endif	
 			}
 
-            VirtualFree(TestFile->Data, 0, MEM_RELEASE);
-            polar_render_WAVWriteClose(TestFile);
-            
+            VirtualFree(OutputRenderFile->Data, 0, MEM_RELEASE);
 
-            dsp_wave_DestroyOscillator(Osc);
+#if WIN32_METRICS
+            char MetricsBuffer[256];
+            sprintf_s(MetricsBuffer, "Polar: %llu frames written to %s\n", OutputRenderFile->TotalSampleCount, OutputRenderFile->Path);
+            OutputDebugString(MetricsBuffer);
+#endif
+
+            polar_render_WAVWriteClose(OutputRenderFile);
+            entropy_wave_OscillatorDestroy(Osc);
             polar_WASAPI_Destroy(PolarEngine.WASAPI);
 		}
 	}

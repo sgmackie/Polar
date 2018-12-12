@@ -220,6 +220,7 @@ typedef struct POLAR_DATA       //Struct to hold platform specific audio API imp
 	WASAPI_DATA *WASAPI;        //WASAPI data
 	WASAPI_BUFFER Buffer;       //Float and BYTE buffers for rendering
 	WASAPI_CLOCK Clock;         //Struct to hold WASAPI stream clock position
+	u32 BufferFrames;			//Frame count for output buffer
 	u16 Channels;               //Engine current channels
 	u32 SampleRate;             //Engine current sampling rate
 	u16 BitRate;                //Engine current bitrate
@@ -240,6 +241,7 @@ typedef struct POLAR_WAV_HEADER //WAV file specification "http://www-mmsp.ece.mc
 typedef struct POLAR_WAV
 {
 	FILE *WAVFile;              //Handle to a file
+	const char *Path;			//Path to a file
 	POLAR_WAV_HEADER WAVHeader; //Struct to store WAV header properties
     //TODO: Support i16/i32 data
 	f32 *Data;                  //Floating point sample buffer

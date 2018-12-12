@@ -60,8 +60,10 @@ POLAR_WAV *polar_render_WAVWriteOpen(const char *FilePath, POLAR_DATA *Engine)
 
 	File->WAVHeader.DataChunkDataSize = 0;
 
+	File->Path = FilePath;
+
 	//MSVC specific file open function
-	fopen_s(&File->WAVFile, FilePath, "wb");
+	fopen_s(&File->WAVFile, File->Path, "wb");
 	if(File->WAVFile == nullptr)
 	{
 		return nullptr;
@@ -237,11 +239,7 @@ void polar_render_BufferCopy(POLAR_DATA &Engine, POLAR_WAV *File, OSCILLATOR *Os
 
 	polar_render_BufferFill(Engine.Channels, Engine.Buffer.FramesAvailable, Engine.Buffer.SampleBuffer, Engine.Buffer.ByteBuffer, File->Data, Osc, Amplitude, PanValue);
 
-	u64 SamplesWrittenToFile = polar_render_WAVWriteFloat(File, (Engine.Buffer.FramesAvailable * Engine.Channels), File->Data);
-
-	char MetricsBuffer[256];
-	sprintf_s(MetricsBuffer, "File: %llu\n", SamplesWrittenToFile);
-	OutputDebugString(MetricsBuffer);
+	File->TotalSampleCount += polar_render_WAVWriteFloat(File, (Engine.Buffer.FramesAvailable * Engine.Channels), File->Data);
 
 	polar_WASAPI_BufferRelease(Engine.WASAPI, Engine.Buffer);
 }
