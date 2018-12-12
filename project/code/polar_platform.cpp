@@ -4,12 +4,12 @@
 #include "polar_WASAPI.cpp"
 
 //Create and initialise WASAPI struct
-WASAPI_DATA *polar_WASAPI_Create(WASAPI_BUFFER &Buffer)
+WASAPI_DATA *polar_WASAPI_Create(WASAPI_BUFFER &Buffer, u32 UserSampleRate, u16 UserBitRate, u16 UserChannels)
 {	
 	WASAPI_DATA *WASAPI = wasapi_InterfaceCreate();
 	wasapi_InterfaceInit(*WASAPI);
 
-	if((WASAPI->DeviceReady = wasapi_DeviceInit(WASAPI->HR, *WASAPI)) == false)
+	if((WASAPI->DeviceReady = wasapi_DeviceInit(WASAPI->HR, *WASAPI, UserSampleRate, UserBitRate, UserChannels)) == false)
 	{
 		debug_PrintLine("WASAPI: Failed to configure output device! Exiting...");
 		wasapi_DeviceDeInit(*WASAPI);
@@ -19,7 +19,6 @@ WASAPI_DATA *polar_WASAPI_Create(WASAPI_BUFFER &Buffer)
 
 	debug_PrintLine("\t\t\t\t\tWASAPI: Configured output device! Playing...");
 
-	//TODO: Create function for this
 	Buffer.FramePadding = 0;
 	Buffer.FramesAvailable = 0;
 	Buffer.SampleBuffer = (f32 *) VirtualAlloc(0, ((sizeof *Buffer.SampleBuffer) * ((WASAPI->OutputBufferFrames * WASAPI->OutputWaveFormat->Format.nChannels))), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);

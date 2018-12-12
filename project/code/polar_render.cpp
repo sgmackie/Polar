@@ -2,7 +2,7 @@
 #define polar_render_cpp
 
 //TODO: Possible to remove CRT functions like fwrite and fseek?
-i8 polar_render_WAVWriteStart(POLAR_WAV *File, POLAR_DATA *Engine)
+bool polar_render_WAVWriteHeader(POLAR_WAV *File, POLAR_DATA *Engine)
 {
 	//Assign engine values to the file header
 	File->WAVHeader.AudioFormat = 3;
@@ -46,30 +46,35 @@ i8 polar_render_WAVWriteStart(POLAR_WAV *File, POLAR_DATA *Engine)
 	//Exit if chunks not written
 	if(CurrentPosition != 20 + FMTChunkSize + 8)
 	{
-		return -1;
+		return false;
 	}
 	
-	return 0;
+	return true;
 }
 
 
-POLAR_WAV *polar_render_WAVWriteOpen(const char *FilePath, POLAR_DATA *Engine)
+POLAR_WAV *polar_render_WAVWriteCreate(const char *FilePath, POLAR_DATA *Engine)
 {
-	//TODO: Check where allocations are taking place (create seperate function? Move sample data allocation into this function?)
+	//Allocate memory
+#if WIN32
 	POLAR_WAV *File = (POLAR_WAV *) VirtualAlloc(0, (sizeof *File), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-
-	File->WAVHeader.DataChunkDataSize = 0;
-
+	File->Data = (f32 *) VirtualAlloc(0, ((sizeof *File->Data) * ((Engine->BufferFrames * Engine->Channels))), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+#else
+	POLAR_WAV *File = (POLAR_WAV *) malloc((sizeof *File));
+	File->Data = (f32 *) malloc(((sizeof *File->Data) * ((Engine->BufferFrames * Engine->Channels))));
+#endif
 	File->Path = FilePath;
 
-	//MSVC specific file open function
-	fopen_s(&File->WAVFile, File->Path, "wb");
+	//Open file handle
+	fopen_s(&File->WAVFile, File->Path, "wb"); //MSVC specific file open
 	if(File->WAVFile == nullptr)
 	{
 		return nullptr;
 	}
 
-	if(polar_render_WAVWriteStart(File, Engine) != 0)
+	//Create WAV header
+	File->WAVHeader.DataChunkDataSize = 0;
+	if(polar_render_WAVWriteHeader(File, Engine) == false)
 	{
 		fclose(File->WAVFile);
 		return nullptr;
@@ -165,7 +170,7 @@ u32 polar_render_DataChunkRound(u64 DataChunkSize)
 }
 
 
-void polar_render_WAVWriteClose(POLAR_WAV *File)
+void polar_render_WAVWriteDestroy(POLAR_WAV *File)
 {
 	if(File == nullptr)
 	{
@@ -188,8 +193,13 @@ void polar_render_WAVWriteClose(POLAR_WAV *File)
 	//Close file handle
 	fclose((FILE*)File->WAVFile);
 
-	//TODO: Again, check allocations and frees in these functions, may become seperate
+#if WIN32
+	VirtualFree(File->Data, 0, MEM_RELEASE);
 	VirtualFree(File, 0, MEM_RELEASE);
+#else
+	free(File->Data);
+	free(File);
+#endif
 }
 
 
@@ -227,7 +237,11 @@ void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuf
 
 			//TODO: Merge these into one buffer (with memcpy for WASAPI call?)
 			*SampleBuffer++ = CurrentSample * PanAmp;
-			*FileSamples++ = CurrentSample * PanAmp;
+			
+			if(FileSamples != nullptr)
+			{
+				*FileSamples++ = CurrentSample * PanAmp;
+			}
 		}
 	}
 }
@@ -237,9 +251,16 @@ void polar_render_BufferCopy(POLAR_DATA &Engine, POLAR_WAV *File, OSCILLATOR *Os
 {
 	polar_WASAPI_BufferGet(Engine.WASAPI, Engine.Buffer);
 
-	polar_render_BufferFill(Engine.Channels, Engine.Buffer.FramesAvailable, Engine.Buffer.SampleBuffer, Engine.Buffer.ByteBuffer, File->Data, Osc, Amplitude, PanValue);
-
-	File->TotalSampleCount += polar_render_WAVWriteFloat(File, (Engine.Buffer.FramesAvailable * Engine.Channels), File->Data);
+	//TODO: How expensive are if else statements in the rendering loop?
+	if(File != nullptr)
+	{
+		polar_render_BufferFill(Engine.Channels, Engine.Buffer.FramesAvailable, Engine.Buffer.SampleBuffer, Engine.Buffer.ByteBuffer, File->Data, Osc, Amplitude, PanValue);
+		File->TotalSampleCount += polar_render_WAVWriteFloat(File, (Engine.Buffer.FramesAvailable * Engine.Channels), File->Data);
+	}
+	else
+	{
+		polar_render_BufferFill(Engine.Channels, Engine.Buffer.FramesAvailable, Engine.Buffer.SampleBuffer, Engine.Buffer.ByteBuffer, nullptr, Osc, Amplitude, PanValue);
+	}
 
 	polar_WASAPI_BufferRelease(Engine.WASAPI, Engine.Buffer);
 }

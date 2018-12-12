@@ -185,7 +185,8 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             // f32 EngineUpdateRate = (MonitorRefreshRate / 2.0f);
 
             POLAR_DATA PolarEngine = {};
-            PolarEngine.WASAPI = polar_WASAPI_Create(PolarEngine.Buffer);
+            //TODO: User define properties in SHARED_MODE dont work, IsFormatSupported returns null Adjusted WAVEFORMATEX
+            PolarEngine.WASAPI = polar_WASAPI_Create(PolarEngine.Buffer, 0, 0, 0);
             PolarEngine.BufferFrames = PolarEngine.WASAPI->OutputBufferFrames;
             PolarEngine.Channels = PolarEngine.WASAPI->OutputWaveFormat->Format.nChannels;
             PolarEngine.SampleRate = PolarEngine.WASAPI->OutputWaveFormat->Format.nSamplesPerSec;
@@ -195,9 +196,8 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             entropy_wave_OscillatorInit(Osc, SINE, PolarEngine.SampleRate);
             Osc->FrequencyCurrent = 880;
 
-            POLAR_WAV *OutputRenderFile = polar_render_WAVWriteOpen("Polar_Output.wav", &PolarEngine);
-            OutputRenderFile->Data = (f32 *) VirtualAlloc(0, ((sizeof *OutputRenderFile->Data) * ((PolarEngine.BufferFrames * PolarEngine.Channels))), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-
+            POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
+            
             GlobalRunning = true;
 #if WIN32_METRICS
             LARGE_INTEGER PerformanceCounterFrequencyResult;
@@ -253,15 +253,13 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 #endif	
 			}
 
-            VirtualFree(OutputRenderFile->Data, 0, MEM_RELEASE);
-
 #if WIN32_METRICS
             char MetricsBuffer[256];
             sprintf_s(MetricsBuffer, "Polar: %llu frames written to %s\n", OutputRenderFile->TotalSampleCount, OutputRenderFile->Path);
             OutputDebugString(MetricsBuffer);
 #endif
 
-            polar_render_WAVWriteClose(OutputRenderFile);
+            polar_render_WAVWriteDestroy(OutputRenderFile);
             entropy_wave_OscillatorDestroy(Osc);
             polar_WASAPI_Destroy(PolarEngine.WASAPI);
 		}

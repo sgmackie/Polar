@@ -250,10 +250,9 @@ typedef struct POLAR_WAV
 
 //Protypes
 //File writing
-//TODO: Go through these functions and pull out allocations (create / destroy)
-i8 polar_render_WAVWriteStart(POLAR_WAV *File, POLAR_DATA *Engine);
-POLAR_WAV *polar_render_WAVWriteOpen(const char *FilePath, POLAR_DATA *Engine);
-void polar_render_WAVWriteClose(POLAR_WAV *File);
+POLAR_WAV *polar_render_WAVWriteCreate(const char *FilePath, POLAR_DATA *Engine);
+void polar_render_WAVWriteDestroy(POLAR_WAV *File);
+bool polar_render_WAVWriteHeader(POLAR_WAV *File, POLAR_DATA *Engine);
 size_t polar_render_WAVWriteRaw(POLAR_WAV *File, size_t BytesToWrite, const void *FileData);
 u64 polar_render_WAVWriteFloat(POLAR_WAV *File, u64 SamplesToWrite, const void *FileData);
 u32 polar_render_RIFFChunkRound(u64 RIFFChunkSize);

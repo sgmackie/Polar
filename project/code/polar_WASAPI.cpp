@@ -32,7 +32,7 @@ void wasapi_InterfaceInit(WASAPI_DATA &Interface)
 	Interface.OutputLatency = 0;
 	Interface.RenderEvent = 0;
 
-	//TODO: Windows macro to RtlZeroMemory, worth using?
+	//?Windows macro to RtlZeroMemory
 	ZeroMemory(&Interface.OutputWaveFormat, sizeof(WAVEFORMATEXTENSIBLE));
 }
 
@@ -107,10 +107,12 @@ bool wasapi_FormatGet(HRESULT &HR, WASAPI_DATA &Interface, WAVEFORMATEXTENSIBLE 
 	}
 
 	//If user format is wrong then call IsFormatSupported to get the closest match
-	WAVEFORMATEXTENSIBLE *Adjusted;
+	// WAVEFORMATEXTENSIBLE **Adjusted;
+
+	WAVEFORMATEX *Adjusted = {};
 
 	//TODO: Finish this whole block (what to do when AUDCLNT_E_UNSUPPORTED_FORMAT)
-	HR = Interface.AudioClient->IsFormatSupported(AUDCLNT_SHAREMODE_SHARED, (WAVEFORMATEX *) &Custom, (WAVEFORMATEX **) &Adjusted);
+	HR = Interface.AudioClient->IsFormatSupported(AUDCLNT_SHAREMODE_SHARED, (WAVEFORMATEX *) &Custom, &Adjusted);
 	//HR_TO_RETURN(HR, "Failed to check user format", NONE);
 	
 	if(HR == AUDCLNT_E_UNSUPPORTED_FORMAT)
@@ -140,9 +142,8 @@ bool wasapi_FormatGet(HRESULT &HR, WASAPI_DATA &Interface, WAVEFORMATEXTENSIBLE 
 
 //TODO: Add verbosity controls to print certain properties
 //Initialise WASAPI device 
-bool wasapi_DeviceInit(HRESULT &HR, WASAPI_DATA &Interface)
+bool wasapi_DeviceInit(HRESULT &HR, WASAPI_DATA &Interface, u32 UserSampleRate, u16 UserBitRate, u16 UserChannels)
 {
-	//TODO: COINIT_MULTITHREADED or COINIT_SPEED_OVER_MEMORY?
 	HR = CoInitializeEx(0, COINIT_MULTITHREADED);
 	HR_TO_RETURN(HR, "Failed to initialise COM", false);
 
@@ -154,30 +155,41 @@ bool wasapi_DeviceInit(HRESULT &HR, WASAPI_DATA &Interface)
 		return false;
 	}
 
-	WAVEFORMATEXTENSIBLE *UserWaveFormat = (WAVEFORMATEXTENSIBLE *) VirtualAlloc(0, (sizeof *UserWaveFormat), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);	
-	
-	UserWaveFormat->Format.cbSize = sizeof(WAVEFORMATEXTENSIBLE);
-	UserWaveFormat->Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
-	UserWaveFormat->Format.nChannels = 2;
-	UserWaveFormat->Format.wBitsPerSample = 8 * sizeof(f32);
-	UserWaveFormat->Format.nSamplesPerSec = 48000;
-	UserWaveFormat->Samples.wValidBitsPerSample = 8 * sizeof(f32);
-	UserWaveFormat->Format.nBlockAlign = (UserWaveFormat->Format.wBitsPerSample / 8) * UserWaveFormat->Format.nChannels;
-	UserWaveFormat->Format.nAvgBytesPerSec = UserWaveFormat->Format.nSamplesPerSec * UserWaveFormat->Format.nBlockAlign;
-	UserWaveFormat->dwChannelMask = KSAUDIO_SPEAKER_STEREO;
-	UserWaveFormat->SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
-
-	if((Interface.UsingDefaultWaveFormat = wasapi_FormatGet(HR, Interface, nullptr, true)) == true)
+	if(UserSampleRate > 0 || UserBitRate > 0|| UserChannels > 0)
 	{
-		debug_PrintLine("\tWASAPI: Using default output wave format");
+		WAVEFORMATEXTENSIBLE *UserWaveFormat = (WAVEFORMATEXTENSIBLE *) VirtualAlloc(0, (sizeof *UserWaveFormat), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);	
+	
+		UserWaveFormat->Format.cbSize = sizeof(WAVEFORMATEXTENSIBLE);
+		UserWaveFormat->Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+		UserWaveFormat->Format.nChannels = UserChannels;
+		UserWaveFormat->Format.wBitsPerSample = UserBitRate * sizeof(f32);
+		UserWaveFormat->Format.nSamplesPerSec = UserSampleRate;
+		UserWaveFormat->Samples.wValidBitsPerSample = UserBitRate * sizeof(f32);
+		UserWaveFormat->Format.nBlockAlign = (UserWaveFormat->Format.wBitsPerSample / 8) * UserWaveFormat->Format.nChannels;
+		UserWaveFormat->Format.nAvgBytesPerSec = UserWaveFormat->Format.nSamplesPerSec * UserWaveFormat->Format.nBlockAlign;
+		UserWaveFormat->dwChannelMask = KSAUDIO_SPEAKER_STEREO;
+		UserWaveFormat->SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
+
+		if((Interface.UsingDefaultWaveFormat = wasapi_FormatGet(HR, Interface, UserWaveFormat, true)) == true)
+		{
+			debug_PrintLine("\tWASAPI: Using default output wave format");
+		}
+		else
+		{
+			debug_PrintLine("\tWASAPI: Using user defined output wave format");
+		}
+
+		VirtualFree(UserWaveFormat, 0, MEM_RELEASE);
 	}
 	else
 	{
-		debug_PrintLine("\tWASAPI: Using user defined output wave format");
+		if((Interface.UsingDefaultWaveFormat = wasapi_FormatGet(HR, Interface, nullptr, true)) == true)
+		{
+			debug_PrintLine("\tWASAPI: Using default output wave format");
+		}	
 	}
 
-	VirtualFree(UserWaveFormat, 0, MEM_RELEASE);
-	
+
 	//Get device period
 	REFERENCE_TIME DevicePeriod = 0;
 	REFERENCE_TIME DevicePeriodMin = 0;
