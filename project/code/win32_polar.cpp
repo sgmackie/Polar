@@ -62,7 +62,7 @@ LRESULT CALLBACK win32_MainCallback(HWND Window, UINT UserMessage, WPARAM WParam
         case WM_KEYUP:
         {
             //Virtual Keycode, keys without direct ANSI mappings
-            u32 VKCode = WParam;
+            u32 VKCode = (u32) WParam;
 
             //Check if key was down, if bit == 30 then it's true, otherwise false
             bool WasDown = ((LParam & (1 << 30)) != 0);
@@ -98,12 +98,12 @@ LRESULT CALLBACK win32_MainCallback(HWND Window, UINT UserMessage, WPARAM WParam
                 else if(VKCode == VK_UP)
                 {
                     OutputDebugString("Up\n");
-                    Amplitude = Amplitude + 0.1;
+                    Amplitude = Amplitude + 0.1f;
                 }
                 else if(VKCode == VK_DOWN)
                 {
                     OutputDebugString("Down\n");
-                    Amplitude = Amplitude - 0.1;
+                    Amplitude = Amplitude - 0.1f;
                 }
                 else if(VKCode == VK_LEFT)
                 {
@@ -158,6 +158,10 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
     WindowClass.hInstance = Instance; //Handle instance passed from win32_WinMain
     WindowClass.lpszClassName = "PolarWindowClass"; //Name of Window class
 
+    PrevInstance = 0; //Handle to previous instance of the window
+    CommandLine = GetCommandLine(); //Get command line string for application
+    CommandShow = SW_SHOW; //Activate and show window
+
 	if(RegisterClass(&WindowClass))
     {
         HWND Window = CreateWindowEx(0, WindowClass.lpszClassName, "Polar", WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, Instance, 0); 
@@ -176,7 +180,8 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                 MonitorRefreshRate = Win32RefreshRate;
             }
 
-            f32 EngineUpdateRate = (MonitorRefreshRate / 2.0f);
+            //? Needed?
+            // f32 EngineUpdateRate = (MonitorRefreshRate / 2.0f);
 
             POLAR_DATA PolarEngine = {};
             PolarEngine.WASAPI = polar_WASAPI_Create(PolarEngine.Buffer);
@@ -186,7 +191,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             
             OSCILLATOR *Osc = dsp_wave_CreateOscillator();
             dsp_wave_InitOscillator(Osc, SINE, PolarEngine.SampleRate);
-            Osc->FrequencyCurrent = 440;
+            Osc->FrequencyCurrent = 880;
 
             POLAR_WAV *TestFile = polar_render_OpenWAVWrite("Polar_Output.wav", &PolarEngine);
             //TODO: Check allocation size (too much?)
@@ -194,15 +199,15 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
             GlobalRunning = true;
 #if WIN32_METRICS
-			LARGE_INTEGER PerformanceCounterFrequencyResult;
-			QueryPerformanceFrequency(&PerformanceCounterFrequencyResult);
-			i64 PerformanceCounterFrequency = PerformanceCounterFrequencyResult.QuadPart;
+            LARGE_INTEGER PerformanceCounterFrequencyResult;
+            QueryPerformanceFrequency(&PerformanceCounterFrequencyResult);
+            i64 PerformanceCounterFrequency = PerformanceCounterFrequencyResult.QuadPart;
 
-			LARGE_INTEGER LastCounter;
-			QueryPerformanceCounter(&LastCounter);
-			u64 LastCycleCount = __rdtsc();
+            LARGE_INTEGER LastCounter;
+            QueryPerformanceCounter(&LastCounter);
+            u64 LastCycleCount = __rdtsc();
 #endif 
-			while(GlobalRunning)
+            while(GlobalRunning)
             {
                 MSG Messages;
 
@@ -224,37 +229,37 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
                 ReleaseDC(Window, DeviceContext);
 #if WIN32_METRICS
+                //!Fix clock! Stream position is not updating (both 0)
                 polar_WASAPI_UpdateClock(*PolarEngine.WASAPI, PolarEngine.Clock);                
 
-        		LARGE_INTEGER EndCounter;
-        		QueryPerformanceCounter(&EndCounter);
-                
-        		u64 EndCycleCount = __rdtsc();
+                LARGE_INTEGER EndCounter;
+                QueryPerformanceCounter(&EndCounter);
 
-        		i64 CounterElapsed = EndCounter.QuadPart - LastCounter.QuadPart;
-        		u64 CyclesElapsed = EndCycleCount - LastCycleCount;
-        		f32 MSPerFrame = (f32) (((1000.0f * (f32) CounterElapsed) / (f32) PerformanceCounterFrequency));
-        		f32 FramesPerSecond = (f32) PerformanceCounterFrequency / (f32) CounterElapsed;
-        		f32 MegaHzCyclesPerFrame = (f32) (CyclesElapsed / (1000.0f * 1000.0f));
+                u64 EndCycleCount = __rdtsc();
 
-        		char MetricsBuffer[256];
-        		sprintf(MetricsBuffer, "Polar: %0.2f ms/frame\t %0.2f FPS\t %0.2f cycles(MHz)/frame\t %llu\t %llu\n", MSPerFrame, FramesPerSecond, MegaHzCyclesPerFrame, PolarEngine.Clock.PositionFrequency, PolarEngine.Clock.PositionUnits);
-        		OutputDebugString(MetricsBuffer);
+                i64 CounterElapsed = EndCounter.QuadPart - LastCounter.QuadPart;
+                u64 CyclesElapsed = EndCycleCount - LastCycleCount;
+                f32 MSPerFrame = (f32) (((1000.0f * (f32) CounterElapsed) / (f32) PerformanceCounterFrequency));
+                f32 FramesPerSecond = (f32) PerformanceCounterFrequency / (f32) CounterElapsed;
+                f32 MegaHzCyclesPerFrame = (f32) (CyclesElapsed / (1000.0f * 1000.0f));
 
-        		LastCounter = EndCounter;
-        		LastCycleCount = EndCycleCount;	
+                char MetricsBuffer[256];
+                sprintf_s(MetricsBuffer, "Polar: %0.2f ms/frame\t %0.2f FPS\t %0.2f cycles(MHz)/frame\t %llu\t %llu\n", MSPerFrame, FramesPerSecond, MegaHzCyclesPerFrame, PolarEngine.Clock.PositionFrequency, PolarEngine.Clock.PositionUnits);
+                OutputDebugString(MetricsBuffer);
+
+                LastCounter = EndCounter;
+                LastCycleCount = EndCycleCount;	
 #endif	
 			}
 
-        polar_render_CloseWAVWrite(TestFile);
-        VirtualFree(TestFile->Data, 0, MEM_RELEASE);
-        
-        dsp_wave_DestroyOscillator(Osc);
-		polar_WASAPI_Destroy(PolarEngine.WASAPI);
+            VirtualFree(TestFile->Data, 0, MEM_RELEASE);
+            polar_render_CloseWAVWrite(TestFile);
+            
 
+            dsp_wave_DestroyOscillator(Osc);
+            polar_WASAPI_Destroy(PolarEngine.WASAPI);
 		}
 	}
-
 
 	return 0;
 }

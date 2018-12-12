@@ -17,7 +17,6 @@ i32 polar_render_StartWrite(POLAR_WAV *File, POLAR_DATA *Engine)
 	//Position to track when moving through the different header chunks
 	size_t CurrentPosition = 0;
 	u64 DataChunkSizeInitial = 0;
-	u64 DataChunkDataSizeTargetWrite = DataChunkSizeInitial;
 
 	//Write RIFF chunk and set format to WAVE file
 	u32 RIFFChunkSize = 36 + (u32)DataChunkSizeInitial;
@@ -39,7 +38,7 @@ i32 polar_render_StartWrite(POLAR_WAV *File, POLAR_DATA *Engine)
 	CurrentPosition += fwrite(&File->WAVHeader.BitsPerSample, 1, 2, (FILE *)File->WAVFile);
 
 	//Set position in file where data chunk starts for writing samples to
-	File->DataChunkDataStart = CurrentPosition;
+	File->WAVHeader.DataChunkDataStart = CurrentPosition;
 
 	//Set up data chunk
 	u32 DataChunkSize = (u32)DataChunkSizeInitial;
@@ -61,7 +60,7 @@ POLAR_WAV *polar_render_OpenWAVWrite(const char *FilePath, POLAR_DATA *Engine)
 	//TODO: Check where allocations are taking place (create seperate function? Move sample data allocation into this function?)
 	POLAR_WAV *File = (POLAR_WAV *) VirtualAlloc(0, (sizeof *File), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
-	File->DataChunkDataSize = 0;
+	File->WAVHeader.DataChunkDataSize = 0;
 
 	//MSVC specific file open function
 	fopen_s(&File->WAVFile, FilePath, "wb");
@@ -88,7 +87,7 @@ size_t polar_render_WriteRawWAV(POLAR_WAV *File, size_t BytesToWrite, const void
 
 	//Write the raw data into the file then increment the data chunk size
 	size_t BytesWrittenToFile = fwrite(FileData, 1, BytesToWrite, (FILE *)File->WAVFile);
-	File->DataChunkDataSize += BytesWrittenToFile;
+	File->WAVHeader.DataChunkDataSize += BytesWrittenToFile;
 
     return BytesWrittenToFile;
 }
@@ -174,16 +173,16 @@ void polar_render_CloseWAVWrite(POLAR_WAV *File)
 	}
 
 	u32 FilePadding = 0;
-	FilePadding = (u32)(File->DataChunkDataSize % 2);
+	FilePadding = (u32)(File->WAVHeader.DataChunkDataSize % 2);
 
 	//Move to RIFF chunk and write the final size
 	fseek((FILE *)File->WAVFile, 4, SEEK_CUR); //Seek 4 bytes from the origin, using current position of the file pointer
-	u32 RIFFChunkSize = polar_render_RIFFChunkRound(File->DataChunkDataSize);
+	u32 RIFFChunkSize = polar_render_RIFFChunkRound(File->WAVHeader.DataChunkDataSize);
 	fwrite(&RIFFChunkSize, 1, 4, (FILE *)File->WAVFile);
 
 	//Move to data chunk and write the final size
-	fseek((FILE *)File->WAVFile, ((i32)File->DataChunkDataStart + 4), SEEK_CUR);
-	u32 DataChunkSize = polar_render_DataChunkRound(File->DataChunkDataSize);                
+	fseek((FILE *)File->WAVFile, ((i32)File->WAVHeader.DataChunkDataStart + 4), SEEK_CUR);
+	u32 DataChunkSize = polar_render_DataChunkRound(File->WAVHeader.DataChunkDataSize);                
 	fwrite(&DataChunkSize, 1, 4, (FILE *)File->WAVFile);
 
 	//Close file handle
@@ -194,35 +193,33 @@ void polar_render_CloseWAVWrite(POLAR_WAV *File)
 }
 
 
-f32 polar_render_GetPanPosition(i8 Position, f32 Amplitude, f32 PanFactor)
+f32 polar_render_GetPanPosition(u16 Position, f32 Amplitude, f32 PanFactor)
 {
-	f32 PanPosition; 
+	f32 PanPosition = Amplitude; 
 
 	//Left panning
 	if(Position == 0)
 	{
-		PanPosition = Amplitude * sqrt(2.0) * (1 - PanFactor) / (2* sqrt(1 + PanFactor * PanFactor));
+		PanPosition = Amplitude * (f32) sqrt(2.0) * (1 - PanFactor) / (2* (f32) sqrt(1 + PanFactor * PanFactor));
 	}
 
 	//Right panning
 	if(Position == 1)
 	{
-		PanPosition = Amplitude * sqrt(2.0) * (1 + PanFactor) / (2* sqrt(1 + PanFactor * PanFactor));
+		PanPosition = Amplitude * (f32) sqrt(2.0) * (1 + PanFactor) / (2* (f32) sqrt(1 + PanFactor * PanFactor));
 	}
 
 	return PanPosition;
 }
 
-void polar_render_FillBuffer(i8 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, BYTE *ByteBuffer, f32 *FileSamples, OSCILLATOR *Osc, f32 Amplitude, f32 PanValue)
+void polar_render_FillBuffer(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, BYTE *ByteBuffer, f32 *FileSamples, OSCILLATOR *Osc, f32 Amplitude, f32 PanValue)
 {
 	//Cast from float pointer to BYTE pointer
 	SampleBuffer = reinterpret_cast<f32 *>(ByteBuffer);
 
-	u64 SamplesWritten = 0;
-
-	for(i32 FrameIndex = 0; FrameIndex < FramesToWrite; ++FrameIndex)
+	for(u32 FrameIndex = 0; FrameIndex < FramesToWrite; ++FrameIndex)
 	{
-		f32 CurrentSample = Osc->Tick(Osc);
+		f32 CurrentSample = (f32) Osc->Tick(Osc);
 		
 		for(i8 ChannelIndex = 0; ChannelIndex < ChannelCount; ++ChannelIndex)
 		{
@@ -245,7 +242,7 @@ void polar_UpdateRender(POLAR_DATA &Engine, POLAR_WAV *File, OSCILLATOR *Osc, f3
 	u64 SamplesWrittenToFile = polar_render_WriteFloatWAV(File, (Engine.Buffer.FramesAvailable * Engine.Channels), File->Data);
 
 	char MetricsBuffer[256];
-	sprintf(MetricsBuffer, "File: %llu\n", SamplesWrittenToFile);
+	sprintf_s(MetricsBuffer, "File: %llu\n", SamplesWrittenToFile);
 	OutputDebugString(MetricsBuffer);
 
 	polar_WASAPI_ReleaseBuffer(Engine.WASAPI, Engine.Buffer);

@@ -149,8 +149,8 @@ typedef struct WASAPI_DATA
 	WAVEFORMATEXTENSIBLE *OutputWaveFormat;
 	bool UsingDefaultWaveFormat;
 	u32 OutputBufferFrames;
-	u32 OutputBufferPeriod;
-	f32 OutputLatency;
+	f64 OutputBufferPeriod;
+	u64 OutputLatency;
 
 	//Rendering state
 	HANDLE RenderEvent;  

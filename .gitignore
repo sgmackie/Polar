@@ -9,9 +9,6 @@ project/build
 *.exe
 *.lnk
 
-#External audio frameworks
-project/external/win32
-
 #Visual Studio files
 *.pdb
 *.ilk
@@ -22,6 +19,7 @@ project/build/libexp
 
 #Profiling
 profile/
+OPA/
 
 #WIP files
 OLD/

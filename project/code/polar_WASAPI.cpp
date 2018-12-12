@@ -62,7 +62,7 @@ void wasapi_PrintWaveFormat(WAVEFORMATEXTENSIBLE &WaveFormat)
 {   
 	debug_PrintLine("\tCurrent Format\tFormat:\t\t\t\t\t%s", wasapi_FormatTagString(WaveFormat.Format.wFormatTag, WaveFormat.SubFormat));
 	debug_PrintLine("\tCurrent Format\tChannels:\t\t\t\t%u", WaveFormat.Format.nChannels);
-	debug_PrintLine("\tCurrent Format\tChannel Mask:\t\t\t\t%s", wasapi_ChannelMaskTagString(WaveFormat.dwChannelMask));
+	debug_PrintLine("\tCurrent Format\tChannel Mask:\t\t\t\t%s", wasapi_ChannelMaskTagString((WORD) WaveFormat.dwChannelMask));
 	debug_PrintLine("\tCurrent Format\tSample Rate:\t\t\t\t%u", WaveFormat.Format.nSamplesPerSec);
 	debug_PrintLine("\tCurrent Format\tAverage bytes per second:\t\t%li bytes\t%f kilobytes\t%f megabytes", WaveFormat.Format.nAvgBytesPerSec, Kilobytes(WaveFormat.Format.nAvgBytesPerSec), Megabytes(WaveFormat.Format.nAvgBytesPerSec));
 	debug_PrintLine("\tCurrent Format\tBlock alignment:\t\t\t%u", WaveFormat.Format.nBlockAlign);
@@ -195,7 +195,7 @@ bool wasapi_InitDevice(HRESULT &HR, WASAPI_DATA &Interface)
 	DevicePeriodInSeconds = DevicePeriod / (10000.0 * 1000.0);
 	Interface.OutputBufferPeriod = (Interface.OutputWaveFormat->Format.nSamplesPerSec * DevicePeriodInSeconds + 0.5);
 	
-	debug_PrintLine("\tDevice\t\tOutput buffer period:\t\t\t%u s", Interface.OutputBufferPeriod);
+	debug_PrintLine("\tDevice\t\tOutput buffer period:\t\t\t%f s", Interface.OutputBufferPeriod);
 	Interface.DeviceFlags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
 
 	HR = Interface.AudioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, Interface.DeviceFlags, DevicePeriod, 0, &Interface.OutputWaveFormat->Format, nullptr);
@@ -220,7 +220,7 @@ bool wasapi_InitDevice(HRESULT &HR, WASAPI_DATA &Interface)
 	HR = Interface.AudioClient->GetStreamLatency(&StreamLatency);
 	Interface.OutputLatency = (1000 * StreamLatency) / REF_TIMES_PER_SECOND;
 
-	debug_PrintLine("\tDevice\t\tOutput latency:\t\t\t\t%f frames", Interface.OutputLatency);
+	debug_PrintLine("\tDevice\t\tOutput latency:\t\t\t\t%llu frames", Interface.OutputLatency);
 
 	HR = Interface.AudioClient->GetService(__uuidof(IAudioRenderClient), (void**) &Interface.AudioRenderClient);
 	HR_TO_RETURN(HR, "Failed to assign client to render client", false);	

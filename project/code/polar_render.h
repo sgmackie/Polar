@@ -8,12 +8,13 @@
 //Struct to hold platform specific audio API important engine properties
 typedef struct POLAR_DATA
 {
+	//TODO: Create union for different audio API (CoreAudio)
 	WASAPI_DATA *WASAPI;
 	WASAPI_BUFFER Buffer;
 	WASAPI_CLOCK Clock;
-	i8 Channels;
-	i32 SampleRate;
-	i32 BitRate;
+	u16 Channels;
+	u32 SampleRate;
+	u16 BitRate;
 } POLAR_DATA;
 
 //WAV file specification "http://www-mmsp.ece.mcgill.ca/Documents/AudioFormats/WAVE/WAVE.html"
@@ -25,6 +26,8 @@ typedef struct POLAR_WAV_HEADER
 	u32 ByteRate;			//SampleRate * NumChannels * BitsPerSample/8
 	u16 BlockAlign;			//NumChannels * BitsPerSample/8
 	u16 BitsPerSample;		//32
+	u64 DataChunkDataSize;	//Overall size of the "data" chunk
+	u64 DataChunkDataStart;	//Starting byte of the data chunk
 } POLAR_WAV_HEADER;
 
 typedef struct POLAR_WAV
@@ -32,8 +35,7 @@ typedef struct POLAR_WAV
 	FILE *WAVFile;
 	POLAR_WAV_HEADER WAVHeader;
 	f32 *Data;
-	u64 DataChunkDataSize;
-	u64 DataChunkDataStart;
+	u64 TotalSampleCount;
 } POLAR_WAV;
 
 //File writing
@@ -45,8 +47,8 @@ u32 polar_render_DataChunkRound(u64 DataChunkSize);
 void polar_render_CloseWAVWrite(POLAR_WAV *File);
 
 //Rendering
-f32 polar_render_GetPanPosition(i8 Position, f32 Amplitude, f32 PanFactor);
-void polar_render_FillBuffer(i8 ChannelCount, u32 FramesToWrite, BYTE *Data, OSCILLATOR *Osc, f32 Amplitude);
-void polar_UpdateRender(WASAPI_DATA *WASAPI, WASAPI_BUFFER &Buffer, OSCILLATOR *Osc);
+f32 polar_render_GetPanPosition(u16 Position, f32 Amplitude, f32 PanFactor);
+void polar_render_FillBuffer(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, BYTE *ByteBuffer, f32 *FileSamples, OSCILLATOR *Osc, f32 Amplitude, f32 PanValue);
+void polar_UpdateRender(POLAR_DATA &Engine, POLAR_WAV *File, OSCILLATOR *Osc, f32 Amplitude, f32 PanValue);
 
 #endif
