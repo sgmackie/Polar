@@ -3,6 +3,30 @@
 
 //TODO: Finish rest of the comments
 
+
+/*                   */
+/*  Windows code     */
+/*                   */
+
+#define WIN32_STATE_FILE_NAME_COUNT MAX_PATH	//Max file path length
+
+//Structs
+struct WIN32_STATE
+{    
+    char EXEPathFull[WIN32_STATE_FILE_NAME_COUNT];
+    char *EXEPath;
+};
+
+struct WIN32_WINDOW_DIMENSIONS
+{
+    i32 Width;
+    i32 Height;
+};
+
+//Prototypes
+void win32_EXEFileNameGet(WIN32_STATE *State);
+WIN32_WINDOW_DIMENSIONS win32_WindowDimensionsGet(HWND Window);
+
 /*                  */
 /*  WASAPI code     */
 /*                  */
@@ -252,7 +276,7 @@ u32 polar_render_DataChunkRound(u64 DataChunkSize);
 
 //Rendering
 f32 polar_render_PanPositionGet(u16 Position, f32 Amplitude, f32 PanFactor);    //Calculate stereo pan position
-void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, BYTE *ByteBuffer, f32 *FileSamples, OSCILLATOR *Osc, f32 Amplitude, f32 PanValue);
-void polar_render_BufferCopy(POLAR_DATA &Engine, POLAR_WAV *File, OSCILLATOR *Osc, f32 Amplitude, f32 PanValue);
+void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, BYTE *ByteBuffer, f32 *FileSamples, OSCILLATOR *Osc, f32 Amplitude);
+void polar_render_BufferCopy(POLAR_DATA &Engine, POLAR_WAV *File, OSCILLATOR *Osc, f32 Amplitude);
 
 #endif

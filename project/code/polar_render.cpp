@@ -159,7 +159,7 @@ u32 polar_render_RIFFChunkRound(u64 RIFFChunkSize)
 
 u32 polar_render_DataChunkRound(u64 DataChunkSize)
 {
-	if (DataChunkSize <= 0xFFFFFFFF)
+	if(DataChunkSize <= 0xFFFFFFFF)
 	{
 		return (u32)DataChunkSize;
 	}
@@ -209,13 +209,13 @@ f32 polar_render_PanPositionGet(u16 Position, f32 Amplitude, f32 PanFactor)
 	f32 PanPosition = Amplitude; 
 
 	//Left panning
-	if(Position % 2 != 0)
+	if(Position % 2 == 0)
 	{
 		PanPosition = Amplitude * (f32) sqrt(2.0) * (1 - PanFactor) / (2* (f32) sqrt(1 + PanFactor * PanFactor));
 	}
 
 	//Right panning
-	if(Position % 2 == 0)
+	if(Position % 2 != 0)
 	{
 		PanPosition = Amplitude * (f32) sqrt(2.0) * (1 + PanFactor) / (2* (f32) sqrt(1 + PanFactor * PanFactor));
 	}
@@ -223,45 +223,50 @@ f32 polar_render_PanPositionGet(u16 Position, f32 Amplitude, f32 PanFactor)
 	return PanPosition;
 }
 
-void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, BYTE *ByteBuffer, f32 *FileSamples, OSCILLATOR *Osc, f32 Amplitude, f32 PanValue)
+void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, BYTE *ByteBuffer, f32 *FileSamples, OSCILLATOR *Osc, f32 Amplitude, f32 Pan)
 {
-	//Cast from float pointer to BYTE pointer
+	//Cast from float to BYTE
 	SampleBuffer = reinterpret_cast<f32 *>(ByteBuffer);
+	
+	f32 CurrentSample = 0;
+	f32 PanAmp = 0;
 
-	for(u32 FrameIndex = 0; FrameIndex < FramesToWrite; ++FrameIndex)
+	//Increase frame counter by the number of channels
+	for(u32 FrameIndex = 0; FrameIndex < FramesToWrite; FrameIndex += ChannelCount)
 	{
 		//TODO: Taylor series GPU for sine call, matrix additive function
-		f32 CurrentSample = (f32) Osc->Tick(Osc);
-		
-		for(i8 ChannelIndex = 0; ChannelIndex < ChannelCount; ++ChannelIndex)
-		{
-			f32 PanAmp = polar_render_PanPositionGet(ChannelIndex, Amplitude, PanValue);
+		CurrentSample = (f32) Osc->Tick(Osc);
 
-			//TODO: Merge sample and file buffers into one buffer (with memcpy for WASAPI call?)
-			*SampleBuffer++ = CurrentSample * PanAmp;
-			
+		for(u16 ChannelIndex = 0; ChannelIndex < ChannelCount; ++ChannelIndex)
+		{
+			PanAmp = polar_render_PanPositionGet(ChannelIndex, Amplitude, Pan);
+
+			SampleBuffer[FrameIndex + ChannelIndex] = CurrentSample * PanAmp;
+
 			if(FileSamples != nullptr)
 			{
-				*FileSamples++ = CurrentSample * PanAmp;
+				FileSamples[FrameIndex + ChannelIndex] = CurrentSample * PanAmp;
 			}
-		}
+		}		
 	}
+
+	memcpy(ByteBuffer, SampleBuffer, sizeof(SampleBuffer));
 }
 
 
-void polar_render_BufferCopy(POLAR_DATA &Engine, POLAR_WAV *File, OSCILLATOR *Osc, f32 Amplitude, f32 PanValue)
+void polar_render_BufferCopy(POLAR_DATA &Engine, POLAR_WAV *File, OSCILLATOR *Osc, f32 Amplitude, f32 Pan)
 {
 	polar_WASAPI_BufferGet(Engine.WASAPI, Engine.Buffer);
 
 	//TODO: How expensive are if else statements in the rendering loop?
 	if(File != nullptr)
 	{
-		polar_render_BufferFill(Engine.Channels, Engine.Buffer.FramesAvailable, Engine.Buffer.SampleBuffer, Engine.Buffer.ByteBuffer, File->Data, Osc, Amplitude, PanValue);
+		polar_render_BufferFill(Engine.Channels, (Engine.Buffer.FramesAvailable * Engine.Channels), Engine.Buffer.SampleBuffer, Engine.Buffer.ByteBuffer, File->Data, Osc, Amplitude, Pan);
 		File->TotalSampleCount += polar_render_WAVWriteFloat(File, (Engine.Buffer.FramesAvailable * Engine.Channels), File->Data);
 	}
 	else
 	{
-		polar_render_BufferFill(Engine.Channels, Engine.Buffer.FramesAvailable, Engine.Buffer.SampleBuffer, Engine.Buffer.ByteBuffer, nullptr, Osc, Amplitude, PanValue);
+		polar_render_BufferFill(Engine.Channels, (Engine.Buffer.FramesAvailable * Engine.Channels), Engine.Buffer.SampleBuffer, Engine.Buffer.ByteBuffer, nullptr, Osc, Amplitude, Pan);
 	}
 
 	polar_WASAPI_BufferRelease(Engine.WASAPI, Engine.Buffer);

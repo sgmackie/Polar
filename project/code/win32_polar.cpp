@@ -22,8 +22,39 @@ global bool GlobalRunning = false;
 
 //!Test variables!
 global WAVEFORM Waveform = SINE;
-global f32 Amplitude = 0.25f;
-global f32 Pan = 0;
+global f32 Frequency = 440;
+global f32 Amplitude = 0.35f;
+global f32 Pan = 1;
+
+//Find file name of Polar application
+void win32_EXEFileNameGet(WIN32_STATE *State)
+{
+    //Gets full path of the current running process (0)
+    GetModuleFileName(0, State->EXEPathFull, sizeof(State->EXEPathFull));
+    State->EXEPath = State->EXEPathFull;
+
+    //Scan through the full path and remove until the final "\\"
+    for(char *Scan = State->EXEPathFull; *Scan; ++Scan)
+    {
+        if(*Scan == '\\')
+        {
+            State->EXEPath = Scan + 1;
+        }
+    }
+}
+
+WIN32_WINDOW_DIMENSIONS win32_WindowDimensionsGet(HWND Window)
+{
+    WIN32_WINDOW_DIMENSIONS WindowDimensions;
+
+    RECT ClientRect; 					//Rect structure for window dimensions
+    GetClientRect(Window, &ClientRect); //Function to get current window dimensions in a RECT format
+    
+    WindowDimensions.Width = ClientRect.right - ClientRect.left;
+    WindowDimensions.Height = ClientRect.bottom - ClientRect.top;
+
+    return WindowDimensions;
+}
 
 //Windows callback for message processing
 LRESULT CALLBACK win32_MainCallback(HWND Window, UINT UserMessage, WPARAM WParam, LPARAM LParam)
@@ -138,6 +169,8 @@ LRESULT CALLBACK win32_MainCallback(HWND Window, UINT UserMessage, WPARAM WParam
         case WM_PAINT: 
         {
             //TODO: Visualise WASAPI buffer fills
+
+            WIN32_WINDOW_DIMENSIONS WindowDimensions = win32_WindowDimensionsGet(Window);
         }
 
         default:
@@ -153,6 +186,9 @@ LRESULT CALLBACK win32_MainCallback(HWND Window, UINT UserMessage, WPARAM WParam
 
 int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int CommandShow)
 {
+    WIN32_STATE WindowState = {};
+    win32_EXEFileNameGet(&WindowState);
+
     WNDCLASS WindowClass = {};
 
     WindowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC; //Create unique device context for this window
@@ -193,11 +229,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             PolarEngine.SampleRate = PolarEngine.WASAPI->OutputWaveFormat->Format.nSamplesPerSec;
             PolarEngine.BitRate = PolarEngine.WASAPI->OutputWaveFormat->Format.wBitsPerSample;
             
-            // OSCILLATOR *Osc = entropy_wave_OscillatorCreate();
-            // entropy_wave_OscillatorInit(Osc, Waveform, PolarEngine.SampleRate);
-            // Osc->FrequencyCurrent = 880;
-
-            OSCILLATOR *Osc = entropy_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 880);
+            OSCILLATOR *Osc = entropy_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, Frequency);
 
             POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
             
@@ -227,6 +259,8 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                     TranslateMessage(&Messages);
                     DispatchMessage(&Messages);
                 }
+
+                WIN32_WINDOW_DIMENSIONS WindowDimensions = win32_WindowDimensionsGet(Window);
 
                 //TODO: To pass variables to change over time, HH025 Win32ProcessPendingMessages        
                 polar_render_BufferCopy(PolarEngine, OutputRenderFile, Osc, Amplitude, Pan);
@@ -268,6 +302,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             OutputDebugString(MetricsBuffer);
 #endif
 
+            //TODO: File is written but header not fully finalised, won't show the total time in file explorer
             polar_render_WAVWriteDestroy(OutputRenderFile);
             entropy_wave_OscillatorDestroy(Osc);
             polar_WASAPI_Destroy(PolarEngine.WASAPI);
