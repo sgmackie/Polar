@@ -1,4 +1,4 @@
-//CRT
+﻿//CRT
 #include <stdlib.h>
 #include <Windows.h>
 
@@ -21,6 +21,7 @@
 global bool GlobalRunning = false;
 
 //!Test variables!
+global WAVEFORM Waveform = SINE;
 global f32 Amplitude = 0.25f;
 global f32 Pan = 0;
 
@@ -192,9 +193,11 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             PolarEngine.SampleRate = PolarEngine.WASAPI->OutputWaveFormat->Format.nSamplesPerSec;
             PolarEngine.BitRate = PolarEngine.WASAPI->OutputWaveFormat->Format.wBitsPerSample;
             
-            OSCILLATOR *Osc = entropy_wave_OscillatorCreate();
-            entropy_wave_OscillatorInit(Osc, SINE, PolarEngine.SampleRate);
-            Osc->FrequencyCurrent = 880;
+            // OSCILLATOR *Osc = entropy_wave_OscillatorCreate();
+            // entropy_wave_OscillatorInit(Osc, Waveform, PolarEngine.SampleRate);
+            // Osc->FrequencyCurrent = 880;
+
+            OSCILLATOR *Osc = entropy_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 880);
 
             POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
             
@@ -229,9 +232,15 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                 polar_render_BufferCopy(PolarEngine, OutputRenderFile, Osc, Amplitude, Pan);
 
                 ReleaseDC(Window, DeviceContext);
-#if WIN32_METRICS
-                //!Fix clock! Stream position is not updating (both 0)
-                polar_WASAPI_ClockUpdate(*PolarEngine.WASAPI, PolarEngine.Clock);                
+#if WIN32_METRICS                
+                UINT64 PositionFrequency;
+                UINT64 PositionUnits;
+
+                PolarEngine.WASAPI->AudioClock->GetFrequency(&PositionFrequency);
+                PolarEngine.WASAPI->AudioClock->GetPosition(&PositionUnits, 0);
+
+                //Sample cursor
+                u64 Cursor = PolarEngine.SampleRate * PositionUnits / PositionFrequency;
 
                 LARGE_INTEGER EndCounter;
                 QueryPerformanceCounter(&EndCounter);
@@ -245,7 +254,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                 f32 MegaHzCyclesPerFrame = (f32) (CyclesElapsed / (1000.0f * 1000.0f));
 
                 char MetricsBuffer[256];
-                sprintf_s(MetricsBuffer, "Polar: %0.2f ms/frame\t %0.2f FPS\t %0.2f cycles(MHz)/frame\t %llu\t %llu\n", MSPerFrame, FramesPerSecond, MegaHzCyclesPerFrame, PolarEngine.Clock.PositionFrequency, PolarEngine.Clock.PositionUnits);
+                sprintf_s(MetricsBuffer, "Polar: %0.2f ms/frame\t %0.2f FPS\t %0.2f cycles(MHz)/frame\t %llu samples\n", MSPerFrame, FramesPerSecond, MegaHzCyclesPerFrame, Cursor);
                 OutputDebugString(MetricsBuffer);
 
                 LastCounter = EndCounter;

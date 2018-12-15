@@ -73,12 +73,4 @@ void polar_WASAPI_BufferRelease(WASAPI_DATA *WASAPI, WASAPI_BUFFER &Buffer)
 }
 
 
-//Update the audio clock's position in the current stream
-void polar_WASAPI_ClockUpdate(WASAPI_DATA &Interface, WASAPI_CLOCK Clock)
-{
-    Interface.AudioClock->GetFrequency(&Clock.PositionFrequency);
-    Interface.AudioClock->GetPosition(&Clock.PositionUnits, 0);
-}
-
-
 #endif

@@ -2,6 +2,7 @@
 #define polar_render_cpp
 
 //TODO: Possible to remove CRT functions like fwrite and fseek?
+//TODO: Add BWAV support "https://tech.ebu.ch/docs/tech/tech3285.pdf"
 bool polar_render_WAVWriteHeader(POLAR_WAV *File, POLAR_DATA *Engine)
 {
 	//Assign engine values to the file header
@@ -208,13 +209,13 @@ f32 polar_render_PanPositionGet(u16 Position, f32 Amplitude, f32 PanFactor)
 	f32 PanPosition = Amplitude; 
 
 	//Left panning
-	if(Position == 0)
+	if(Position % 2 != 0)
 	{
 		PanPosition = Amplitude * (f32) sqrt(2.0) * (1 - PanFactor) / (2* (f32) sqrt(1 + PanFactor * PanFactor));
 	}
 
 	//Right panning
-	if(Position == 1)
+	if(Position % 2 == 0)
 	{
 		PanPosition = Amplitude * (f32) sqrt(2.0) * (1 + PanFactor) / (2* (f32) sqrt(1 + PanFactor * PanFactor));
 	}
@@ -229,13 +230,14 @@ void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuf
 
 	for(u32 FrameIndex = 0; FrameIndex < FramesToWrite; ++FrameIndex)
 	{
+		//TODO: Taylor series GPU for sine call, matrix additive function
 		f32 CurrentSample = (f32) Osc->Tick(Osc);
 		
 		for(i8 ChannelIndex = 0; ChannelIndex < ChannelCount; ++ChannelIndex)
 		{
 			f32 PanAmp = polar_render_PanPositionGet(ChannelIndex, Amplitude, PanValue);
 
-			//TODO: Merge these into one buffer (with memcpy for WASAPI call?)
+			//TODO: Merge sample and file buffers into one buffer (with memcpy for WASAPI call?)
 			*SampleBuffer++ = CurrentSample * PanAmp;
 			
 			if(FileSamples != nullptr)

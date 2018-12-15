@@ -173,12 +173,6 @@ typedef struct WASAPI_BUFFER
 } WASAPI_BUFFER;
 
 
-typedef struct WASAPI_CLOCK
-{
-	UINT64 PositionFrequency;
-	UINT64 PositionUnits;
-} WASAPI_CLOCK;
-
 //Prototypes
 WASAPI_DATA *wasapi_InterfaceCreate();                                                                                  //Create struct for WASAPI properties including output/rendering device info
 void wasapi_InterfaceDestroy(WASAPI_DATA *WASAPI);                                                                      //Destroy WASAPI data struct
@@ -201,7 +195,6 @@ WASAPI_DATA *polar_WASAPI_Create(WASAPI_BUFFER &Buffer);                        
 void polar_WASAPI_Destroy(WASAPI_DATA *WASAPI);                                 //Remove WASAPI struct
 void polar_WASAPI_BufferGet(WASAPI_DATA *WASAPI, WASAPI_BUFFER &Buffer);        //Get WASAPI buffer and the maxium samples to fill
 void polar_WASAPI_BufferRelease(WASAPI_DATA *WASAPI, WASAPI_BUFFER &Buffer);    //Release byte buffer after the rendering loop
-void polar_WASAPI_ClockUpdate(WASAPI_DATA &Interface, WASAPI_CLOCK Clock);      //Update the audio clock's position in the current stream
 
 
 /*                  */
@@ -219,7 +212,6 @@ typedef struct POLAR_DATA       //Struct to hold platform specific audio API imp
 	//TODO: Create union for different audio API (CoreAudio)
 	WASAPI_DATA *WASAPI;        //WASAPI data
 	WASAPI_BUFFER Buffer;       //Float and BYTE buffers for rendering
-	WASAPI_CLOCK Clock;         //Struct to hold WASAPI stream clock position
 	u32 BufferFrames;			//Frame count for output buffer
 	u16 Channels;               //Engine current channels
 	u32 SampleRate;             //Engine current sampling rate
