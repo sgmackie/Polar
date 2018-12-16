@@ -14,36 +14,87 @@
 
 //Polar
 #include "polar.h"
+#include "polar.cpp"
 #include "polar_platform.cpp"
 #include "polar_render.cpp"
 
-//Current running state
+//Win32 globals
 global bool GlobalRunning = false;
+global WIN32_OFFSCREEN_BUFFER GlobalDisplayBuffer;
+global i32 MonitorRefreshRate = 120;
 
 //!Test variables!
 global WAVEFORM Waveform = SINE;
-global f32 Frequency = 440;
+global f32 Frequency = 880;
 global f32 Amplitude = 0.35f;
-global f32 Pan = 1;
+global f32 Pan = 0;
 
 //Find file name of Polar application
-void win32_EXEFileNameGet(WIN32_STATE *State)
+internal void win32_EXEFileNameGet(WIN32_STATE *State)
 {
     //Gets full path of the current running process (0)
-    GetModuleFileName(0, State->EXEPathFull, sizeof(State->EXEPathFull));
-    State->EXEPath = State->EXEPathFull;
+    GetModuleFileName(0, State->EXEPath, sizeof(State->EXEPath));
+    State->EXEFileName = State->EXEPath;
 
     //Scan through the full path and remove until the final "\\"
-    for(char *Scan = State->EXEPathFull; *Scan; ++Scan)
+    for(char *Scan = State->EXEPath; *Scan; ++Scan)
     {
         if(*Scan == '\\')
         {
-            State->EXEPath = Scan + 1;
+            State->EXEFileName = Scan + 1;
         }
     }
 }
 
-WIN32_WINDOW_DIMENSIONS win32_WindowDimensionsGet(HWND Window)
+internal void win32_BuildEXEPathGet(WIN32_STATE *State, char *FileName, char *Path)
+{
+    polar_StringConcatenate(State->EXEFileName, (State->EXEFileName - State->EXEPath), FileName, polar_StringLengthGet(FileName), Path);
+}
+
+internal void win32_InputFilePathGet(WIN32_STATE *State, bool InputStream, i32 SlotIndex, char *Path)
+{
+    char Temp[64];
+    wsprintf(Temp, "loop_edit_%d_%s.hmi", SlotIndex, InputStream ? "input" : "state");
+    win32_BuildEXEPathGet(State, Temp, Path);
+}
+
+
+internal FILETIME win32_LastWriteTimeGet(char *Filename)
+{
+    FILETIME LastWriteTime = {};
+
+    WIN32_FILE_ATTRIBUTE_DATA Data;
+    if(GetFileAttributesEx(Filename, GetFileExInfoStandard, &Data))
+    {
+        LastWriteTime = Data.ftLastWriteTime;
+    }
+
+    return LastWriteTime;
+}
+
+internal WIN32_ENGINE_CODE Win32LoadGameCode(char *SourceDLLName, char *TempDLLName)
+{
+    WIN32_ENGINE_CODE Result = {};
+    Result.DLLLastWriteTime = win32_LastWriteTimeGet(SourceDLLName);
+
+    CopyFile(SourceDLLName, TempDLLName, FALSE);
+    Result.EngineDLL = LoadLibraryA(TempDLLName);
+    
+    // if(Result.EngineDLL)
+    // {
+    //     Result.UpdateAndRender = (game_update_and_render *) GetProcAddress(Result.EngineDLL, "GameUpdateAndRender");
+    //     Result.IsValid = (Result.UpdateAndRender && Result.GetSoundSamples);
+    // }
+
+    // if(!Result.IsValid)
+    // {
+    //     Result.UpdateAndRender = 0;
+    // }
+
+    return Result;
+}
+
+internal WIN32_WINDOW_DIMENSIONS win32_WindowDimensionsGet(HWND Window)
 {
     WIN32_WINDOW_DIMENSIONS WindowDimensions;
 
@@ -54,6 +105,38 @@ WIN32_WINDOW_DIMENSIONS win32_WindowDimensionsGet(HWND Window)
     WindowDimensions.Height = ClientRect.bottom - ClientRect.top;
 
     return WindowDimensions;
+}
+
+internal void win32_BitmapBufferResize(WIN32_OFFSCREEN_BUFFER *Buffer, i32 TargetWidth, i32 TargetHeight)
+{
+    if(Buffer->Data)
+    {
+        VirtualFree(Buffer->Data, 0, MEM_RELEASE);
+    }
+
+    Buffer->Width = TargetWidth;
+    Buffer->Height = TargetHeight;
+    Buffer->BytesPerPixel = 4;
+
+    //Negative height field means the bitmap is top-down, not bottom-up, so first 3 bytes of the bitmap are the RGB values for the top left pixel
+    Buffer->BitmapInfo.bmiHeader.biSize = sizeof(Buffer->BitmapInfo.bmiHeader);
+    Buffer->BitmapInfo.bmiHeader.biWidth = Buffer->Width;
+    Buffer->BitmapInfo.bmiHeader.biHeight = -Buffer->Height;
+    Buffer->BitmapInfo.bmiHeader.biPlanes = 1;
+    Buffer->BitmapInfo.bmiHeader.biBitCount = 32;
+    Buffer->BitmapInfo.bmiHeader.biCompression = BI_RGB;
+
+    i32 BitmapDataSize = ((Buffer->Width * Buffer->Height) * Buffer->BytesPerPixel);
+    Buffer->Data = VirtualAlloc(0, BitmapDataSize, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+    Buffer->Pitch = Buffer->Width * Buffer->BytesPerPixel;
+}
+
+
+internal LARGE_INTEGER win32_WallClockGet()
+{    
+    LARGE_INTEGER Result;
+    QueryPerformanceCounter(&Result);
+    return Result;
 }
 
 //Windows callback for message processing
@@ -186,19 +269,34 @@ LRESULT CALLBACK win32_MainCallback(HWND Window, UINT UserMessage, WPARAM WParam
 
 int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int CommandShow)
 {
+    //Get .exe and .dll paths
     WIN32_STATE WindowState = {};
     win32_EXEFileNameGet(&WindowState);
+    win32_BuildEXEPathGet(&WindowState, "polar.dll", WindowState.EngineSourceCodePath);
+    win32_BuildEXEPathGet(&WindowState, "polar_temp.dll", WindowState.TempEngineSourceCodePath);
 
+#if WIN32_METRICS
+    LARGE_INTEGER PerformanceCounterFrequencyResult;
+    QueryPerformanceFrequency(&PerformanceCounterFrequencyResult);
+    i64 PerformanceCounterFrequency = PerformanceCounterFrequencyResult.QuadPart;
+#endif
+
+    //Request a 1ms period for timing functions
+    UINT SchedulerPeriodInMS = 1;
+    bool IsSleepGranular = (timeBeginPeriod(SchedulerPeriodInMS) == TIMERR_NOERROR);
+
+    //Create initial display buffer
+    win32_BitmapBufferResize(&GlobalDisplayBuffer, 1280, 720);
+
+    //Set window properties
     WNDCLASS WindowClass = {};
-
     WindowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC; //Create unique device context for this window
-    WindowClass.lpfnWndProc = win32_MainCallback; //Call the window process
-    WindowClass.hInstance = Instance; //Handle instance passed from win32_WinMain
-    WindowClass.lpszClassName = "PolarWindowClass"; //Name of Window class
-
-    PrevInstance = 0; //Handle to previous instance of the window
-    CommandLine = GetCommandLine(); //Get command line string for application
-    CommandShow = SW_SHOW; //Activate and show window
+    WindowClass.lpfnWndProc = win32_MainCallback;           //Call the window process
+    WindowClass.hInstance = Instance;                       //Handle instance passed from win32_WinMain
+    WindowClass.lpszClassName = "PolarWindowClass";         //Name of Window class
+    PrevInstance = 0;                                       //Handle to previous instance of the window
+    CommandLine = GetCommandLine();                         //Get command line string for application
+    CommandShow = SW_SHOW;                                  //Activate and show window
 
 	if(RegisterClass(&WindowClass))
     {
@@ -206,21 +304,21 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
         if(Window) //Process message queue
         {
-            //Specified CS_OWNDC so get one device context and use it forever
-            HDC DeviceContext = GetDC(Window);
-
-            i32 Win32RefreshRate = GetDeviceCaps(DeviceContext, VREFRESH);
-            i32 MonitorRefreshRate = 60;
+            //Get the monitor refresh rate
+            HDC RefreshDevice = GetDC(Window);
+            i32 win32_RefreshRate = GetDeviceCaps(RefreshDevice, VREFRESH);
+            ReleaseDC(Window, RefreshDevice);
             
-            //If GetDeviceCaps fails, use default 60Hz 
-            if(Win32RefreshRate > 1)
+            if(win32_RefreshRate > 1)
             {
-                MonitorRefreshRate = Win32RefreshRate;
+                MonitorRefreshRate = win32_RefreshRate;
             }
 
-            //? Needed?
-            // f32 EngineUpdateRate = (MonitorRefreshRate / 2.0f);
+            //Set target update FPS
+            f32 EngineUpdateRate = (MonitorRefreshRate / 2.0f);
+            f32 TargetSecondsPerFrame = 1.0f / (f32) EngineUpdateRate;
 
+            //Initialise Polar
             POLAR_DATA PolarEngine = {};
             //TODO: User define properties in SHARED_MODE dont work, IsFormatSupported returns null Adjusted WAVEFORMATEX
             PolarEngine.WASAPI = polar_WASAPI_Create(PolarEngine.Buffer, 0, 0, 0);
@@ -229,22 +327,44 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             PolarEngine.SampleRate = PolarEngine.WASAPI->OutputWaveFormat->Format.nSamplesPerSec;
             PolarEngine.BitRate = PolarEngine.WASAPI->OutputWaveFormat->Format.wBitsPerSample;
             
+            //Create rendering output file
+            POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
+
+            //!Test source
             OSCILLATOR *Osc = entropy_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, Frequency);
 
-            POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
-            
+            //Start infinite loop
             GlobalRunning = true;
-#if WIN32_METRICS
-            LARGE_INTEGER PerformanceCounterFrequencyResult;
-            QueryPerformanceFrequency(&PerformanceCounterFrequencyResult);
-            i64 PerformanceCounterFrequency = PerformanceCounterFrequencyResult.QuadPart;
 
-            LARGE_INTEGER LastCounter;
-            QueryPerformanceCounter(&LastCounter);
+            //Set file and memory map for state recording
+            for(i32 ReplayIndex = 0; ReplayIndex < ArrayCount(WindowState.ReplayBuffers); ++ReplayIndex)
+            {
+                WIN32_REPLAY_BUFFER *CurrentReplayBuffer = &WindowState.ReplayBuffers[ReplayIndex];
+
+                win32_InputFilePathGet(&WindowState, false, ReplayIndex, CurrentReplayBuffer->FileName);
+                CurrentReplayBuffer->File = CreateFile(CurrentReplayBuffer->FileName, GENERIC_WRITE|GENERIC_READ, 0, 0, CREATE_ALWAYS, 0, 0);   //Generic file creation
+
+                LARGE_INTEGER MaxSize;
+                MaxSize.QuadPart = WindowState.TotalSize;
+                CurrentReplayBuffer->MemoryMap = CreateFileMapping(CurrentReplayBuffer->File, 0, PAGE_READWRITE, MaxSize.HighPart, MaxSize.LowPart, 0);
+
+                CurrentReplayBuffer->MemoryBlock = MapViewOfFile(CurrentReplayBuffer->MemoryMap, FILE_MAP_ALL_ACCESS, 0, 0, WindowState.TotalSize);
+            }
+
+            WIN32_ENGINE_CODE PolarState = Win32LoadGameCode(WindowState.EngineSourceCodePath, WindowState.TempEngineSourceCodePath);
+
+#if WIN32_METRICS
+            LARGE_INTEGER LastCounter = win32_WallClockGet();
+            LARGE_INTEGER FlipWallClock = win32_WallClockGet();
+
             u64 LastCycleCount = __rdtsc();
 #endif 
             while(GlobalRunning)
             {
+                FILETIME DLLWriteTime = win32_LastWriteTimeGet(WindowState.EngineSourceCodePath);
+                
+
+
                 MSG Messages;
 
                 //PeekMessage keeps processing message queue without blocking when there are no messages available
@@ -265,6 +385,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                 //TODO: To pass variables to change over time, HH025 Win32ProcessPendingMessages        
                 polar_render_BufferCopy(PolarEngine, OutputRenderFile, Osc, Amplitude, Pan);
 
+                HDC DeviceContext = GetDC(Window);
                 ReleaseDC(Window, DeviceContext);
 #if WIN32_METRICS                
                 UINT64 PositionFrequency;
@@ -311,6 +432,3 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
 	return 0;
 }
-
-
-

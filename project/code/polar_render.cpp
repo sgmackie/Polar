@@ -3,7 +3,7 @@
 
 //TODO: Possible to remove CRT functions like fwrite and fseek?
 //TODO: Add BWAV support "https://tech.ebu.ch/docs/tech/tech3285.pdf"
-bool polar_render_WAVWriteHeader(POLAR_WAV *File, POLAR_DATA *Engine)
+internal bool polar_render_WAVWriteHeader(POLAR_WAV *File, POLAR_DATA *Engine)
 {
 	//Assign engine values to the file header
 	File->WAVHeader.AudioFormat = 3;
@@ -84,7 +84,7 @@ POLAR_WAV *polar_render_WAVWriteCreate(const char *FilePath, POLAR_DATA *Engine)
 	return File;
 }
 
-size_t polar_render_WAVWriteRaw(POLAR_WAV *File, size_t BytesToWrite, const void *FileData)
+internal size_t polar_render_WAVWriteRaw(POLAR_WAV *File, size_t BytesToWrite, const void *FileData)
 {
 	if(File == nullptr || BytesToWrite == 0 || FileData == nullptr)
 	{
@@ -99,7 +99,7 @@ size_t polar_render_WAVWriteRaw(POLAR_WAV *File, size_t BytesToWrite, const void
 }
 
 
-u64 polar_render_WAVWriteFloat(POLAR_WAV *File, u64 SamplesToWrite, const void *FileData)
+internal u64 polar_render_WAVWriteFloat(POLAR_WAV *File, u64 SamplesToWrite, const void *FileData)
 {
 	if(File == nullptr || SamplesToWrite == 0 || FileData == nullptr)
 	{
@@ -143,7 +143,7 @@ u64 polar_render_WAVWriteFloat(POLAR_WAV *File, u64 SamplesToWrite, const void *
 	return (BytesWrittenToFile * 8) / File->WAVHeader.BitsPerSample;
 }
 
-u32 polar_render_RIFFChunkRound(u64 RIFFChunkSize)
+internal u32 polar_render_RIFFChunkRound(u64 RIFFChunkSize)
 {
 	if(RIFFChunkSize <= (0xFFFFFFFF - 36)) 
 	{
@@ -157,7 +157,7 @@ u32 polar_render_RIFFChunkRound(u64 RIFFChunkSize)
 }
 
 
-u32 polar_render_DataChunkRound(u64 DataChunkSize)
+internal u32 polar_render_DataChunkRound(u64 DataChunkSize)
 {
 	if(DataChunkSize <= 0xFFFFFFFF)
 	{
@@ -204,7 +204,7 @@ void polar_render_WAVWriteDestroy(POLAR_WAV *File)
 }
 
 
-f32 polar_render_PanPositionGet(u16 Position, f32 Amplitude, f32 PanFactor)
+internal f32 polar_render_PanPositionGet(u16 Position, f32 Amplitude, f32 PanFactor)
 {
 	f32 PanPosition = Amplitude; 
 
@@ -223,7 +223,7 @@ f32 polar_render_PanPositionGet(u16 Position, f32 Amplitude, f32 PanFactor)
 	return PanPosition;
 }
 
-void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, BYTE *ByteBuffer, f32 *FileSamples, OSCILLATOR *Osc, f32 Amplitude, f32 Pan)
+internal void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, BYTE *ByteBuffer, f32 *FileSamples, OSCILLATOR *Osc, f32 Amplitude, f32 Pan)
 {
 	//Cast from float to BYTE
 	SampleBuffer = reinterpret_cast<f32 *>(ByteBuffer);

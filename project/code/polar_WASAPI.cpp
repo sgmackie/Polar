@@ -37,7 +37,7 @@ void wasapi_InterfaceInit(WASAPI_DATA &Interface)
 }
 
 //Print default audio endpoint
-void wasapi_DevicePrint(HRESULT &HR, IMMDevice *Device)
+internal void wasapi_DevicePrint(HRESULT &HR, IMMDevice *Device)
 {
 	IPropertyStore* DevicePropertyStore = nullptr;
 	PROPVARIANT DeviceName;
@@ -56,7 +56,7 @@ void wasapi_DevicePrint(HRESULT &HR, IMMDevice *Device)
 }
 
 //Print waveformat information
-void wasapi_FormatPrint(WAVEFORMATEXTENSIBLE &WaveFormat)
+internal void wasapi_FormatPrint(WAVEFORMATEXTENSIBLE &WaveFormat)
 {   
 	debug_PrintLine("\tCurrent Format\tFormat:\t\t\t\t\t%s", wasapi_FormatTagString(WaveFormat.Format.wFormatTag, WaveFormat.SubFormat));
 	debug_PrintLine("\tCurrent Format\tChannels:\t\t\t\t%u", WaveFormat.Format.nChannels);
@@ -70,7 +70,7 @@ void wasapi_FormatPrint(WAVEFORMATEXTENSIBLE &WaveFormat)
 }
 
 //Get default audio endpoint
-bool wasapi_DeviceGetDefault(HRESULT &HR, WASAPI_DATA &Interface, bool PrintDefaultDevice)
+internal bool wasapi_DeviceGetDefault(HRESULT &HR, WASAPI_DATA &Interface, bool PrintDefaultDevice)
 {
 	HR = Interface.DeviceEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &Interface.AudioDevice);
 	HR_TO_RETURN(HR, "Failed to get default audio endpoint", false);
@@ -87,7 +87,7 @@ bool wasapi_DeviceGetDefault(HRESULT &HR, WASAPI_DATA &Interface, bool PrintDefa
 }
 
 //Get default waveformat or use user defined one
-bool wasapi_FormatGet(HRESULT &HR, WASAPI_DATA &Interface, WAVEFORMATEXTENSIBLE *Custom, bool PrintDefaultWaveFormat)
+internal bool wasapi_FormatGet(HRESULT &HR, WASAPI_DATA &Interface, WAVEFORMATEXTENSIBLE *Custom, bool PrintDefaultWaveFormat)
 {
 	if(Custom == nullptr)
 	{

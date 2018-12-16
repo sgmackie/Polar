@@ -15,5 +15,3 @@
 #include "polar.h"
 #include "polar_platform.cpp"
 #include "polar_render.cpp"
-
-

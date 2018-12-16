@@ -4,17 +4,53 @@
 //TODO: Finish rest of the comments
 
 
+/*                  */
+/*  General code  	*/
+/*                  */
+
+//Prototypes
+//String handling
+void polar_StringConcatenate(char *StringA, size_t StringALength, char *StringB, size_t StringBLength, char *Path);
+i32 polar_StringLengthGet(char *String);
+
+
+
 /*                   */
 /*  Windows code     */
 /*                   */
 
-#define WIN32_STATE_FILE_NAME_COUNT MAX_PATH	//Max file path length
+#define WIN32_MAX_FILE_PATH MAX_PATH	//Max file path length
 
 //Structs
+struct WIN32_REPLAY_BUFFER
+{
+    HANDLE File;
+    HANDLE MemoryMap;
+    char FileName[WIN32_MAX_FILE_PATH];
+    void *MemoryBlock;
+};
+
+
+struct WIN32_ENGINE_CODE
+{
+    HMODULE EngineDLL;
+    FILETIME DLLLastWriteTime;
+};
+
 struct WIN32_STATE
-{    
-    char EXEPathFull[WIN32_STATE_FILE_NAME_COUNT];
-    char *EXEPath;
+{
+	u64 TotalSize;
+
+	//Store .exe
+    char EXEPath[WIN32_MAX_FILE_PATH];
+    char *EXEFileName;
+
+	//Store code .dlls
+	char EngineSourceCodePath[WIN32_MAX_FILE_PATH];
+	char TempEngineSourceCodePath[WIN32_MAX_FILE_PATH];
+
+	//Replay state
+	WIN32_REPLAY_BUFFER ReplayBuffers[4];
 };
 
 struct WIN32_WINDOW_DIMENSIONS
@@ -23,9 +59,26 @@ struct WIN32_WINDOW_DIMENSIONS
     i32 Height;
 };
 
+struct WIN32_OFFSCREEN_BUFFER
+{
+    // NOTE(casey): Pixels are alwasy 32-bits wide, Memory Order BB GG RR XX
+    BITMAPINFO BitmapInfo;
+    void *Data;
+    i32 Width;
+    i32 Height;
+    i32 Pitch;
+    i32 BytesPerPixel;
+};
+
 //Prototypes
-void win32_EXEFileNameGet(WIN32_STATE *State);
-WIN32_WINDOW_DIMENSIONS win32_WindowDimensionsGet(HWND Window);
+internal void win32_EXEFileNameGet(WIN32_STATE *State);
+internal void win32_BuildEXEPathGet(WIN32_STATE *State, char *FileName, char *Path);
+internal void win32_InputFilePathGet(WIN32_STATE *State, bool InputStream, i32 SlotIndex, char *Path);
+internal FILETIME win32_LastWriteTimeGet(char *Filename);
+internal WIN32_ENGINE_CODE Win32LoadGameCode(char *SourceDLLName, char *TempDLLName);
+internal WIN32_WINDOW_DIMENSIONS win32_WindowDimensionsGet(HWND Window);
+internal void win32_BitmapBufferResize(WIN32_OFFSCREEN_BUFFER *Buffer, i32 TargetWidth, i32 TargetHeight);
+internal LARGE_INTEGER win32_WallClockGet();
 
 /*                  */
 /*  WASAPI code     */
@@ -198,16 +251,15 @@ typedef struct WASAPI_BUFFER
 
 
 //Prototypes
-WASAPI_DATA *wasapi_InterfaceCreate();                                                                                  //Create struct for WASAPI properties including output/rendering device info
-void wasapi_InterfaceDestroy(WASAPI_DATA *WASAPI);                                                                      //Destroy WASAPI data struct
-void wasapi_InterfaceInit(WASAPI_DATA &Interface);                                                                      //Set/reset WASAPI data struct
-void wasapi_DevicePrint(HRESULT &HR, IMMDevice *Device);                                                                //Print default audio endpoint
-void wasapi_FormatPrint(WAVEFORMATEXTENSIBLE &WaveFormat);                                                              //Print waveformat information
-bool wasapi_DeviceGetDefault(HRESULT &HR, WASAPI_DATA &Interface, bool PrintDefaultDevice);                             //Get default audio endpoint
-bool wasapi_FormatGet(HRESULT &HR, WASAPI_DATA &Interface, WAVEFORMATEXTENSIBLE *Custom, bool PrintDefaultWaveFormat);  //Get default waveformat or use user defined one
-bool wasapi_DeviceInit(HRESULT &HR, WASAPI_DATA &Interface);                                                            //Initialise WASAPI device
-void wasapi_DeviceDeInit(WASAPI_DATA &Interface);                                                                       //Release WASAPI devices
-
+WASAPI_DATA *wasapi_InterfaceCreate();                                                                                  			//Create struct for WASAPI properties including output/rendering device info
+void wasapi_InterfaceDestroy(WASAPI_DATA *WASAPI);                                                                      			//Destroy WASAPI data struct
+void wasapi_InterfaceInit(WASAPI_DATA &Interface);                                                                      			//Set/reset WASAPI data struct
+bool wasapi_DeviceInit(HRESULT &HR, WASAPI_DATA &Interface);                                                            			//Initialise WASAPI device
+void wasapi_DeviceDeInit(WASAPI_DATA &Interface);                                                                       			//Release WASAPI devices
+internal void wasapi_DevicePrint(HRESULT &HR, IMMDevice *Device);                                                                	//Print default audio endpoint
+internal void wasapi_FormatPrint(WAVEFORMATEXTENSIBLE &WaveFormat);                                                              	//Print waveformat information
+internal bool wasapi_DeviceGetDefault(HRESULT &HR, WASAPI_DATA &Interface, bool PrintDefaultDevice);                             	//Get default audio endpoint
+internal bool wasapi_FormatGet(HRESULT &HR, WASAPI_DATA &Interface, WAVEFORMATEXTENSIBLE *Custom, bool PrintDefaultWaveFormat);  	//Get default waveformat or use user defined one
 
 /*                  */
 /*  Platform code   */
@@ -268,15 +320,16 @@ typedef struct POLAR_WAV
 //File writing
 POLAR_WAV *polar_render_WAVWriteCreate(const char *FilePath, POLAR_DATA *Engine);
 void polar_render_WAVWriteDestroy(POLAR_WAV *File);
-bool polar_render_WAVWriteHeader(POLAR_WAV *File, POLAR_DATA *Engine);
-size_t polar_render_WAVWriteRaw(POLAR_WAV *File, size_t BytesToWrite, const void *FileData);
-u64 polar_render_WAVWriteFloat(POLAR_WAV *File, u64 SamplesToWrite, const void *FileData);
-u32 polar_render_RIFFChunkRound(u64 RIFFChunkSize);
-u32 polar_render_DataChunkRound(u64 DataChunkSize);
+internal bool polar_render_WAVWriteHeader(POLAR_WAV *File, POLAR_DATA *Engine);
+internal size_t polar_render_WAVWriteRaw(POLAR_WAV *File, size_t BytesToWrite, const void *FileData);
+internal u64 polar_render_WAVWriteFloat(POLAR_WAV *File, u64 SamplesToWrite, const void *FileData);
+internal u32 polar_render_RIFFChunkRound(u64 RIFFChunkSize);
+internal u32 polar_render_DataChunkRound(u64 DataChunkSize);
 
 //Rendering
-f32 polar_render_PanPositionGet(u16 Position, f32 Amplitude, f32 PanFactor);    //Calculate stereo pan position
-void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, BYTE *ByteBuffer, f32 *FileSamples, OSCILLATOR *Osc, f32 Amplitude);
-void polar_render_BufferCopy(POLAR_DATA &Engine, POLAR_WAV *File, OSCILLATOR *Osc, f32 Amplitude);
+internal f32 polar_render_PanPositionGet(u16 Position, f32 Amplitude, f32 PanFactor);    //Calculate stereo pan position
+internal void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, BYTE *ByteBuffer, f32 *FileSamples, OSCILLATOR *Osc, f32 Amplitude, f32 Pan);
+void polar_render_BufferCopy(POLAR_DATA &Engine, POLAR_WAV *File, OSCILLATOR *Osc, f32 Amplitude, f32 Pan);
+
 
 #endif
