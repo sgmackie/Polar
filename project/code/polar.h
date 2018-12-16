@@ -8,13 +8,7 @@
 /*  General code  	*/
 /*                  */
 
-//Prototypes
-//String handling
-void polar_StringConcatenate(char *StringA, size_t StringALength, char *StringB, size_t StringBLength, char *Path);
-i32 polar_StringLengthGet(char *String);
-
-
-//Input handling
+//Structs
 struct POLAR_INPUT_STATE
 {
     i32 HalfTransitionCount;
@@ -63,6 +57,14 @@ struct POLAR_INPUT
  
     POLAR_INPUT_CONTROLLER Controllers[5];
 };
+
+//Prototypes
+//String handling
+void polar_StringConcatenate(char *StringA, size_t StringALength, char *StringB, size_t StringBLength, char *Path);
+i32 polar_StringLengthGet(char *String);
+
+//Input handling
+POLAR_INPUT_CONTROLLER *ControllerGet(POLAR_INPUT *Input, u32 ControllerIndex);
 
 
 /*                   */

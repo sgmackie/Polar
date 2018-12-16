@@ -31,11 +31,12 @@ set ObjDir=.\obj\
 set Libs=/link -INCREMENTAL:NO -OPT:REF User32.lib Ole32.lib Avrt.lib Gdi32.lib Winmm.lib
 
 :: Set Visual compiler flags:
-:: -Zi              generate debugging info to .pdb file
+:: -Z7              generate debugging info to .pdb file
 :: -FC              use full path in diagnostics
 :: -MTd             for multi-threading (debug)
 :: -Od              to disable compiler optimisations
 :: -Oi              to generate intrinsic functions when applicable
+:: -Gm              to enable minimal rebuilds
 :: -GR              enable runtime type information for insepcting objects
 :: -EHa             to enable C++ exception handling
 :: -WX              to treat compiler warnings as errors
@@ -49,7 +50,7 @@ set Libs=/link -INCREMENTAL:NO -OPT:REF User32.lib Ole32.lib Avrt.lib Gdi32.lib 
 :: -DWIN32_METRICS  for frame timing information printed to Visual Studio/Code debug console
 :: -DPOLAR_LOOP     for live code editing
 :: -Fe              to set .exe name
-set CompilerFlags=-Zi -FC -MTd -Od -Oi -GR -EHa -WX -W4 -wd4201 -Fo%ObjDir% -DWIN32=1 -DDEBUG -DDEBUG_CRT=1 -DDEBUG_WIN32=0 -DWIN32_METRICS=1 -DPOLAR_LOOP=1 -Fe"polar.exe"
+set CompilerFlags=-Z7 -FC -MTd -Od -Oi -GR -EHa -WX -W4 -wd4201 -Fo%ObjDir% -DWIN32=1 -DDEBUG -DDEBUG_CRT=1 -DDEBUG_WIN32=0 -DWIN32_METRICS=1 -DPOLAR_LOOP=1 -Fe"polar.exe"
 
 :: Set debug path for logging files
 set DebugDir=%~dp0..\build\debug
@@ -57,6 +58,9 @@ set DebugDir=%~dp0..\build\debug
 :: Create Object and Debug directories if they don't exist
 if not exist %ObjDir% mkdir %ObjDir%
 if not exist %DebugDir% mkdir %DebugDir%
+
+:: Delete previous .pdb files
+del *.pdb > NUL 2> NUL
 
 :: Run Visual Studio compiler
 cl %CompilerFlags% %Files% %Libs%

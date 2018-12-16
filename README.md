@@ -2,7 +2,7 @@
 
 - [About](#about)
 - [Changelog](#changelog)
-- [Acknowledgments](#acknowledgments)
+- [Acknowledegments](#acknowledgements)
 
 ### About: <a name="about"></a>
 
@@ -25,7 +25,7 @@ Primary use is as a test bed for any DSP projects I'm currently working on and t
             - WASAPI:
                 - Re-wrote WASAPI implementation (now included in source)
 
-### Acknowledgments: <a name="acknowledgments"></a>
+### Acknowledegments: <a name="acknowledgements"></a>
 
 - Platform code:
     - Handmade Hero (https://handmadehero.org/)

@@ -599,7 +599,8 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                         // Game.UpdateAndRender(&Thread, &GameMemory, NewInput, &Buffer);
                     // }
 
-                    //TODO: To pass variables to change over time, HH025 win32_WindowMessageProcess        
+                    //TODO: To pass variables to change over time, HH025 win32_WindowMessageProcess
+                    //! Can't use external functions for live code loading until rendering code is fully seperate from Windows - need to remove WASAPI calls from the rendering loop
                     polar_render_BufferCopy(PolarEngine, OutputRenderFile, Osc, Amplitude, Pan);
 
 
