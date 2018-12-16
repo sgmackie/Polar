@@ -120,7 +120,6 @@ struct WIN32_WINDOW_DIMENSIONS
 
 struct WIN32_OFFSCREEN_BUFFER
 {
-    // NOTE(casey): Pixels are alwasy 32-bits wide, Memory Order BB GG RR XX
     BITMAPINFO BitmapInfo;
     void *Data;
     i32 Width;
@@ -154,6 +153,7 @@ internal void win32_InputPlayback(WIN32_STATE *State, POLAR_INPUT *NewInput);
 //Display rendering
 internal WIN32_WINDOW_DIMENSIONS win32_WindowDimensionsGet(HWND Window);
 internal void win32_BitmapBufferResize(WIN32_OFFSCREEN_BUFFER *Buffer, i32 TargetWidth, i32 TargetHeight);
+internal void win32_DisplayBufferInWindow(WIN32_OFFSCREEN_BUFFER *Buffer, HDC DeviceContext);
 
 //Performance timing
 internal LARGE_INTEGER win32_WallClockGet();

@@ -27,5 +27,7 @@ Primary use is as a test bed for any DSP projects I'm currently working on and t
 
 ### Acknowledgments: <a name="acknowledgments"></a>
 
-Platform code - https://handmadehero.org/
-WAV handling code - https://mackron.github.io/
+- Platform code:
+    - Handmade Hero (https://handmadehero.org/)
+- File code:
+    - dr_wav (https://mackron.github.io/)

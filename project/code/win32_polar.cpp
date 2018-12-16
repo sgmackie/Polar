@@ -27,7 +27,7 @@ global i64 GlobalPerformanceCounterFrequency;
 
 //!Test variables!
 global WAVEFORM Waveform = SINE;
-global f32 Frequency = 880;
+global f32 Frequency = 440;
 global f32 Amplitude = 0.35f;
 global f32 Pan = 0;
 
@@ -371,6 +371,11 @@ internal void win32_WindowMessageProcess(WIN32_STATE *State, POLAR_INPUT_CONTROL
     }
 }
 
+internal void win32_DisplayBufferInWindow(WIN32_OFFSCREEN_BUFFER *Buffer, HDC DeviceContext)
+{
+    StretchDIBits(DeviceContext, 0, 0, Buffer->Width, Buffer->Height, 0, 0, Buffer->Width, Buffer->Height, Buffer->Data, &Buffer->BitmapInfo, DIB_RGB_COLORS, SRCCOPY);
+}
+
 
 //Windows callback for message processing
 LRESULT CALLBACK win32_MainCallback(HWND Window, UINT UserMessage, WPARAM WParam, LPARAM LParam)
@@ -420,6 +425,7 @@ LRESULT CALLBACK win32_MainCallback(HWND Window, UINT UserMessage, WPARAM WParam
             HDC PaintDevice = BeginPaint(Window, &Paint);
             WIN32_WINDOW_DIMENSIONS WindowDimensions = win32_WindowDimensionsGet(Window);
             //TODO: Visualise WASAPI buffer fills
+            win32_DisplayBufferInWindow(&GlobalDisplayBuffer, PaintDevice);
             EndPaint(Window, &Paint);
             break;
         }
@@ -642,9 +648,10 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
                     //Set window device context for upcoming display
                     WIN32_WINDOW_DIMENSIONS WindowDimensions = win32_WindowDimensionsGet(Window);
-                    HDC DeviceContext = GetDC(Window);
+                    HDC DisplayDevice = GetDC(Window);
                     //TODO: Debug info display
-                    ReleaseDC(Window, DeviceContext);
+                    win32_DisplayBufferInWindow(&GlobalDisplayBuffer, DisplayDevice);
+                    ReleaseDC(Window, DisplayDevice);
 
                     //Reset input for next loop
                     POLAR_INPUT *Temp = NewInput;
