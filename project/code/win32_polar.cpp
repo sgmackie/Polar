@@ -20,6 +20,7 @@
 
 //Win32 globals
 global bool GlobalRunning = false;
+global bool GlobalPause = false;
 global WIN32_OFFSCREEN_BUFFER GlobalDisplayBuffer;
 global i32 MonitorRefreshRate = 120;
 
@@ -72,7 +73,7 @@ internal FILETIME win32_LastWriteTimeGet(char *Filename)
     return LastWriteTime;
 }
 
-internal WIN32_ENGINE_CODE Win32LoadGameCode(char *SourceDLLName, char *TempDLLName)
+internal WIN32_ENGINE_CODE win32_EngineCodeLoad(char *SourceDLLName, char *TempDLLName)
 {
     WIN32_ENGINE_CODE Result = {};
     Result.DLLLastWriteTime = win32_LastWriteTimeGet(SourceDLLName);
@@ -83,16 +84,82 @@ internal WIN32_ENGINE_CODE Win32LoadGameCode(char *SourceDLLName, char *TempDLLN
     // if(Result.EngineDLL)
     // {
     //     Result.UpdateAndRender = (game_update_and_render *) GetProcAddress(Result.EngineDLL, "GameUpdateAndRender");
-    //     Result.IsValid = (Result.UpdateAndRender && Result.GetSoundSamples);
+    //     Result.IsDLLValid = (Result.UpdateAndRender);
     // }
 
-    // if(!Result.IsValid)
+    // if(!Result.IsDLLValid)
     // {
     //     Result.UpdateAndRender = 0;
     // }
 
     return Result;
 }
+
+internal void win32_EngineCodeUnload(WIN32_ENGINE_CODE *EngineCode)
+{
+    if(EngineCode->EngineDLL)
+    {
+        FreeLibrary(EngineCode->EngineDLL);
+        EngineCode->EngineDLL = 0;
+    }
+
+    // EngineCode->IsDLLValid = false;
+    // EngineCode->UpdateAndRender = 0;
+}
+
+
+internal WIN32_REPLAY_BUFFER *win32_ReplayBufferGet(WIN32_STATE *State, u32 Index)
+{
+    Assert(Index < ArrayCount(State->ReplayBuffers));
+    WIN32_REPLAY_BUFFER *Result = &State->ReplayBuffers[Index];
+    return Result;
+}
+
+
+internal void win32_StateRecordingStart(WIN32_STATE *State, i32 InputRecordingIndex)
+{
+    WIN32_REPLAY_BUFFER *ReplayBuffer = win32_ReplayBufferGet(State, InputRecordingIndex);
+    if(ReplayBuffer->MemoryBlock)
+    {
+        State->InputRecordingIndex = InputRecordingIndex;
+
+        char FileName[WIN32_MAX_FILE_PATH];
+        win32_InputFilePathGet(State, true, InputRecordingIndex, FileName);
+        State->RecordingHandle = CreateFile(FileName, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0, 0);
+        
+        CopyMemory(ReplayBuffer->MemoryBlock, State->EngineMemoryBlock, State->TotalSize);
+    }
+}
+
+
+internal void win32_StateRecordingStop(WIN32_STATE *State)
+{
+    CloseHandle(State->RecordingHandle);
+    State->InputRecordingIndex = 0;
+}
+
+
+internal void win32_StatePlaybackStart(WIN32_STATE *State, i32 InputPlayingIndex)
+{
+    WIN32_REPLAY_BUFFER *ReplayBuffer = win32_ReplayBufferGet(State, InputPlayingIndex);
+    if(ReplayBuffer->MemoryBlock)
+    {
+        State->InputPlayingIndex = InputPlayingIndex;
+
+        char FileName[WIN32_MAX_FILE_PATH];
+        win32_InputFilePathGet(State, true, InputPlayingIndex, FileName);
+        State->PlaybackHandle = CreateFile(FileName, GENERIC_READ, 0, 0, OPEN_EXISTING, 0, 0);
+        
+        CopyMemory(State->EngineMemoryBlock, ReplayBuffer->MemoryBlock, State->TotalSize);
+    }
+}
+
+internal void win32_StatePlaybackStop(WIN32_STATE *State)
+{
+    CloseHandle(State->PlaybackHandle);
+    State->InputPlayingIndex = 0;
+}
+
 
 internal WIN32_WINDOW_DIMENSIONS win32_WindowDimensionsGet(HWND Window)
 {
@@ -139,6 +206,140 @@ internal LARGE_INTEGER win32_WallClockGet()
     return Result;
 }
 
+internal void win32_InputMessageProcess(POLAR_INPUT_STATE *NewState, bool IsDown)
+{
+    if(NewState->EndedDown != IsDown)
+    {
+        NewState->EndedDown = IsDown;
+        ++NewState->HalfTransitionCount;
+    }
+}
+
+
+internal void win32_WindowMessageProcess(WIN32_STATE *State, POLAR_INPUT_CONTROLLER *KeyboardController)
+{
+    MSG Message;
+    while(PeekMessage(&Message, 0, 0, 0, PM_REMOVE))
+    {
+        switch(Message.message)
+        {
+            case WM_QUIT:
+            {
+                GlobalRunning = false;
+                break;
+            }
+            
+            case WM_SYSKEYDOWN:
+            case WM_SYSKEYUP:
+            case WM_KEYDOWN:
+            case WM_KEYUP:
+            {
+                u32 VKCode = (uint32)Message.wParam;
+                bool WasDown = ((Message.lParam & (1 << 30)) != 0);
+                bool IsDown = ((Message.lParam & (1 << 31)) == 0);
+                
+                if(WasDown != IsDown)
+                {
+                    if(VKCode == 'W')
+                    {
+                        win32_InputMessageProcess(&KeyboardController->MoveUp, IsDown);
+                    }
+                    else if(VKCode == 'A')
+                    {
+                        win32_InputMessageProcess(&KeyboardController->MoveLeft, IsDown);
+                    }
+                    else if(VKCode == 'S')
+                    {
+                        win32_InputMessageProcess(&KeyboardController->MoveDown, IsDown);
+                    }
+                    else if(VKCode == 'D')
+                    {
+                        win32_InputMessageProcess(&KeyboardController->MoveRight, IsDown);
+                    }
+                    else if(VKCode == 'Q')
+                    {
+                        win32_InputMessageProcess(&KeyboardController->LeftShoulder, IsDown);
+                    }
+                    else if(VKCode == 'E')
+                    {
+                        win32_InputMessageProcess(&KeyboardController->RightShoulder, IsDown);
+                    }
+                    else if(VKCode == VK_UP)
+                    {
+                        win32_InputMessageProcess(&KeyboardController->ActionUp, IsDown);
+                    }
+                    else if(VKCode == VK_LEFT)
+                    {
+                        win32_InputMessageProcess(&KeyboardController->ActionLeft, IsDown);
+                    }
+                    else if(VKCode == VK_DOWN)
+                    {
+                        win32_InputMessageProcess(&KeyboardController->ActionDown, IsDown);
+                    }
+                    else if(VKCode == VK_RIGHT)
+                    {
+                        win32_InputMessageProcess(&KeyboardController->ActionRight, IsDown);
+                    }
+                    else if(VKCode == VK_ESCAPE)
+                    {
+                        win32_InputMessageProcess(&KeyboardController->Start, IsDown);
+                    }
+                    else if(VKCode == VK_SPACE)
+                    {
+                        win32_InputMessageProcess(&KeyboardController->Back, IsDown);
+                    }
+#if POLAR_LOOP                    
+                    else if(VKCode == 'P')
+                    {
+                        if(IsDown)
+                        {
+                            GlobalPause = !GlobalPause;
+                        }
+                    }
+                    else if(VKCode == 'L')
+                    {
+                        if(IsDown)
+                        {
+                            if(State->InputPlayingIndex == 0)
+                            {
+                                if(State->InputRecordingIndex == 0)
+                                {
+                                    win32_StateRecordingStart(State, 1);
+                                }
+                                else
+                                {
+                                    win32_StateRecordingStop(State);
+                                    win32_StatePlaybackStart(State, 1);
+                                }
+                            }
+                            else
+                            {
+                                win32_StatePlaybackStop(State);
+                            }
+                        }
+                    }
+#endif
+                }
+
+                bool32 AltKeyWasDown = (Message.lParam & (1 << 29));
+                if((VKCode == VK_F4) && AltKeyWasDown)
+                {
+                    GlobalRunning = false;
+                    break;
+                }
+            }
+
+            default:
+            {
+                TranslateMessage(&Message);
+                DispatchMessageA(&Message);
+                break;
+            }
+        }
+    }
+}
+
+
 //Windows callback for message processing
 LRESULT CALLBACK win32_MainCallback(HWND Window, UINT UserMessage, WPARAM WParam, LPARAM LParam)
 {
@@ -177,83 +378,18 @@ LRESULT CALLBACK win32_MainCallback(HWND Window, UINT UserMessage, WPARAM WParam
         case WM_KEYDOWN:
         case WM_KEYUP:
         {
-            //Virtual Keycode, keys without direct ANSI mappings
-            u32 VKCode = (u32) WParam;
-
-            //Check if key was down, if bit == 30 then it's true, otherwise false
-            bool WasDown = ((LParam & (1 << 30)) != 0);
-            //Check if being held down
-            bool IsDown = ((LParam & (1 << 31)) == 0);
-
-            if(WasDown != IsDown)
-            {
-                if(VKCode == 'W')
-                {
-                    OutputDebugString("W\n");
-                }
-                else if(VKCode == 'A')
-                {
-                    OutputDebugString("A\n");
-                }
-                else if(VKCode == 'S')
-                {
-                    OutputDebugString("S\n");
-                }
-                else if(VKCode == 'D')
-                {
-                    OutputDebugString("D\n");
-                }
-                else if(VKCode == 'Q')
-                {
-                    OutputDebugString("Q\n");
-                }
-                else if(VKCode == 'E')
-                {
-                    OutputDebugString("E\n");
-                }
-                else if(VKCode == VK_UP)
-                {
-                    OutputDebugString("Up\n");
-                    Amplitude = Amplitude + 0.1f;
-                }
-                else if(VKCode == VK_DOWN)
-                {
-                    OutputDebugString("Down\n");
-                    Amplitude = Amplitude - 0.1f;
-                }
-                else if(VKCode == VK_LEFT)
-                {
-                    OutputDebugString("Left\n");
-                }
-                else if(VKCode == VK_RIGHT)
-                {
-                    OutputDebugString("Right\n");
-                }
-                else if(VKCode == VK_SPACE)
-                {
-                    OutputDebugString("Space\n");
-                }
-                else if(VKCode == VK_ESCAPE)
-                {
-                    OutputDebugString("Escape\n");
-                }
-            }
-
-            bool AltKeyWasDown = ((LParam & (1 << 29)) != 0);
-
-            if((VKCode == VK_F4) && AltKeyWasDown)
-            {
-                GlobalRunning = false;
-            }
-            
+            OutputDebugString("Polar: Input came from an unrecognised source!\n");
             break;
         }
 
         case WM_PAINT: 
         {
-            //TODO: Visualise WASAPI buffer fills
-
+            PAINTSTRUCT Paint;
+            HDC PaintDevice = BeginPaint(Window, &Paint);
             WIN32_WINDOW_DIMENSIONS WindowDimensions = win32_WindowDimensionsGet(Window);
+            //TODO: Visualise WASAPI buffer fills
+            EndPaint(Window, &Paint);
+            break;
         }
 
         default:
@@ -351,7 +487,12 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                 CurrentReplayBuffer->MemoryBlock = MapViewOfFile(CurrentReplayBuffer->MemoryMap, FILE_MAP_ALL_ACCESS, 0, 0, WindowState.TotalSize);
             }
 
-            WIN32_ENGINE_CODE PolarState = Win32LoadGameCode(WindowState.EngineSourceCodePath, WindowState.TempEngineSourceCodePath);
+            WIN32_ENGINE_CODE PolarState = win32_EngineCodeLoad(WindowState.EngineSourceCodePath, WindowState.TempEngineSourceCodePath);
+            u32 LoadCounter = 0;
+
+            POLAR_INPUT Input[2] = {};
+            POLAR_INPUT *NewInput = &Input[0];
+            POLAR_INPUT *OldInput = &Input[1];
 
 #if WIN32_METRICS
             LARGE_INTEGER LastCounter = win32_WallClockGet();
@@ -362,59 +503,67 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             while(GlobalRunning)
             {
                 FILETIME DLLWriteTime = win32_LastWriteTimeGet(WindowState.EngineSourceCodePath);
+                if(CompareFileTime(&DLLWriteTime, &PolarState.DLLLastWriteTime) != 0)
+                {
+                        win32_EngineCodeUnload(&PolarState);
+                        PolarState = win32_EngineCodeLoad(WindowState.EngineSourceCodePath, WindowState.TempEngineSourceCodePath);
+                        LoadCounter = 0;
+                }         
+
+                POLAR_INPUT_CONTROLLER *OldKeyboardController = ControllerGet(OldInput, 0);
+                POLAR_INPUT_CONTROLLER *NewKeyboardController = ControllerGet(NewInput, 0);
+                *NewKeyboardController = {};
+                NewKeyboardController->IsConnected = true;
+                    
+                for(int ButtonIndex = 0; ButtonIndex < ArrayCount(NewKeyboardController->Buttons); ++ButtonIndex)
+                {
+                    NewKeyboardController->Buttons[ButtonIndex].EndedDown = OldKeyboardController->Buttons[ButtonIndex].EndedDown;
+                }
+
+                win32_WindowMessageProcess(&WindowState, NewKeyboardController);
+
+                if(!GlobalPause)
+                {
+
                 
 
 
-                MSG Messages;
+                    WIN32_WINDOW_DIMENSIONS WindowDimensions = win32_WindowDimensionsGet(Window);
 
-                //PeekMessage keeps processing message queue without blocking when there are no messages available
-                while(PeekMessage(&Messages, 0, 0, 0, PM_REMOVE))
-                {
-                    if(Messages.message == WM_QUIT)
-                    {
-                        PolarEngine.WASAPI->DeviceState = Stopped;
-                        GlobalRunning = false;
-                    }
+                    //TODO: To pass variables to change over time, HH025 win32_WindowMessageProcess        
+                    polar_render_BufferCopy(PolarEngine, OutputRenderFile, Osc, Amplitude, Pan);
 
-                    TranslateMessage(&Messages);
-                    DispatchMessage(&Messages);
-                }
-
-                WIN32_WINDOW_DIMENSIONS WindowDimensions = win32_WindowDimensionsGet(Window);
-
-                //TODO: To pass variables to change over time, HH025 Win32ProcessPendingMessages        
-                polar_render_BufferCopy(PolarEngine, OutputRenderFile, Osc, Amplitude, Pan);
-
-                HDC DeviceContext = GetDC(Window);
-                ReleaseDC(Window, DeviceContext);
+                    HDC DeviceContext = GetDC(Window);
+                    ReleaseDC(Window, DeviceContext);
 #if WIN32_METRICS                
-                UINT64 PositionFrequency;
-                UINT64 PositionUnits;
+                    UINT64 PositionFrequency;
+                    UINT64 PositionUnits;
 
-                PolarEngine.WASAPI->AudioClock->GetFrequency(&PositionFrequency);
-                PolarEngine.WASAPI->AudioClock->GetPosition(&PositionUnits, 0);
+                    PolarEngine.WASAPI->AudioClock->GetFrequency(&PositionFrequency);
+                    PolarEngine.WASAPI->AudioClock->GetPosition(&PositionUnits, 0);
 
-                //Sample cursor
-                u64 Cursor = PolarEngine.SampleRate * PositionUnits / PositionFrequency;
+                    //Sample cursor
+                    u64 Cursor = PolarEngine.SampleRate * PositionUnits / PositionFrequency;
 
-                LARGE_INTEGER EndCounter;
-                QueryPerformanceCounter(&EndCounter);
+                    LARGE_INTEGER EndCounter;
+                    QueryPerformanceCounter(&EndCounter);
 
-                u64 EndCycleCount = __rdtsc();
+                    u64 EndCycleCount = __rdtsc();
 
-                i64 CounterElapsed = EndCounter.QuadPart - LastCounter.QuadPart;
-                u64 CyclesElapsed = EndCycleCount - LastCycleCount;
-                f32 MSPerFrame = (f32) (((1000.0f * (f32) CounterElapsed) / (f32) PerformanceCounterFrequency));
-                f32 FramesPerSecond = (f32) PerformanceCounterFrequency / (f32) CounterElapsed;
-                f32 MegaHzCyclesPerFrame = (f32) (CyclesElapsed / (1000.0f * 1000.0f));
+                    i64 CounterElapsed = EndCounter.QuadPart - LastCounter.QuadPart;
+                    u64 CyclesElapsed = EndCycleCount - LastCycleCount;
+                    f32 MSPerFrame = (f32) (((1000.0f * (f32) CounterElapsed) / (f32) PerformanceCounterFrequency));
+                    f32 FramesPerSecond = (f32) PerformanceCounterFrequency / (f32) CounterElapsed;
+                    f32 MegaHzCyclesPerFrame = (f32) (CyclesElapsed / (1000.0f * 1000.0f));
 
-                char MetricsBuffer[256];
-                sprintf_s(MetricsBuffer, "Polar: %0.2f ms/frame\t %0.2f FPS\t %0.2f cycles(MHz)/frame\t %llu samples\n", MSPerFrame, FramesPerSecond, MegaHzCyclesPerFrame, Cursor);
-                OutputDebugString(MetricsBuffer);
+                    char MetricsBuffer[256];
+                    sprintf_s(MetricsBuffer, "Polar: %0.2f ms/frame\t %0.2f FPS\t %0.2f cycles(MHz)/frame\t %llu samples\n", MSPerFrame, FramesPerSecond, MegaHzCyclesPerFrame, Cursor);
+                    OutputDebugString(MetricsBuffer);
 
-                LastCounter = EndCounter;
-                LastCycleCount = EndCycleCount;	
+                    LastCounter = EndCounter;
+                    LastCycleCount = EndCycleCount;	
 #endif	
+                }
 			}
 
 #if WIN32_METRICS

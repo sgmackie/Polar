@@ -33,7 +33,7 @@ set ObjDir=.\obj\
 :: -DDEBUG_WIN32 for Windows API function debugging
 :: -DWIN32_METRICS for frame timing information printed to Visual Studio/Code debug console
 :: -Fe to set .exe name
-set CompilerFlags=-Zi -FC -MT -EHsc -W4 -Fo%ObjDir% -DWIN32=1 -DDEBUG -DDEBUG_CRT=1 -DDEBUG_WIN32=0 -DWIN32_METRICS=1 -Fe"polar.exe"
+set CompilerFlags=-Zi -FC -MT -EHsc -W4 -Fo%ObjDir% -DWIN32=1 -DDEBUG -DDEBUG_CRT=1 -DDEBUG_WIN32=0 -DWIN32_METRICS=1 -DPOLAR_LOOP=1 -Fe"polar.exe"
 
 :: Set debug path for logging files
 set DebugDir=%~dp0..\build\debug

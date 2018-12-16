@@ -31,4 +31,14 @@ i32 polar_StringLengthGet(char *String)
     return(Length);
 }
 
+POLAR_INPUT_CONTROLLER *ControllerGet(POLAR_INPUT *Input, u32 ControllerIndex)
+{
+    Assert(ControllerIndex < ArrayCount(Input->Controllers));
+    
+    POLAR_INPUT_CONTROLLER *Result = &Input->Controllers[ControllerIndex];
+    return Result;
+}
+
+
+
 #endif

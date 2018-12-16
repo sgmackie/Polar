@@ -14,6 +14,56 @@ void polar_StringConcatenate(char *StringA, size_t StringALength, char *StringB,
 i32 polar_StringLengthGet(char *String);
 
 
+//Input handling
+struct POLAR_INPUT_STATE
+{
+    i32 HalfTransitionCount;
+    bool EndedDown;
+};
+
+//TODO: Check if Clang compliant, may need to name structs
+struct POLAR_INPUT_CONTROLLER
+{
+    bool IsConnected;
+
+    union
+    {
+        POLAR_INPUT_STATE Buttons[12];
+        
+		struct
+        {
+            POLAR_INPUT_STATE MoveUp;
+            POLAR_INPUT_STATE MoveDown;
+            POLAR_INPUT_STATE MoveLeft;
+            POLAR_INPUT_STATE MoveRight;
+            
+            POLAR_INPUT_STATE ActionUp;
+            POLAR_INPUT_STATE ActionDown;
+            POLAR_INPUT_STATE ActionLeft;
+            POLAR_INPUT_STATE ActionRight;
+            
+            POLAR_INPUT_STATE LeftShoulder;
+            POLAR_INPUT_STATE RightShoulder;
+
+        	POLAR_INPUT_STATE Back;
+        	POLAR_INPUT_STATE Start;
+            
+            POLAR_INPUT_STATE Terminator;
+        };
+    };
+};
+
+
+struct POLAR_INPUT
+{
+    POLAR_INPUT_STATE MouseButtons[5];
+    i32 MouseX;
+	i32 MouseY;
+	i32 MouseZ;
+ 
+    POLAR_INPUT_CONTROLLER Controllers[5];
+};
+
 
 /*                   */
 /*  Windows code     */
@@ -35,11 +85,15 @@ struct WIN32_ENGINE_CODE
 {
     HMODULE EngineDLL;
     FILETIME DLLLastWriteTime;
+	bool IsDLLValid;
 };
 
 struct WIN32_STATE
 {
+	//State data
 	u64 TotalSize;
+	void *EngineMemoryBlock;
+	WIN32_REPLAY_BUFFER ReplayBuffers[4];
 
 	//Store .exe
     char EXEPath[WIN32_MAX_FILE_PATH];
@@ -49,8 +103,13 @@ struct WIN32_STATE
 	char EngineSourceCodePath[WIN32_MAX_FILE_PATH];
 	char TempEngineSourceCodePath[WIN32_MAX_FILE_PATH];
 
-	//Replay state
-	WIN32_REPLAY_BUFFER ReplayBuffers[4];
+	//File handle for state recording
+	HANDLE RecordingHandle;
+    i32 InputRecordingIndex;
+
+	//File handle for state playback
+    HANDLE PlaybackHandle;
+    i32 InputPlayingIndex;
 };
 
 struct WIN32_WINDOW_DIMENSIONS
@@ -71,13 +130,30 @@ struct WIN32_OFFSCREEN_BUFFER
 };
 
 //Prototypes
+//File loading
 internal void win32_EXEFileNameGet(WIN32_STATE *State);
 internal void win32_BuildEXEPathGet(WIN32_STATE *State, char *FileName, char *Path);
 internal void win32_InputFilePathGet(WIN32_STATE *State, bool InputStream, i32 SlotIndex, char *Path);
 internal FILETIME win32_LastWriteTimeGet(char *Filename);
-internal WIN32_ENGINE_CODE Win32LoadGameCode(char *SourceDLLName, char *TempDLLName);
+internal WIN32_ENGINE_CODE win32_EngineCodeLoad(char *SourceDLLName, char *TempDLLName);
+internal void win32_EngineCodeUnload(WIN32_ENGINE_CODE *EngineCode);
+
+//State recording
+internal WIN32_REPLAY_BUFFER *win32_ReplayBufferGet(WIN32_STATE *State, u32 Index);
+internal void win32_StateRecordingStart(WIN32_STATE *State, i32 InputRecordingIndex);
+internal void win32_StateRecordingStop(WIN32_STATE *State);
+internal void win32_StatePlaybackStart(WIN32_STATE *State, i32 InputPlayingIndex);
+internal void win32_StatePlaybackStop(WIN32_STATE *State);
+
+//Input handling
+internal void win32_InputMessageProcess(POLAR_INPUT_STATE *NewState, bool IsDown);
+internal void win32_WindowMessageProcess(WIN32_STATE *State, POLAR_INPUT_CONTROLLER *KeyboardController);
+
+//Display rendering
 internal WIN32_WINDOW_DIMENSIONS win32_WindowDimensionsGet(HWND Window);
 internal void win32_BitmapBufferResize(WIN32_OFFSCREEN_BUFFER *Buffer, i32 TargetWidth, i32 TargetHeight);
+
+//Performance timing
 internal LARGE_INTEGER win32_WallClockGet();
 
 /*                  */
