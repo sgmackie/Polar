@@ -23,6 +23,7 @@ global bool GlobalRunning = false;
 global bool GlobalPause = false;
 global WIN32_OFFSCREEN_BUFFER GlobalDisplayBuffer;
 global i32 MonitorRefreshRate = 120;
+global i64 GlobalPerformanceCounterFrequency;
 
 //!Test variables!
 global WAVEFORM Waveform = SINE;
@@ -161,6 +162,29 @@ internal void win32_StatePlaybackStop(WIN32_STATE *State)
 }
 
 
+
+internal void win32_InputRecord(WIN32_STATE *State, POLAR_INPUT *NewInput)
+{
+    DWORD BytesWritten;
+    WriteFile(State->RecordingHandle, NewInput, sizeof(*NewInput), &BytesWritten, 0);
+}
+
+internal void win32_InputPlayback(WIN32_STATE *State, POLAR_INPUT *NewInput)
+{
+    DWORD BytesRead = 0;
+    if(ReadFile(State->PlaybackHandle, NewInput, sizeof(*NewInput), &BytesRead, 0))
+    {   
+        //Hit end of recorded stream, loopback
+        if(BytesRead == 0)
+        {
+            i32 PlayingIndex = State->InputPlayingIndex;
+            win32_StateRecordingStop(State);
+            win32_StatePlaybackStart(State, PlayingIndex);
+            ReadFile(State->PlaybackHandle, NewInput, sizeof(*NewInput), &BytesRead, 0);
+        }
+    }
+}
+
 internal WIN32_WINDOW_DIMENSIONS win32_WindowDimensionsGet(HWND Window)
 {
     WIN32_WINDOW_DIMENSIONS WindowDimensions;
@@ -205,6 +229,14 @@ internal LARGE_INTEGER win32_WallClockGet()
     QueryPerformanceCounter(&Result);
     return Result;
 }
+
+
+internal f32 win32_SecondsElapsedGet(LARGE_INTEGER Start, LARGE_INTEGER End)
+{
+    f32 Result = ((f32)(End.QuadPart - Start.QuadPart) / (f32)GlobalPerformanceCounterFrequency);
+    return Result ;
+}
+
 
 internal void win32_InputMessageProcess(POLAR_INPUT_STATE *NewState, bool IsDown)
 {
@@ -411,11 +443,11 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
     win32_BuildEXEPathGet(&WindowState, "polar.dll", WindowState.EngineSourceCodePath);
     win32_BuildEXEPathGet(&WindowState, "polar_temp.dll", WindowState.TempEngineSourceCodePath);
 
-#if WIN32_METRICS
+    //Start timings
     LARGE_INTEGER PerformanceCounterFrequencyResult;
     QueryPerformanceFrequency(&PerformanceCounterFrequencyResult);
-    i64 PerformanceCounterFrequency = PerformanceCounterFrequencyResult.QuadPart;
-#endif
+    GlobalPerformanceCounterFrequency = PerformanceCounterFrequencyResult.QuadPart;
+
 
     //Request a 1ms period for timing functions
     UINT SchedulerPeriodInMS = 1;
@@ -494,12 +526,12 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             POLAR_INPUT *NewInput = &Input[0];
             POLAR_INPUT *OldInput = &Input[1];
 
-#if WIN32_METRICS
+            //Start timings
             LARGE_INTEGER LastCounter = win32_WallClockGet();
             LARGE_INTEGER FlipWallClock = win32_WallClockGet();
 
             u64 LastCycleCount = __rdtsc();
-#endif 
+
             while(GlobalRunning)
             {
                 FILETIME DLLWriteTime = win32_LastWriteTimeGet(WindowState.EngineSourceCodePath);
@@ -524,18 +556,109 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
                 if(!GlobalPause)
                 {
+                    //Mouse message processing
+                    POINT MousePointer;
+                    GetCursorPos(&MousePointer);
+                    ScreenToClient(Window, &MousePointer);
+                    NewInput->MouseX = MousePointer.x;
+                    NewInput->MouseY = MousePointer.y;
+                    NewInput->MouseZ = 0; //Scroll wheel
 
-                
+                    win32_InputMessageProcess(&NewInput->MouseButtons[0], GetKeyState(VK_LBUTTON) & (1 << 15));
+                    win32_InputMessageProcess(&NewInput->MouseButtons[1], GetKeyState(VK_MBUTTON) & (1 << 15));
+                    win32_InputMessageProcess(&NewInput->MouseButtons[2], GetKeyState(VK_RBUTTON) & (1 << 15));
+                    win32_InputMessageProcess(&NewInput->MouseButtons[3], GetKeyState(VK_XBUTTON1) & (1 << 15));
+                    win32_InputMessageProcess(&NewInput->MouseButtons[4], GetKeyState(VK_XBUTTON2) & (1 << 15));
 
+                    //Copy display buffer to render to
+                    WIN32_OFFSCREEN_BUFFER Buffer = {};
+                    Buffer.Data = GlobalDisplayBuffer.Data;
+                    Buffer.Width = GlobalDisplayBuffer.Width; 
+                    Buffer.Height = GlobalDisplayBuffer.Height;
+                    Buffer.Pitch = GlobalDisplayBuffer.Pitch;
+                    Buffer.BytesPerPixel = GlobalDisplayBuffer.BytesPerPixel;                    
 
-                    WIN32_WINDOW_DIMENSIONS WindowDimensions = win32_WindowDimensionsGet(Window);
+                    if(WindowState.InputRecordingIndex)
+                    {
+                        win32_InputRecord(&WindowState, NewInput);
+                    }
+
+                    if(WindowState.InputPlayingIndex)
+                    {
+                        win32_InputPlayback(&WindowState, NewInput);
+                    }
+
+                    // if(Game.UpdateAndRender)
+                    // {
+                        // Game.UpdateAndRender(&Thread, &GameMemory, NewInput, &Buffer);
+                    // }
 
                     //TODO: To pass variables to change over time, HH025 win32_WindowMessageProcess        
                     polar_render_BufferCopy(PolarEngine, OutputRenderFile, Osc, Amplitude, Pan);
 
+
+                    //Check rendering work elapsed and sleep if time remaining
+                    LARGE_INTEGER WorkCounter = win32_WallClockGet();
+                    f32 WorkSecondsElapsed = win32_SecondsElapsedGet(LastCounter, WorkCounter);
+                    f32 SecondsElapsedForFrame = WorkSecondsElapsed;
+                    
+                    if(SecondsElapsedForFrame < TargetSecondsPerFrame)
+                    {                        
+                        if(IsSleepGranular)
+                        {
+                            DWORD SleepTimeInMS = (DWORD)(1000.0f * (TargetSecondsPerFrame - SecondsElapsedForFrame));
+                            if(SleepTimeInMS > 0)
+                            {
+                                Sleep(SleepTimeInMS);
+                            }
+                        }
+                        
+                        f32 TestSecondsElapsedForFrame = win32_SecondsElapsedGet(LastCounter, win32_WallClockGet());
+                        if(TestSecondsElapsedForFrame < TargetSecondsPerFrame)
+                        {
+                            //!Missed sleep!
+                            // char SleepTimer[256];
+                            // sprintf_s(SleepTimer, "Polar: Missed sleep timer!\n");
+                            // OutputDebugString(SleepTimer);
+                        }
+                        
+                        while(SecondsElapsedForFrame < TargetSecondsPerFrame)
+                        {                            
+                            SecondsElapsedForFrame = win32_SecondsElapsedGet(LastCounter, win32_WallClockGet());
+                        }
+                    }
+                    else
+                    {
+                        //!Missed frame rate!
+                        // char FPSTimer[256];
+                        // sprintf_s(FPSTimer, "Polar: Missed frame rate timer!\n");
+                        // OutputDebugString(FPSTimer);
+                    }
+
+                    //Prepare timers before display buffer copy
+                    LARGE_INTEGER EndCounter = win32_WallClockGet();
+                    f32 MSPerFrame = 1000.0f * win32_SecondsElapsedGet(LastCounter, EndCounter);                    
+                    LastCounter = EndCounter;
+
+                    //Set window device context for upcoming display
+                    WIN32_WINDOW_DIMENSIONS WindowDimensions = win32_WindowDimensionsGet(Window);
                     HDC DeviceContext = GetDC(Window);
+                    //TODO: Debug info display
                     ReleaseDC(Window, DeviceContext);
-#if WIN32_METRICS                
+
+                    //Reset input for next loop
+                    POLAR_INPUT *Temp = NewInput;
+                    NewInput = OldInput;
+                    OldInput = Temp;
+
+                    //End performance timings
+                    FlipWallClock = win32_WallClockGet();
+                    u64 EndCycleCount = __rdtsc();
+                    u64 CyclesElapsed = EndCycleCount - LastCycleCount;
+                    LastCycleCount = EndCycleCount;
+
+
+#if WIN32_METRICS   
                     UINT64 PositionFrequency;
                     UINT64 PositionUnits;
 
@@ -544,24 +667,14 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
                     //Sample cursor
                     u64 Cursor = PolarEngine.SampleRate * PositionUnits / PositionFrequency;
-
-                    LARGE_INTEGER EndCounter;
-                    QueryPerformanceCounter(&EndCounter);
-
-                    u64 EndCycleCount = __rdtsc();
-
-                    i64 CounterElapsed = EndCounter.QuadPart - LastCounter.QuadPart;
-                    u64 CyclesElapsed = EndCycleCount - LastCycleCount;
-                    f32 MSPerFrame = (f32) (((1000.0f * (f32) CounterElapsed) / (f32) PerformanceCounterFrequency));
-                    f32 FramesPerSecond = (f32) PerformanceCounterFrequency / (f32) CounterElapsed;
-                    f32 MegaHzCyclesPerFrame = (f32) (CyclesElapsed / (1000.0f * 1000.0f));
+                    
+                    //TODO: Actually calculate this
+                    f64 FPS = 0.0f;
+                    f64 MegaHzCyclesPerFrame = ((f64)CyclesElapsed / (1000.0f * 1000.0f));
 
                     char MetricsBuffer[256];
-                    sprintf_s(MetricsBuffer, "Polar: %0.2f ms/frame\t %0.2f FPS\t %0.2f cycles(MHz)/frame\t %llu samples\n", MSPerFrame, FramesPerSecond, MegaHzCyclesPerFrame, Cursor);
+                    sprintf_s(MetricsBuffer, "Polar: %.02f ms/frame\t %.02f frames/sec\t %.02f cycles(MHz)/frame\t %llu samples\n", MSPerFrame, FPS, MegaHzCyclesPerFrame, Cursor);
                     OutputDebugString(MetricsBuffer);
-
-                    LastCounter = EndCounter;
-                    LastCycleCount = EndCycleCount;	
 #endif	
                 }
 			}

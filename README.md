@@ -2,6 +2,7 @@
 
 - [About](#about)
 - [Changelog](#changelog)
+- [Acknowledgments](#acknowledgments)
 
 ### About: <a name="about"></a>
 
@@ -23,3 +24,8 @@ Primary use is as a test bed for any DSP projects I'm currently working on and t
         - Added performance timing counters
             - WASAPI:
                 - Re-wrote WASAPI implementation (now included in source)
+
+### Acknowledgments: <a name="acknowledgments"></a>
+
+Platform code - https://handmadehero.org/
+WAV handling code - https://mackron.github.io/

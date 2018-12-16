@@ -148,6 +148,8 @@ internal void win32_StatePlaybackStop(WIN32_STATE *State);
 //Input handling
 internal void win32_InputMessageProcess(POLAR_INPUT_STATE *NewState, bool IsDown);
 internal void win32_WindowMessageProcess(WIN32_STATE *State, POLAR_INPUT_CONTROLLER *KeyboardController);
+internal void win32_InputRecord(WIN32_STATE *State, POLAR_INPUT *NewInput);
+internal void win32_InputPlayback(WIN32_STATE *State, POLAR_INPUT *NewInput);
 
 //Display rendering
 internal WIN32_WINDOW_DIMENSIONS win32_WindowDimensionsGet(HWND Window);
@@ -155,6 +157,7 @@ internal void win32_BitmapBufferResize(WIN32_OFFSCREEN_BUFFER *Buffer, i32 Targe
 
 //Performance timing
 internal LARGE_INTEGER win32_WallClockGet();
+internal f32 win32_SecondsElapsedGet(LARGE_INTEGER Start, LARGE_INTEGER End);
 
 /*                  */
 /*  WASAPI code     */
