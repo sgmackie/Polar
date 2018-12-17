@@ -95,7 +95,7 @@ struct WIN32_STATE
 	//State data
 	u64 TotalSize;
 	void *EngineMemoryBlock;
-	WIN32_REPLAY_BUFFER ReplayBuffers[4];
+	WIN32_REPLAY_BUFFER ReplayBuffers[1];	//Switched from 4
 
 	//Store .exe
     char EXEPath[WIN32_MAX_FILE_PATH];
@@ -322,13 +322,13 @@ typedef struct WASAPI_DATA
 } WASAPI_DATA;
 
 //BYTE buffer passed to WASAPI for rendering
-typedef struct WASAPI_BUFFER
+typedef struct POLAR_BUFFER
 {
 	u32 FramePadding;
 	u32 FramesAvailable;
 	f32 *SampleBuffer;
-	BYTE *ByteBuffer;
-} WASAPI_BUFFER;
+	void *DeviceBuffer;
+} POLAR_BUFFER;
 
 
 //Prototypes
@@ -348,10 +348,41 @@ internal bool wasapi_FormatGet(HRESULT &HR, WASAPI_DATA &Interface, WAVEFORMATEX
 
 //Prototypes
 //WASAPI
-WASAPI_DATA *polar_WASAPI_Create(WASAPI_BUFFER &Buffer);                        //Create and initialise WASAPI struct
+WASAPI_DATA *polar_WASAPI_Create(POLAR_BUFFER &Buffer);                        	//Create and initialise WASAPI struct
 void polar_WASAPI_Destroy(WASAPI_DATA *WASAPI);                                 //Remove WASAPI struct
-void polar_WASAPI_BufferGet(WASAPI_DATA *WASAPI, WASAPI_BUFFER &Buffer);        //Get WASAPI buffer and the maxium samples to fill
-void polar_WASAPI_BufferRelease(WASAPI_DATA *WASAPI, WASAPI_BUFFER &Buffer);    //Release byte buffer after the rendering loop
+void polar_WASAPI_BufferGet(WASAPI_DATA *WASAPI, POLAR_BUFFER &Buffer);        	//Get WASAPI buffer and the maxium samples to fill
+void polar_WASAPI_BufferRelease(WASAPI_DATA *WASAPI, POLAR_BUFFER &Buffer);    	//Release byte buffer after the rendering loop
+
+
+/*                  */
+/*  Memory code  	*/
+/*                  */
+
+
+typedef struct POLAR_MEMORY
+{
+    bool IsInitialized;
+
+    u64 PermanentDataSize;
+    void *PermanentData;
+
+    u64 TemporaryDataSize;
+    void *TemporaryData;
+} POLAR_MEMORY;
+
+
+
+/*                  */
+/*  Object code  	*/
+/*                  */
+
+typedef struct POLAR_OBJECT_STATE
+{
+	f32 Frequency;
+	f32 Amplitude;
+	f32 Pan;
+} POLAR_OBJECT_STATE;
+
 
 
 /*                  */
@@ -368,7 +399,7 @@ typedef struct POLAR_DATA       //Struct to hold platform specific audio API imp
 {
 	//TODO: Create union for different audio API (CoreAudio)
 	WASAPI_DATA *WASAPI;        //WASAPI data
-	WASAPI_BUFFER Buffer;       //Float and BYTE buffers for rendering
+	POLAR_BUFFER Buffer;       	//Float and device buffers for rendering
 	u32 BufferFrames;			//Frame count for output buffer
 	u16 Channels;               //Engine current channels
 	u32 SampleRate;             //Engine current sampling rate
@@ -409,8 +440,7 @@ internal u32 polar_render_DataChunkRound(u64 DataChunkSize);
 
 //Rendering
 internal f32 polar_render_PanPositionGet(u16 Position, f32 Amplitude, f32 PanFactor);    //Calculate stereo pan position
-internal void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, BYTE *ByteBuffer, f32 *FileSamples, OSCILLATOR *Osc, f32 Amplitude, f32 Pan);
-void polar_render_BufferCopy(POLAR_DATA &Engine, POLAR_WAV *File, OSCILLATOR *Osc, f32 Amplitude, f32 Pan);
-
+internal void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, void *DeviceBuffer, f32 *FileSamples, OSCILLATOR *Osc, POLAR_OBJECT_STATE *State);
+internal void polar_render_Update(POLAR_DATA &Engine, POLAR_WAV *File, OSCILLATOR *Osc, POLAR_MEMORY *Memory, POLAR_INPUT *Input);
 
 #endif

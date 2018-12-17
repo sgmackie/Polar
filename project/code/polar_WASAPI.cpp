@@ -62,7 +62,7 @@ internal void wasapi_FormatPrint(WAVEFORMATEXTENSIBLE &WaveFormat)
 	debug_PrintLine("\tCurrent Format\tChannels:\t\t\t\t%u", WaveFormat.Format.nChannels);
 	debug_PrintLine("\tCurrent Format\tChannel Mask:\t\t\t\t%s", wasapi_ChannelMaskTagString((WORD) WaveFormat.dwChannelMask));
 	debug_PrintLine("\tCurrent Format\tSample Rate:\t\t\t\t%u", WaveFormat.Format.nSamplesPerSec);
-	debug_PrintLine("\tCurrent Format\tAverage bytes per second:\t\t%li bytes\t%f kilobytes\t%f megabytes", WaveFormat.Format.nAvgBytesPerSec, Kilobytes(WaveFormat.Format.nAvgBytesPerSec), Megabytes(WaveFormat.Format.nAvgBytesPerSec));
+	debug_PrintLine("\tCurrent Format\tAverage bytes per second:\t\t%li bytes\t%f kilobytes\t%f megabytes", WaveFormat.Format.nAvgBytesPerSec, debug_Kilobytes(WaveFormat.Format.nAvgBytesPerSec), debug_Megabytes(WaveFormat.Format.nAvgBytesPerSec));
 	debug_PrintLine("\tCurrent Format\tBlock alignment:\t\t\t%u", WaveFormat.Format.nBlockAlign);
 	debug_PrintLine("\tCurrent Format\tBit Depth:\t\t\t\t%u", WaveFormat.Format.wBitsPerSample);
 	debug_PrintLine("\tCurrent Format\tBits per sample:\t\t\t%u", WaveFormat.Samples.wValidBitsPerSample);

@@ -57,13 +57,9 @@ internal bool polar_render_WAVWriteHeader(POLAR_WAV *File, POLAR_DATA *Engine)
 POLAR_WAV *polar_render_WAVWriteCreate(const char *FilePath, POLAR_DATA *Engine)
 {
 	//Allocate memory
-#if WIN32
-	POLAR_WAV *File = (POLAR_WAV *) VirtualAlloc(0, (sizeof *File), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-	File->Data = (f32 *) VirtualAlloc(0, ((sizeof *File->Data) * ((Engine->BufferFrames * Engine->Channels))), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-#else
 	POLAR_WAV *File = (POLAR_WAV *) malloc((sizeof *File));
 	File->Data = (f32 *) malloc(((sizeof *File->Data) * ((Engine->BufferFrames * Engine->Channels))));
-#endif
+
 	File->Path = FilePath;
 
 	//Open file handle
@@ -194,13 +190,8 @@ void polar_render_WAVWriteDestroy(POLAR_WAV *File)
 	//Close file handle
 	fclose((FILE*)File->WAVFile);
 
-#if WIN32
-	VirtualFree(File->Data, 0, MEM_RELEASE);
-	VirtualFree(File, 0, MEM_RELEASE);
-#else
 	free(File->Data);
 	free(File);
-#endif
 }
 
 
@@ -223,10 +214,10 @@ internal f32 polar_render_PanPositionGet(u16 Position, f32 Amplitude, f32 PanFac
 	return PanPosition;
 }
 
-internal void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, BYTE *ByteBuffer, f32 *FileSamples, OSCILLATOR *Osc, f32 Amplitude, f32 Pan)
+internal void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, void *DeviceBuffer, f32 *FileSamples, OSCILLATOR *Osc, POLAR_OBJECT_STATE *State)
 {
 	//Cast from float to BYTE
-	SampleBuffer = reinterpret_cast<f32 *>(ByteBuffer);
+	SampleBuffer = reinterpret_cast<f32 *>(DeviceBuffer);
 	
 	f32 CurrentSample = 0;
 	f32 PanAmp = 0;
@@ -235,11 +226,12 @@ internal void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *
 	for(u32 FrameIndex = 0; FrameIndex < FramesToWrite; FrameIndex += ChannelCount)
 	{
 		//TODO: Taylor series GPU for sine call, matrix additive function
+		Osc->FrequencyCurrent = State->Frequency;
 		CurrentSample = (f32) Osc->Tick(Osc);
 
 		for(u16 ChannelIndex = 0; ChannelIndex < ChannelCount; ++ChannelIndex)
 		{
-			PanAmp = polar_render_PanPositionGet(ChannelIndex, Amplitude, Pan);
+			PanAmp = polar_render_PanPositionGet(ChannelIndex, State->Amplitude, State->Pan);
 
 			SampleBuffer[FrameIndex + ChannelIndex] = CurrentSample * PanAmp;
 
@@ -250,26 +242,67 @@ internal void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *
 		}		
 	}
 
-	memcpy(ByteBuffer, SampleBuffer, sizeof(SampleBuffer));
+	memcpy(DeviceBuffer, SampleBuffer, sizeof(SampleBuffer));
 }
 
 
-void polar_render_BufferCopy(POLAR_DATA &Engine, POLAR_WAV *File, OSCILLATOR *Osc, f32 Amplitude, f32 Pan)
+internal void polar_render_Update(POLAR_DATA &Engine, POLAR_WAV *File, OSCILLATOR *Osc, POLAR_MEMORY *Memory, POLAR_INPUT *Input)
 {
-	polar_WASAPI_BufferGet(Engine.WASAPI, Engine.Buffer);
+	//Memory checking
+    Assert(sizeof(POLAR_OBJECT_STATE) <= Memory->PermanentDataSize);
+    POLAR_OBJECT_STATE *ObjectState = (POLAR_OBJECT_STATE *)Memory->PermanentData;
+    
+	//Initial object initialisation
+	if(!Memory->IsInitialized)
+    {       
+        ObjectState->Frequency = 440;
+        ObjectState->Amplitude = 0.35f;
+        ObjectState->Pan = 0;
 
-	//TODO: How expensive are if else statements in the rendering loop?
+        Memory->IsInitialized = true;
+    }
+
+	//Use input to change states
+    for(i32 ControllerIndex = 0; ControllerIndex < ArrayCount(Input->Controllers); ++ControllerIndex)
+    {
+		POLAR_INPUT_CONTROLLER *Controller = ControllerGet(Input, ControllerIndex);
+		
+		if(Controller->MoveUp.EndedDown)
+        {
+            ObjectState->Amplitude += 0.1f;
+        }
+            
+        if(Controller->MoveDown.EndedDown)
+        {
+            ObjectState->Amplitude -= 0.1f;
+        }
+
+		if(Controller->MoveRight.EndedDown)
+        {
+            ObjectState->Frequency += 10.0f;
+        }
+            
+        if(Controller->MoveLeft.EndedDown)
+        {
+            ObjectState->Frequency -= 10.0f;
+        }
+	}
+
+	//Write sound buffer
 	if(File != nullptr)
 	{
-		polar_render_BufferFill(Engine.Channels, (Engine.Buffer.FramesAvailable * Engine.Channels), Engine.Buffer.SampleBuffer, Engine.Buffer.ByteBuffer, File->Data, Osc, Amplitude, Pan);
+        polar_render_BufferFill(Engine.Channels, (Engine.Buffer.FramesAvailable * Engine.Channels), Engine.Buffer.SampleBuffer, Engine.Buffer.DeviceBuffer, File->Data, Osc, ObjectState);
 		File->TotalSampleCount += polar_render_WAVWriteFloat(File, (Engine.Buffer.FramesAvailable * Engine.Channels), File->Data);
 	}
+
 	else
 	{
-		polar_render_BufferFill(Engine.Channels, (Engine.Buffer.FramesAvailable * Engine.Channels), Engine.Buffer.SampleBuffer, Engine.Buffer.ByteBuffer, nullptr, Osc, Amplitude, Pan);
+		polar_render_BufferFill(Engine.Channels, (Engine.Buffer.FramesAvailable * Engine.Channels), Engine.Buffer.SampleBuffer, Engine.Buffer.DeviceBuffer, nullptr, Osc, ObjectState);
 	}
-
-	polar_WASAPI_BufferRelease(Engine.WASAPI, Engine.Buffer);
 }
+
+
+
+
 
 #endif

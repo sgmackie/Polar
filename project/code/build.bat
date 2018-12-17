@@ -21,7 +21,7 @@ set ObjDir=.\obj\
 
 :: Set link flags:
 :: /link            to enable linker options
-:: -INCREMENTAL:NO  to disable incremental linking (building everything from scratch everytime anyway)
+:: -INCREMENTAL:NO  to disable incremental linking (not needed when building from scratch)
 :: -OPT:REF         to eleminate functions that are never referenced
 :: User32.lib       Windows general library
 :: Ole32.lib        WASAPI COM objects
