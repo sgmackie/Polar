@@ -1,17 +1,6 @@
 //CRT
 #include <stdlib.h>
 
-//Type defines
-#include "misc/includes/typedefs.h"
 
-//Debug
-#include "library/debug/debug_macros.h"
 
-//Includes
-//Synthesis
-#include "library/entropy/entropy.h"
-
-//Polar
-#include "polar.h"
-#include "polar_platform.cpp"
-#include "polar_render.cpp"
+//"https://hero.handmade.network/forums/code-discussion/t/56-mac_os_x_coreaudio_reference_setup_code"

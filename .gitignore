@@ -16,6 +16,7 @@ project/build/libexp
 
 #Audio data
 *.wav
+data/
 
 #Profiling
 profile/
@@ -25,3 +26,4 @@ OPA/
 OLD/
 Examples/
 *.pdf
+external/

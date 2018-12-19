@@ -13,8 +13,8 @@ Primary use is as a test bed for any DSP projects I'm currently working on and t
 ### Changelog: <a name="changelog"></a>
 
 - v0.2 (Current):
-    - Polar:
-        - Added basic WAV file rendering (only tested with the current audio device properties)
+    - Windows:
+        - Able to record input and object states and loop them back
 - v0.1 (Rolled back from previous WASAPI build):
     - Polar:
         - Preliminary POLAR_DATA struct to hold platform audio API data and critical audio device properties (channels / sampling rate)

@@ -1,17 +1,10 @@
 //CRT
 #include <stdlib.h>
+#include <stdio.h>
 
-//Type defines
-#include "misc/includes/typedefs.h"
 
-//Debug
-#include "library/debug/debug_macros.h"
 
-//Includes
-//Synthesis
-#include "library/entropy/entropy.h"
-
-//Polar
-#include "polar.h"
-#include "polar_platform.cpp"
-#include "polar_render.cpp"
+//Debugging: "https://www.youtube.com/watch?v=xQ0ONbt-qPs"
+//gdb linux_polar
+//start
+//list

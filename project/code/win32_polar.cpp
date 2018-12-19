@@ -1,37 +1,89 @@
-//CRT
-#include <stdlib.h>
-#include <Windows.h>
-
-//Type defines
-#include "misc/includes/typedefs.h"
-
-//Debug
-#include "library/debug/debug_macros.h"
-
-//Includes
-//Synthesis
-#include "library/entropy/entropy.h"
-
 //Polar
+//TODO: Create entropy.lib for source code
 #include "polar.h"
-#include "polar.cpp"
-#include "polar_platform.cpp"
-#include "polar_render.cpp"
+
+//Windows includes
+#include <Windows.h>
+#include "win32_polar.h"
 
 //Win32 globals
-global bool GlobalRunning = false;
-global bool GlobalPause = false;
+global bool GlobalRunning;
+global bool GlobalPause;
 global WIN32_OFFSCREEN_BUFFER GlobalDisplayBuffer;
 global i32 MonitorRefreshRate = 60;
 global i64 GlobalPerformanceCounterFrequency;
 
 //!Test variables!
 global WAVEFORM Waveform = SINE;
-// global f32 Frequency = 440;
-// global f32 Amplitude = 0.35f;
-// global f32 Pan = 0;
 
-//Find file name of Polar application
+//WASAPI setup
+//Create and initialise WASAPI struct
+internal WASAPI_DATA *win32_WASAPI_Create(POLAR_BUFFER &Buffer, u32 UserSampleRate, u16 UserBitRate, u16 UserChannels)
+{	
+	WASAPI_DATA *WASAPI = wasapi_InterfaceCreate();
+	wasapi_InterfaceInit(*WASAPI);
+
+	if((WASAPI->DeviceReady = wasapi_DeviceInit(WASAPI->HR, *WASAPI, UserSampleRate, UserBitRate, UserChannels)) == false)
+	{
+		wasapi_DeviceDeInit(*WASAPI);
+		wasapi_InterfaceDestroy(WASAPI);
+		HR_TO_RETURN(WASAPI->HR, "Couldn't get WASAPI buffer for zero fill", nullptr);
+	}
+
+	Buffer.FramePadding = 0;
+	Buffer.FramesAvailable = 0;
+	Buffer.SampleBuffer = (f32 *) VirtualAlloc(0, ((sizeof *Buffer.SampleBuffer) * ((WASAPI->OutputBufferFrames * WASAPI->OutputWaveFormat->Format.nChannels))), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+	Buffer.DeviceBuffer = nullptr;
+
+	// Initial zero fill	
+	WASAPI->HR = WASAPI->AudioRenderClient->GetBuffer(WASAPI->OutputBufferFrames, (BYTE **) &Buffer.DeviceBuffer);
+	HR_TO_RETURN(WASAPI->HR, "Couldn't get WASAPI buffer for zero fill", nullptr);
+
+	WASAPI->HR = WASAPI->AudioRenderClient->ReleaseBuffer(WASAPI->OutputBufferFrames, AUDCLNT_BUFFERFLAGS_SILENT);
+	HR_TO_RETURN(WASAPI->HR, "Couldn't release WASAPI buffer for zero fill", nullptr);
+
+	return WASAPI;
+}
+
+//Remove WASAPI struct
+internal void win32_WASAPI_Destroy(WASAPI_DATA *WASAPI)
+{
+	wasapi_DeviceDeInit(*WASAPI);
+	wasapi_InterfaceDestroy(WASAPI);
+}
+
+//Get WASAPI buffer and release after filling with specified amount of samples
+internal void win32_WASAPI_BufferGet(WASAPI_DATA *WASAPI, POLAR_BUFFER &Buffer)
+{
+	if(WASAPI->DeviceState == Playing)
+	{
+		WaitForSingleObject(WASAPI->RenderEvent, INFINITE);
+
+		WASAPI->HR = WASAPI->AudioClient->GetCurrentPadding(&Buffer.FramePadding);
+		HR_TO_RETURN(WASAPI->HR, "Couldn't get current padding", NONE);
+
+		Buffer.FramesAvailable = WASAPI->OutputBufferFrames - Buffer.FramePadding;
+
+		if(Buffer.FramesAvailable != 0)
+		{
+			WASAPI->HR = WASAPI->AudioRenderClient->GetBuffer(Buffer.FramesAvailable, (BYTE **) &Buffer.DeviceBuffer);
+			HR_TO_RETURN(WASAPI->HR, "Couldn't get WASAPI buffer", NONE);
+		}
+	}
+}
+
+//Release byte buffer after the rendering loop
+internal void win32_WASAPI_BufferRelease(WASAPI_DATA *WASAPI, POLAR_BUFFER &Buffer)
+{
+	if(WASAPI->DeviceState == Playing)
+	{
+		WASAPI->HR = WASAPI->AudioRenderClient->ReleaseBuffer(Buffer.FramesAvailable, 0);
+		HR_TO_RETURN(WASAPI->HR, "Couldn't release WASAPI buffer", NONE);	
+	}
+}
+
+//Windows file handling
+//Find file name of current application
 internal void win32_EXEFileNameGet(WIN32_STATE *State)
 {
     //Gets full path of the current running process (0)
@@ -48,19 +100,21 @@ internal void win32_EXEFileNameGet(WIN32_STATE *State)
     }
 }
 
+//Get file path
 internal void win32_BuildEXEPathGet(WIN32_STATE *State, char *FileName, char *Path)
 {
-    polar_StringConcatenate(State->EXEFileName, (State->EXEFileName - State->EXEPath), FileName, polar_StringLengthGet(FileName), Path);
+    polar_StringConcatenate(State->EXEFileName - State->EXEPath, State->EXEPath, polar_StringLengthGet(FileName), FileName, Path);
 }
 
-internal void win32_InputFilePathGet(WIN32_STATE *State, bool InputStream, i32 SlotIndex, char *Path)
+//"Print" to a custom text file for looping edits
+internal void win32_InputFilePathGet(WIN32_STATE *State, bool InputStream, i32 Index, char *Path)
 {
     char Temp[64];
-    wsprintf(Temp, "loop_edit_%d_%s.hmi", SlotIndex, InputStream ? "input" : "state");
+    wsprintf(Temp, "loop_point_%d_%s.pli", Index, InputStream ? "input" : "state");
     win32_BuildEXEPathGet(State, Temp, Path);
 }
 
-
+//Find the last time a file was written to
 internal FILETIME win32_LastWriteTimeGet(char *Filename)
 {
     FILETIME LastWriteTime = {};
@@ -74,6 +128,7 @@ internal FILETIME win32_LastWriteTimeGet(char *Filename)
     return LastWriteTime;
 }
 
+//Load dll for dynamic render code
 internal WIN32_ENGINE_CODE win32_EngineCodeLoad(char *SourceDLLName, char *TempDLLName)
 {
     WIN32_ENGINE_CODE Result = {};
@@ -82,20 +137,21 @@ internal WIN32_ENGINE_CODE win32_EngineCodeLoad(char *SourceDLLName, char *TempD
     CopyFile(SourceDLLName, TempDLLName, FALSE);
     Result.EngineDLL = LoadLibraryA(TempDLLName);
     
-    // if(Result.EngineDLL)
-    // {
-    //     Result.UpdateAndRender = (game_update_and_render *) GetProcAddress(Result.EngineDLL, "GameUpdateAndRender");
-    //     Result.IsDLLValid = (Result.UpdateAndRender);
-    // }
+    if(Result.EngineDLL)
+    {
+        Result.UpdateAndRender = (polar_render_Update *) GetProcAddress(Result.EngineDLL, "RenderUpdate");
+        Result.IsDLLValid = (Result.UpdateAndRender);
+    }
 
-    // if(!Result.IsDLLValid)
-    // {
-    //     Result.UpdateAndRender = 0;
-    // }
+    if(!Result.IsDLLValid)
+    {
+        Result.UpdateAndRender = 0;
+    }
 
     return Result;
 }
 
+//Unload .dll
 internal void win32_EngineCodeUnload(WIN32_ENGINE_CODE *EngineCode)
 {
     if(EngineCode->EngineDLL)
@@ -104,11 +160,12 @@ internal void win32_EngineCodeUnload(WIN32_ENGINE_CODE *EngineCode)
         EngineCode->EngineDLL = 0;
     }
 
-    // EngineCode->IsDLLValid = false;
-    // EngineCode->UpdateAndRender = 0;
+    EngineCode->IsDLLValid = false;
+    EngineCode->UpdateAndRender = 0;
 }
 
-
+//State handling
+//Get the current replay buffer
 internal WIN32_REPLAY_BUFFER *win32_ReplayBufferGet(WIN32_STATE *State, u32 Index)
 {
     Assert(Index < ArrayCount(State->ReplayBuffers));
@@ -116,7 +173,7 @@ internal WIN32_REPLAY_BUFFER *win32_ReplayBufferGet(WIN32_STATE *State, u32 Inde
     return Result;
 }
 
-
+//Start recording the engine state
 internal void win32_StateRecordingStart(WIN32_STATE *State, i32 InputRecordingIndex)
 {
     WIN32_REPLAY_BUFFER *ReplayBuffer = win32_ReplayBufferGet(State, InputRecordingIndex);
@@ -133,14 +190,14 @@ internal void win32_StateRecordingStart(WIN32_STATE *State, i32 InputRecordingIn
     }
 }
 
-
+//Stop recording the engine state
 internal void win32_StateRecordingStop(WIN32_STATE *State)
 {
     CloseHandle(State->RecordingHandle);
     State->InputRecordingIndex = 0;
 }
 
-
+//Start playback of the recorded state
 internal void win32_StatePlaybackStart(WIN32_STATE *State, i32 InputPlayingIndex)
 {
     WIN32_REPLAY_BUFFER *ReplayBuffer = win32_ReplayBufferGet(State, InputPlayingIndex);
@@ -156,20 +213,22 @@ internal void win32_StatePlaybackStart(WIN32_STATE *State, i32 InputPlayingIndex
     }
 }
 
+//Stop playback of the recorded state
 internal void win32_StatePlaybackStop(WIN32_STATE *State)
 {
     CloseHandle(State->PlaybackHandle);
     State->InputPlayingIndex = 0;
 }
 
-
-
+//Input state handling
+//Start recording input parameters
 internal void win32_InputRecord(WIN32_STATE *State, POLAR_INPUT *NewInput)
 {
     DWORD BytesWritten;
     WriteFile(State->RecordingHandle, NewInput, sizeof(*NewInput), &BytesWritten, 0);
 }
 
+//Start playback of recorded inputs
 internal void win32_InputPlayback(WIN32_STATE *State, POLAR_INPUT *NewInput)
 {
     DWORD BytesRead = 0;
@@ -186,59 +245,7 @@ internal void win32_InputPlayback(WIN32_STATE *State, POLAR_INPUT *NewInput)
     }
 }
 
-internal WIN32_WINDOW_DIMENSIONS win32_WindowDimensionsGet(HWND Window)
-{
-    WIN32_WINDOW_DIMENSIONS WindowDimensions;
-
-    RECT ClientRect; 					//Rect structure for window dimensions
-    GetClientRect(Window, &ClientRect); //Function to get current window dimensions in a RECT format
-    
-    WindowDimensions.Width = ClientRect.right - ClientRect.left;
-    WindowDimensions.Height = ClientRect.bottom - ClientRect.top;
-
-    return WindowDimensions;
-}
-
-internal void win32_BitmapBufferResize(WIN32_OFFSCREEN_BUFFER *Buffer, i32 TargetWidth, i32 TargetHeight)
-{
-    if(Buffer->Data)
-    {
-        VirtualFree(Buffer->Data, 0, MEM_RELEASE);
-    }
-
-    Buffer->Width = TargetWidth;
-    Buffer->Height = TargetHeight;
-    Buffer->BytesPerPixel = 4;
-
-    //Negative height field means the bitmap is top-down, not bottom-up, so first 3 bytes of the bitmap are the RGB values for the top left pixel
-    Buffer->BitmapInfo.bmiHeader.biSize = sizeof(Buffer->BitmapInfo.bmiHeader);
-    Buffer->BitmapInfo.bmiHeader.biWidth = Buffer->Width;
-    Buffer->BitmapInfo.bmiHeader.biHeight = -Buffer->Height;
-    Buffer->BitmapInfo.bmiHeader.biPlanes = 1;
-    Buffer->BitmapInfo.bmiHeader.biBitCount = 32;
-    Buffer->BitmapInfo.bmiHeader.biCompression = BI_RGB;
-
-    i32 BitmapDataSize = ((Buffer->Width * Buffer->Height) * Buffer->BytesPerPixel);
-    Buffer->Data = VirtualAlloc(0, BitmapDataSize, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
-    Buffer->Pitch = Buffer->Width * Buffer->BytesPerPixel;
-}
-
-
-internal LARGE_INTEGER win32_WallClockGet()
-{    
-    LARGE_INTEGER Result;
-    QueryPerformanceCounter(&Result);
-    return Result;
-}
-
-
-internal f32 win32_SecondsElapsedGet(LARGE_INTEGER Start, LARGE_INTEGER End)
-{
-    f32 Result = ((f32)(End.QuadPart - Start.QuadPart) / (f32)GlobalPerformanceCounterFrequency);
-    return Result ;
-}
-
-
+//Process inputs when released
 internal void win32_InputMessageProcess(POLAR_INPUT_STATE *NewState, bool IsDown)
 {
     if(NewState->EndedDown != IsDown)
@@ -248,7 +255,7 @@ internal void win32_InputMessageProcess(POLAR_INPUT_STATE *NewState, bool IsDown
     }
 }
 
-
+//Process the window message queue
 internal void win32_WindowMessageProcess(WIN32_STATE *State, POLAR_INPUT_CONTROLLER *KeyboardController)
 {
     MSG Message;
@@ -321,7 +328,6 @@ internal void win32_WindowMessageProcess(WIN32_STATE *State, POLAR_INPUT_CONTROL
                     {
                         win32_InputMessageProcess(&KeyboardController->Back, IsDown);
                     }
-#if POLAR_LOOP                    
                     else if(VKCode == 'P')
                     {
                         if(IsDown)
@@ -351,7 +357,6 @@ internal void win32_WindowMessageProcess(WIN32_STATE *State, POLAR_INPUT_CONTROL
                             }
                         }
                     }
-#endif
                 }
 
                 bool32 AltKeyWasDown = (Message.lParam & (1 << 29));
@@ -372,12 +377,69 @@ internal void win32_WindowMessageProcess(WIN32_STATE *State, POLAR_INPUT_CONTROL
     }
 }
 
+//Display rendering
+//Get the current window dimensions
+internal WIN32_WINDOW_DIMENSIONS win32_WindowDimensionsGet(HWND Window)
+{
+    WIN32_WINDOW_DIMENSIONS Result;
+
+    RECT ClientRect; 					//Rect structure for window dimensions
+    GetClientRect(Window, &ClientRect); //Function to get current window dimensions in a RECT format
+    
+    Result.Width = ClientRect.right - ClientRect.left;
+    Result.Height = ClientRect.bottom - ClientRect.top;
+
+    return Result;
+}
+
+//Resize input buffer to a specific width and height
+internal void win32_BitmapBufferResize(WIN32_OFFSCREEN_BUFFER *Buffer, i32 TargetWidth, i32 TargetHeight)
+{
+    if(Buffer->Data)
+    {
+        VirtualFree(Buffer->Data, 0, MEM_RELEASE);
+    }
+
+    Buffer->Width = TargetWidth;
+    Buffer->Height = TargetHeight;
+    Buffer->BytesPerPixel = 4;
+
+    //Negative height field means the bitmap is top-down, not bottom-up, so first 3 bytes of the bitmap are the RGB values for the top left pixel
+    Buffer->BitmapInfo.bmiHeader.biSize = sizeof(Buffer->BitmapInfo.bmiHeader);
+    Buffer->BitmapInfo.bmiHeader.biWidth = Buffer->Width;
+    Buffer->BitmapInfo.bmiHeader.biHeight = -Buffer->Height;
+    Buffer->BitmapInfo.bmiHeader.biPlanes = 1;
+    Buffer->BitmapInfo.bmiHeader.biBitCount = 32;
+    Buffer->BitmapInfo.bmiHeader.biCompression = BI_RGB;
+
+    Buffer->Pitch = Align16(Buffer->Width * Buffer->BytesPerPixel);
+    i32 BitmapDataSize = (Buffer->Pitch * Buffer->Height);
+    Buffer->Data = VirtualAlloc(0, BitmapDataSize, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+}
+
+//Copy buffer to a specified device
 internal void win32_DisplayBufferInWindow(WIN32_OFFSCREEN_BUFFER *Buffer, HDC DeviceContext)
 {
     StretchDIBits(DeviceContext, 0, 0, Buffer->Width, Buffer->Height, 0, 0, Buffer->Width, Buffer->Height, Buffer->Data, &Buffer->BitmapInfo, DIB_RGB_COLORS, SRCCOPY);
 }
 
+//Timing code
+//Get the current position of the perfomance counter (https://msdn.microsoft.com/en-us/library/windows/desktop/ms644904(v=vs.85).aspx)
+internal LARGE_INTEGER win32_WallClockGet()
+{    
+    LARGE_INTEGER Result;
+    QueryPerformanceCounter(&Result);
+    return Result;
+}
 
+//Determine the amount of seconfs elapised against the perfomance counter
+internal f32 win32_SecondsElapsedGet(LARGE_INTEGER Start, LARGE_INTEGER End)
+{
+    f32 Result = ((f32)(End.QuadPart - Start.QuadPart) / (f32)GlobalPerformanceCounterFrequency);
+    return Result ;
+}
+
+//Callback and main window
 //Windows callback for message processing
 LRESULT CALLBACK win32_MainCallback(HWND Window, UINT UserMessage, WPARAM WParam, LPARAM LParam)
 {
@@ -387,27 +449,23 @@ LRESULT CALLBACK win32_MainCallback(HWND Window, UINT UserMessage, WPARAM WParam
     {
         case WM_SIZE:
         {   
-            OutputDebugString("WM_SIZE\n");
             break;
         }
 
         case WM_DESTROY:
         {
             GlobalRunning = false;
-            OutputDebugString("WM_DESTROY\n");
             break;
         }
 
         case WM_CLOSE:
         {
             GlobalRunning = false;
-            OutputDebugString("WM_CLOSE\n");
             break;
         }
 
         case WM_ACTIVATEAPP:
         {
-            OutputDebugString("WM_ACTIVATEAPP\n");
             break;
         }
 
@@ -441,8 +499,8 @@ LRESULT CALLBACK win32_MainCallback(HWND Window, UINT UserMessage, WPARAM WParam
     return Result;
 }  
 
-
-int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int CommandShow)
+//Windows entry point
+int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowCode)
 {
     //Get .exe and .dll paths
     WIN32_STATE WindowState = {};
@@ -455,7 +513,6 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
     QueryPerformanceFrequency(&PerformanceCounterFrequencyResult);
     GlobalPerformanceCounterFrequency = PerformanceCounterFrequencyResult.QuadPart;
 
-
     //Request a 1ms period for timing functions
     UINT SchedulerPeriodInMS = 1;
     bool IsSleepGranular = (timeBeginPeriod(SchedulerPeriodInMS) == TIMERR_NOERROR);
@@ -465,13 +522,13 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
     //Set window properties
     WNDCLASS WindowClass = {};
-    WindowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC; //Create unique device context for this window
+    WindowClass.style = CS_HREDRAW | CS_VREDRAW;            //Set window redraw properties
     WindowClass.lpfnWndProc = win32_MainCallback;           //Call the window process
     WindowClass.hInstance = Instance;                       //Handle instance passed from win32_WinMain
     WindowClass.lpszClassName = "PolarWindowClass";         //Name of Window class
     PrevInstance = 0;                                       //Handle to previous instance of the window
     CommandLine = GetCommandLine();                         //Get command line string for application
-    CommandShow = SW_SHOW;                                  //Activate and show window
+    ShowCode = SW_SHOW;                                     //Activate and show window
 
 	if(RegisterClass(&WindowClass))
     {
@@ -496,31 +553,32 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             //Initialise Polar
             POLAR_DATA PolarEngine = {};
             //TODO: User define properties in SHARED_MODE dont work, IsFormatSupported returns null Adjusted WAVEFORMATEX
-            PolarEngine.WASAPI = polar_WASAPI_Create(PolarEngine.Buffer, 0, 0, 0);
-            PolarEngine.BufferFrames = PolarEngine.WASAPI->OutputBufferFrames;
-            PolarEngine.Channels = PolarEngine.WASAPI->OutputWaveFormat->Format.nChannels;
-            PolarEngine.SampleRate = PolarEngine.WASAPI->OutputWaveFormat->Format.nSamplesPerSec;
-            PolarEngine.BitRate = PolarEngine.WASAPI->OutputWaveFormat->Format.wBitsPerSample;
-            
+            WASAPI_DATA *WASAPI =       win32_WASAPI_Create(PolarEngine.Buffer, 0, 0, 0);
+            PolarEngine.BufferFrames =  WASAPI->OutputBufferFrames;
+            PolarEngine.Channels =      WASAPI->OutputWaveFormat->Format.nChannels;
+            PolarEngine.SampleRate =    WASAPI->OutputWaveFormat->Format.nSamplesPerSec;
+            PolarEngine.BitRate =       WASAPI->OutputWaveFormat->Format.wBitsPerSample;
+
+            //Start infinite loop
+            GlobalRunning = true;
+
             //Create rendering output file
-            POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
+            //TODO: File writing is broken! Need to be external functions
+            // POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
 
             //!Test source
             OSCILLATOR *Osc = entropy_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 0);
 
             //Allocate engine memory block
             POLAR_MEMORY EngineMemory = {};
-            EngineMemory.PermanentDataSize = Megabytes(128);
-            EngineMemory.TemporaryDataSize = Megabytes(512);
+            EngineMemory.PermanentDataSize = Megabytes(64);
+            EngineMemory.TemporaryDataSize = Megabytes(32);
 
             WindowState.TotalSize = EngineMemory.PermanentDataSize + EngineMemory.TemporaryDataSize;
             WindowState.EngineMemoryBlock = VirtualAlloc(0, ((size_t) WindowState.TotalSize), MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
 
             EngineMemory.PermanentData = WindowState.EngineMemoryBlock;
             EngineMemory.TemporaryData = ((uint8 *) EngineMemory.PermanentData + EngineMemory.PermanentDataSize);
-
-            //Start infinite loop
-            GlobalRunning = true;
 
             //Set file and memory map for state recording
             for(i32 ReplayIndex = 0; ReplayIndex < ArrayCount(WindowState.ReplayBuffers); ++ReplayIndex)
@@ -596,7 +654,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                         Buffer.Width = GlobalDisplayBuffer.Width; 
                         Buffer.Height = GlobalDisplayBuffer.Height;
                         Buffer.Pitch = GlobalDisplayBuffer.Pitch;
-                        Buffer.BytesPerPixel = GlobalDisplayBuffer.BytesPerPixel;                    
+                        Buffer.BytesPerPixel = GlobalDisplayBuffer.BytesPerPixel;
 
                         if(WindowState.InputRecordingIndex)
                         {
@@ -608,25 +666,25 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                             win32_InputPlayback(&WindowState, NewInput);
                         }
 
-                        // if(Game.UpdateAndRender)
-                        // {
-                            // Game.UpdateAndRender(&Thread, &GameMemory, NewInput, &Buffer);
-                        // }
-
-                        //TODO: To pass variables to change over time, HH025 win32_WindowMessageProcess
-                        //! Can't use external functions for live code loading until rendering code is fully seperate from Windows - need to remove WASAPI calls from the rendering loop
-                        polar_WASAPI_BufferGet(PolarEngine.WASAPI, PolarEngine.Buffer);
+                        //Extern rendering function
+                        if(PolarState.UpdateAndRender)
+                        {
+                            //Get the BYTE buffer and number of samples to fill    
+                            win32_WASAPI_BufferGet(WASAPI, PolarEngine.Buffer);
                     
-                        polar_render_Update(PolarEngine, OutputRenderFile, Osc, &EngineMemory, NewInput);
+                            //Update objects and fill the buffer
+                            PolarState.UpdateAndRender(PolarEngine, nullptr, Osc, &EngineMemory, NewInput);
 
-	                    polar_WASAPI_BufferRelease(PolarEngine.WASAPI, PolarEngine.Buffer);
-
+                            //Give the requested samples back to WASAPI
+	                        win32_WASAPI_BufferRelease(WASAPI, PolarEngine.Buffer);
+                        }
 
                         //Check rendering work elapsed and sleep if time remaining
                         LARGE_INTEGER WorkCounter = win32_WallClockGet();
                         f32 WorkSecondsElapsed = win32_SecondsElapsedGet(LastCounter, WorkCounter);
                         f32 SecondsElapsedForFrame = WorkSecondsElapsed;
                     
+                        //If the rendering finished under the target seconds, then sleep until the next update
                         if(SecondsElapsedForFrame < TargetSecondsPerFrame)
                         {                        
                             if(IsSleepGranular)
@@ -657,9 +715,9 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                         else
                         {
                             //!Missed frame rate!
-                            // char FPSTimer[256];
-                            // sprintf_s(FPSTimer, "Polar: Missed frame rate timer!\n");
-                            // OutputDebugString(FPSTimer);
+                            char FPSTimer[256];
+                            sprintf_s(FPSTimer, "Polar: Missed frame rate target!\n");
+                            OutputDebugString(FPSTimer);
                         }
 
                         //Prepare timers before display buffer copy
@@ -688,8 +746,8 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                         UINT64 PositionFrequency;
                         UINT64 PositionUnits;
 
-                        PolarEngine.WASAPI->AudioClock->GetFrequency(&PositionFrequency);
-                        PolarEngine.WASAPI->AudioClock->GetPosition(&PositionUnits, 0);
+                        WASAPI->AudioClock->GetFrequency(&PositionFrequency);
+                        WASAPI->AudioClock->GetPosition(&PositionUnits, 0);
 
                         //Sample cursor
                         u64 Cursor = PolarEngine.SampleRate * PositionUnits / PositionFrequency;
@@ -707,15 +765,15 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 			}
 
 #if WIN32_METRICS
-            char MetricsBuffer[256];
-            sprintf_s(MetricsBuffer, "Polar: %llu frames written to %s\n", OutputRenderFile->TotalSampleCount, OutputRenderFile->Path);
-            OutputDebugString(MetricsBuffer);
+            // char MetricsBuffer[256];
+            // sprintf_s(MetricsBuffer, "Polar: %llu frames written to %s\n", OutputRenderFile->TotalSampleCount, OutputRenderFile->Path);
+            // OutputDebugString(MetricsBuffer);
 #endif
 
             //TODO: File is written but header not fully finalised, won't show the total time in file explorer
-            polar_render_WAVWriteDestroy(OutputRenderFile);
+            // polar_render_WAVWriteDestroy(OutputRenderFile);
             entropy_wave_OscillatorDestroy(Osc);
-            polar_WASAPI_Destroy(PolarEngine.WASAPI);
+            win32_WASAPI_Destroy(WASAPI);
 		}
 	}
 
