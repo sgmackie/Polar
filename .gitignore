@@ -3,16 +3,12 @@
 
 #Build files
 misc/
-project/code/build_mac.txt
 project/build
-*.ctm
 *.exe
 *.lnk
 
-#Visual Studio files
-*.pdb
-*.ilk
-project/build/libexp
+#Ctime
+ctime/
 
 #Audio data
 *.wav

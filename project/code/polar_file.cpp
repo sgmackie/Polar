@@ -53,7 +53,6 @@ internal bool polar_render_WAVWriteHeader(POLAR_WAV *File, POLAR_DATA *Engine)
 	return true;
 }
 
-
 POLAR_WAV *polar_render_WAVWriteCreate(const char *FilePath, POLAR_DATA *Engine)
 {
 	//Allocate memory
@@ -79,6 +78,60 @@ POLAR_WAV *polar_render_WAVWriteCreate(const char *FilePath, POLAR_DATA *Engine)
 
 	return File;
 }
+
+internal u32 polar_render_RIFFChunkRound(u64 RIFFChunkSize)
+{
+	if(RIFFChunkSize <= (0xFFFFFFFF - 36)) 
+	{
+		return 36 + (u32)RIFFChunkSize;
+	}
+
+	else 
+	{
+		return 0xFFFFFFFF;
+	}
+}
+
+internal u32 polar_render_DataChunkRound(u64 DataChunkSize)
+{
+	if(DataChunkSize <= 0xFFFFFFFF)
+	{
+		return (u32)DataChunkSize;
+	}
+
+	else 
+	{
+		return 0xFFFFFFFF;
+	}
+}
+
+void polar_render_WAVWriteDestroy(POLAR_WAV *File)
+{
+	if(File == nullptr)
+	{
+		return;
+	}
+
+	u32 FilePadding = 0;
+	FilePadding = (u32)(File->WAVHeader.DataChunkDataSize % 2);
+
+	//Move to RIFF chunk and write the final size
+	fseek((FILE *)File->WAVFile, 4, SEEK_CUR); //Seek 4 bytes from the origin, using current position of the file pointer
+	u32 RIFFChunkSize = polar_render_RIFFChunkRound(File->WAVHeader.DataChunkDataSize);
+	fwrite(&RIFFChunkSize, 1, 4, (FILE *)File->WAVFile);
+
+	//Move to data chunk and write the final size
+	fseek((FILE *)File->WAVFile, ((i32)File->WAVHeader.DataChunkDataStart + 4), SEEK_CUR);
+	u32 DataChunkSize = polar_render_DataChunkRound(File->WAVHeader.DataChunkDataSize);                
+	fwrite(&DataChunkSize, 1, 4, (FILE *)File->WAVFile);
+
+	//Close file handle
+	fclose((FILE*)File->WAVFile);
+
+	free(File->Data);
+	free(File);
+}
+
 
 internal size_t polar_render_WAVWriteRaw(POLAR_WAV *File, size_t BytesToWrite, const void *FileData)
 {
@@ -137,61 +190,6 @@ internal u64 polar_render_WAVWriteFloat(POLAR_WAV *File, u64 SamplesToWrite, con
     }
 
 	return (BytesWrittenToFile * 8) / File->WAVHeader.BitsPerSample;
-}
-
-internal u32 polar_render_RIFFChunkRound(u64 RIFFChunkSize)
-{
-	if(RIFFChunkSize <= (0xFFFFFFFF - 36)) 
-	{
-		return 36 + (u32)RIFFChunkSize;
-	}
-
-	else 
-	{
-		return 0xFFFFFFFF;
-	}
-}
-
-
-internal u32 polar_render_DataChunkRound(u64 DataChunkSize)
-{
-	if(DataChunkSize <= 0xFFFFFFFF)
-	{
-		return (u32)DataChunkSize;
-	}
-
-	else 
-	{
-		return 0xFFFFFFFF;
-	}
-}
-
-
-void polar_render_WAVWriteDestroy(POLAR_WAV *File)
-{
-	if(File == nullptr)
-	{
-		return;
-	}
-
-	u32 FilePadding = 0;
-	FilePadding = (u32)(File->WAVHeader.DataChunkDataSize % 2);
-
-	//Move to RIFF chunk and write the final size
-	fseek((FILE *)File->WAVFile, 4, SEEK_CUR); //Seek 4 bytes from the origin, using current position of the file pointer
-	u32 RIFFChunkSize = polar_render_RIFFChunkRound(File->WAVHeader.DataChunkDataSize);
-	fwrite(&RIFFChunkSize, 1, 4, (FILE *)File->WAVFile);
-
-	//Move to data chunk and write the final size
-	fseek((FILE *)File->WAVFile, ((i32)File->WAVHeader.DataChunkDataStart + 4), SEEK_CUR);
-	u32 DataChunkSize = polar_render_DataChunkRound(File->WAVHeader.DataChunkDataSize);                
-	fwrite(&DataChunkSize, 1, 4, (FILE *)File->WAVFile);
-
-	//Close file handle
-	fclose((FILE*)File->WAVFile);
-
-	free(File->Data);
-	free(File);
 }
 
 #endif

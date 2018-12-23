@@ -74,32 +74,32 @@ extern "C" POLAR_RENDER_CALLBACK(RenderUpdate)
     {
 		POLAR_INPUT_CONTROLLER *Controller = ControllerGet(Input, ControllerIndex);
 
-		if(Controller->MoveUp.EndedDown)
+		if(Controller->State.ButtonPress.MoveUp.EndedDown)
         {
             ObjectState->Amplitude += 0.1f;
         }
-            
-        if(Controller->MoveDown.EndedDown)
+
+        if(Controller->State.ButtonPress.MoveDown.EndedDown)
         {
             ObjectState->Amplitude -= 0.1f;
         }
 
-		if(Controller->MoveRight.EndedDown)
+		if(Controller->State.ButtonPress.MoveRight.EndedDown)
         {
             ObjectState->Frequency += 10.0f;
         }
             
-        if(Controller->MoveLeft.EndedDown)
+        if(Controller->State.ButtonPress.MoveLeft.EndedDown)
         {
             ObjectState->Frequency -= 10.0f;
         }
 
-		if(Controller->ActionRight.EndedDown)
+		if(Controller->State.ButtonPress.ActionRight.EndedDown)
         {
             ObjectState->Pan += 0.1f;
         }
             
-        if(Controller->ActionLeft.EndedDown)
+        if(Controller->State.ButtonPress.ActionLeft.EndedDown)
         {
             ObjectState->Pan -= 0.1f;
         }
@@ -109,7 +109,6 @@ extern "C" POLAR_RENDER_CALLBACK(RenderUpdate)
 	if(File != nullptr)
 	{
         polar_render_BufferFill(Engine.Channels, (Engine.Buffer.FramesAvailable * Engine.Channels), Engine.Buffer.SampleBuffer, Engine.Buffer.DeviceBuffer, File->Data, Osc, ObjectState);
-		File->TotalSampleCount += polar_render_WAVWriteFloat(File, (Engine.Buffer.FramesAvailable * Engine.Channels), File->Data);
 	}
 
 	else

@@ -1,4 +1,4 @@
-echo Clang x64 (Compatibility)
+echo MSVC x64
 
 @echo off
 
@@ -53,10 +53,10 @@ if not exist %MapDir% mkdir %MapDir%
 :: -W4              warning level (prefer -Wall but difficult when including Windows.h)
 :: -wd4201          to disable unnamed union/struct warning
 :: -Fo path         to store Object files
-:: -map path        to store Mapfiles that list all elements in a given .exe or .dll file
+:: -Fm path         to store Mapfiles that list all elements in a given .exe or .dll file
 :: -DWIN32_METRICS  for frame timing information printed to Visual Studio/Code debug console
 :: -DWASAPI_INFO    for WASAPI device and format info
-set CompilerFlags=-nologo -Z7 -FC -MTd -GR -EHa -W4 -wd4201 -Fo%ObjDir% -map%MapDir% -DWIN32_METRICS=1 -DWASAPI_INFO=1
+set CompilerFlags=-nologo -Z7 -FC -MTd -GR -EHa -WX -W4 -wd4201 -Fo%ObjDir% -Fm%MapDir% -DWIN32_METRICS=1 -DWASAPI_INFO=1
 
 :: Set Compiler optimsation level for debug or release builds
 :: -Oi              to generate intrinsic functions when applicable
@@ -90,11 +90,11 @@ del *.pdb > NUL 2> NUL
 :: -LD              to create DLL for export functions
 :: -PDB             define name of .pdb file (with random used to generate unique ID)
 :: -EXPORT          export "extern" functions
-clang-cl %CompilerFlags% %CompilerOpt% %MainFiles% -LD %LinkerFlags% %LinkerOpt% -PDB:polar_%random%.pdb -EXPORT:RenderUpdate
+cl %CompilerFlags% %CompilerOpt% %MainFiles% -LD %LinkerFlags% %LinkerOpt% -PDB:polar_%random%.pdb -EXPORT:RenderUpdate
 set PolarLastError=%ERRORLEVEL%
 
 :: Win32:
-clang-cl %CompilerFlags% %CompilerOpt% %PlatformFiles% %LinkerFlags% %LinkerOpt% -SUBSYSTEM:windows %Libs%
+cl %CompilerFlags% %CompilerOpt% %PlatformFiles% %LinkerFlags% %LinkerOpt% -SUBSYSTEM:windows %Libs%
 set PlatformLastError=%ERRORLEVEL%
 
 :: Jump out of build directory

@@ -1,9 +1,6 @@
 #ifndef polar_h
 #define polar_h
 
-//CRT
-#include <stdlib.h>
-
 //Type defines
 #include "../external/polar_typedefs.h"
 
@@ -27,16 +24,15 @@ typedef struct POLAR_INPUT_STATE
     bool EndedDown;
 } POLAR_INPUT_STATE;
 
-//TODO: Check if Clang compliant, may need to name structs
 typedef struct POLAR_INPUT_CONTROLLER
 {
     bool IsConnected;
 
-    union
+    union State
     {
         POLAR_INPUT_STATE Buttons[12];
         
-		struct
+		struct ButtonPress
         {
             POLAR_INPUT_STATE MoveUp;
             POLAR_INPUT_STATE MoveDown;
@@ -55,8 +51,9 @@ typedef struct POLAR_INPUT_CONTROLLER
         	POLAR_INPUT_STATE Start;
             
             POLAR_INPUT_STATE Terminator;
-        };
-    };
+        } ButtonPress;
+    } State;
+
 } POLAR_INPUT_CONTROLLER;
 
 

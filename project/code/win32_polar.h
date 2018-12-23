@@ -1,7 +1,6 @@
 #ifndef win32_polar_h
 #define win32_polar_h
 
-
 /*                   */
 /*  Windows code     */
 /*                   */

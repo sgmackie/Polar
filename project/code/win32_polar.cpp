@@ -1,6 +1,7 @@
-//Polar
+﻿//Polar
 //TODO: Create entropy.lib for source code
 #include "polar.h"
+#include "polar_file.cpp"
 
 //Windows includes
 #include <Windows.h>
@@ -282,51 +283,51 @@ internal void win32_WindowMessageProcess(WIN32_STATE *State, POLAR_INPUT_CONTROL
                 {
                     if(VKCode == 'W')
                     {
-                        win32_InputMessageProcess(&KeyboardController->MoveUp, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.MoveUp, IsDown);
                     }
                     else if(VKCode == 'A')
                     {
-                        win32_InputMessageProcess(&KeyboardController->MoveLeft, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.MoveLeft, IsDown);
                     }
                     else if(VKCode == 'S')
                     {
-                        win32_InputMessageProcess(&KeyboardController->MoveDown, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.MoveDown, IsDown);
                     }
                     else if(VKCode == 'D')
                     {
-                        win32_InputMessageProcess(&KeyboardController->MoveRight, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.MoveRight, IsDown);
                     }
                     else if(VKCode == 'Q')
                     {
-                        win32_InputMessageProcess(&KeyboardController->LeftShoulder, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.LeftShoulder, IsDown);
                     }
                     else if(VKCode == 'E')
                     {
-                        win32_InputMessageProcess(&KeyboardController->RightShoulder, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.RightShoulder, IsDown);
                     }
                     else if(VKCode == VK_UP)
                     {
-                        win32_InputMessageProcess(&KeyboardController->ActionUp, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.ActionUp, IsDown);
                     }
                     else if(VKCode == VK_LEFT)
                     {
-                        win32_InputMessageProcess(&KeyboardController->ActionLeft, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.ActionLeft, IsDown);
                     }
                     else if(VKCode == VK_DOWN)
                     {
-                        win32_InputMessageProcess(&KeyboardController->ActionDown, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.ActionDown, IsDown);
                     }
                     else if(VKCode == VK_RIGHT)
                     {
-                        win32_InputMessageProcess(&KeyboardController->ActionRight, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.ActionRight, IsDown);
                     }
                     else if(VKCode == VK_ESCAPE)
                     {
-                        win32_InputMessageProcess(&KeyboardController->Start, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.Start, IsDown);
                     }
                     else if(VKCode == VK_SPACE)
                     {
-                        win32_InputMessageProcess(&KeyboardController->Back, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.Back, IsDown);
                     }
                     else if(VKCode == 'P')
                     {
@@ -435,7 +436,7 @@ internal LARGE_INTEGER win32_WallClockGet()
 //Determine the amount of seconfs elapised against the perfomance counter
 internal f32 win32_SecondsElapsedGet(LARGE_INTEGER Start, LARGE_INTEGER End)
 {
-    f32 Result = ((f32)(End.QuadPart - Start.QuadPart) / (f32)GlobalPerformanceCounterFrequency);
+    f32 Result = ((f32) (End.QuadPart - Start.QuadPart) / (f32) GlobalPerformanceCounterFrequency);
     return Result ;
 }
 
@@ -522,13 +523,15 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
     //Set window properties
     WNDCLASS WindowClass = {};
-    WindowClass.style = CS_HREDRAW | CS_VREDRAW;            //Set window redraw properties
-    WindowClass.lpfnWndProc = win32_MainCallback;           //Call the window process
-    WindowClass.hInstance = Instance;                       //Handle instance passed from win32_WinMain
-    WindowClass.lpszClassName = "PolarWindowClass";         //Name of Window class
-    PrevInstance = 0;                                       //Handle to previous instance of the window
-    CommandLine = GetCommandLine();                         //Get command line string for application
-    ShowCode = SW_SHOW;                                     //Activate and show window
+    WindowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;                 //Set window redraw properties
+    WindowClass.lpfnWndProc = win32_MainCallback;                           //Call the window process
+    WindowClass.hInstance = Instance;                                       //Handle instance passed from win32_WinMain
+    WindowClass.lpszClassName = "PolarWindowClass";                         //Name of Window class
+    WindowClass.hCursor = LoadCursor(0, IDC_ARROW);                         //Load application cursor
+    WindowClass.hbrBackground = (HBRUSH) GetStockObject(BLACK_BRUSH);       //Fill window background to black
+    PrevInstance = 0;                                                       //Handle to previous instance of the window
+    CommandLine = GetCommandLine();                                         //Get command line string for application
+    ShowCode = SW_SHOW;                                                     //Activate and show window
 
 	if(RegisterClass(&WindowClass))
     {
@@ -536,10 +539,11 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
         if(Window) //Process message queue
         {
+            //Create window device context
+            HDC RendererDC = GetDC(Window);
+
             //Get the monitor refresh rate
-            HDC RefreshDevice = GetDC(Window);
-            i32 win32_RefreshRate = GetDeviceCaps(RefreshDevice, VREFRESH);
-            ReleaseDC(Window, RefreshDevice);
+            i32 win32_RefreshRate = GetDeviceCaps(RendererDC, VREFRESH);
             
             if(win32_RefreshRate > 1)
             {
@@ -564,7 +568,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
             //Create rendering output file
             //TODO: File writing is broken! Need to be external functions
-            // POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
+            POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
 
             //!Test source
             OSCILLATOR *Osc = entropy_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 0);
@@ -625,9 +629,9 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                     *NewKeyboardController = {};
                     NewKeyboardController->IsConnected = true;
                     
-                    for(int ButtonIndex = 0; ButtonIndex < ArrayCount(NewKeyboardController->Buttons); ++ButtonIndex)
+                    for(i32 ButtonIndex = 0; ButtonIndex < ArrayCount(NewKeyboardController->State.Buttons); ++ButtonIndex)
                     {
-                        NewKeyboardController->Buttons[ButtonIndex].EndedDown = OldKeyboardController->Buttons[ButtonIndex].EndedDown;
+                        NewKeyboardController->State.Buttons[ButtonIndex].EndedDown = OldKeyboardController->State.Buttons[ButtonIndex].EndedDown;
                     }
 
                     win32_WindowMessageProcess(&WindowState, NewKeyboardController);
@@ -673,7 +677,15 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                             win32_WASAPI_BufferGet(WASAPI, PolarEngine.Buffer);
                     
                             //Update objects and fill the buffer
-                            PolarState.UpdateAndRender(PolarEngine, nullptr, Osc, &EngineMemory, NewInput);
+                            if(OutputRenderFile != nullptr)
+                            {
+                                PolarState.UpdateAndRender(PolarEngine, OutputRenderFile, Osc, &EngineMemory, NewInput);
+                                OutputRenderFile->TotalSampleCount += polar_render_WAVWriteFloat(OutputRenderFile, (PolarEngine.Buffer.FramesAvailable * PolarEngine.Channels), OutputRenderFile->Data);
+                            }
+                            else
+                            {
+                                PolarState.UpdateAndRender(PolarEngine, nullptr, Osc, &EngineMemory, NewInput);
+                            }
 
                             //Give the requested samples back to WASAPI
 	                        win32_WASAPI_BufferRelease(WASAPI, PolarEngine.Buffer);
@@ -753,11 +765,11 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                         u64 Cursor = PolarEngine.SampleRate * PositionUnits / PositionFrequency;
                     
                         //TODO: Actually calculate this
-                        f64 FPS = 0.0f;
-                        f64 MegaHzCyclesPerFrame = ((f64)CyclesElapsed / (1000.0f * 1000.0f));
+                        f32 FPS = win32_SecondsElapsedGet(LastCounter, EndCounter);
+                        f64 MegaHzCyclesPerFrame = ((f64) CyclesElapsed / (1000.0f * 1000.0f));
 
                         char MetricsBuffer[256];
-                        sprintf_s(MetricsBuffer, "Polar: %.02f ms/frame\t %.02f frames/sec\t %.02f cycles(MHz)/frame\t %llu samples\n", MSPerFrame, FPS, MegaHzCyclesPerFrame, Cursor);
+                        sprintf_s(MetricsBuffer, "Polar: %.02f ms/frame\t %.02f FPS\t %.02f cycles(MHz)/frame\t %llu samples\n", MSPerFrame, FPS, MegaHzCyclesPerFrame, Cursor);
                         OutputDebugString(MetricsBuffer);
                     }
 #endif	
@@ -765,13 +777,13 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 			}
 
 #if WIN32_METRICS
-            // char MetricsBuffer[256];
-            // sprintf_s(MetricsBuffer, "Polar: %llu frames written to %s\n", OutputRenderFile->TotalSampleCount, OutputRenderFile->Path);
-            // OutputDebugString(MetricsBuffer);
+            char MetricsBuffer[256];
+            sprintf_s(MetricsBuffer, "Polar: %llu frames written to %s\n", OutputRenderFile->TotalSampleCount, OutputRenderFile->Path);
+            OutputDebugString(MetricsBuffer);
 #endif
 
             //TODO: File is written but header not fully finalised, won't show the total time in file explorer
-            // polar_render_WAVWriteDestroy(OutputRenderFile);
+            polar_render_WAVWriteDestroy(OutputRenderFile);
             entropy_wave_OscillatorDestroy(Osc);
             win32_WASAPI_Destroy(WASAPI);
 		}
