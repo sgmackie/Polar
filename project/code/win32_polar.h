@@ -68,7 +68,7 @@ typedef struct WIN32_OFFSCREEN_BUFFER
 //Prototypes
 //File handling
 internal void win32_EXEFileNameGet(WIN32_STATE *State);														//Find file name of current application
-internal void win32_BuildEXEPathGet(WIN32_STATE *State, char *FileName, char *Path);						//Get file path
+internal void win32_BuildEXEPathGet(WIN32_STATE *State, const char *FileName, char *Path);					//Get file path
 internal void win32_InputFilePathGet(WIN32_STATE *State, bool InputStream, i32 SlotIndex, char *Path);		//"Print" to a custom text file for looping editss
 internal FILETIME win32_LastWriteTimeGet(char *Filename);													//Find the last time a file was written to
 internal WIN32_ENGINE_CODE win32_EngineCodeLoad(char *SourceDLLName, char *TempDLLName);					//Load dll for dynamic render code

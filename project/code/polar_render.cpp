@@ -48,7 +48,7 @@ internal void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *
 		}		
 	}
 
-	memcpy(DeviceBuffer, SampleBuffer, sizeof(SampleBuffer));
+	memcpy(DeviceBuffer, SampleBuffer, (sizeof(* SampleBuffer) * FramesToWrite));
 }
 
 
@@ -70,7 +70,7 @@ extern "C" POLAR_RENDER_CALLBACK(RenderUpdate)
     }
 
 	//Use input to change states
-    for(i32 ControllerIndex = 0; ControllerIndex < ArrayCount(Input->Controllers); ++ControllerIndex)
+    for(u32 ControllerIndex = 0; ControllerIndex < ArrayCount(Input->Controllers); ++ControllerIndex)
     {
 		POLAR_INPUT_CONTROLLER *Controller = ControllerGet(Input, ControllerIndex);
 

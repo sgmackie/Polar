@@ -52,11 +52,11 @@ if not exist %MapDir% mkdir %MapDir%
 :: -WX              to treat compiler warnings as errors
 :: -W4              warning level (prefer -Wall but difficult when including Windows.h)
 :: -wd4201          to disable unnamed union/struct warning
+:: -Wno             to disable Clang warnings:  unused-function
 :: -Fo path         to store Object files
-:: -map path        to store Mapfiles that list all elements in a given .exe or .dll file
 :: -DWIN32_METRICS  for frame timing information printed to Visual Studio/Code debug console
 :: -DWASAPI_INFO    for WASAPI device and format info
-set CompilerFlags=-nologo -Z7 -FC -MTd -GR -EHa -W4 -wd4201 -Fo%ObjDir% -map%MapDir% -DWIN32_METRICS=1 -DWASAPI_INFO=1
+set CompilerFlags=-nologo -Z7 -FC -MTd -GR -EHa -WX -W4 -wd4201 -Wno-unused-function -Fo%ObjDir% -DWIN32_METRICS=1 -DWASAPI_INFO=1
 
 :: Set Compiler optimsation level for debug or release builds
 :: -Oi              to generate intrinsic functions when applicable
@@ -88,13 +88,15 @@ del *.pdb > NUL 2> NUL
 :: Run Visual Studio compiler
 :: Polar:
 :: -LD              to create DLL for export functions
-:: -PDB             define name of .pdb file (with random used to generate unique ID)
+:: -PDB:Filename    define name of .pdb file (with random used to generate unique ID)
+:: -MAP:Filename    to store Mapfiles that list all elements in a given .exe or .dll file
 :: -EXPORT          export "extern" functions
-clang-cl %CompilerFlags% %CompilerOpt% %MainFiles% -LD %LinkerFlags% %LinkerOpt% -PDB:polar_%random%.pdb -EXPORT:RenderUpdate
+clang-cl %CompilerFlags% %CompilerOpt% %MainFiles% -LD %LinkerFlags% %LinkerOpt% -PDB:polar_%random%.pdb -MAP:%MapDir%%Main%.map -EXPORT:RenderUpdate
 set PolarLastError=%ERRORLEVEL%
 
 :: Win32:
-clang-cl %CompilerFlags% %CompilerOpt% %PlatformFiles% %LinkerFlags% %LinkerOpt% -SUBSYSTEM:windows %Libs%
+:: -SUBYSTEM        define subsystem for application (Window, Console)
+clang-cl %CompilerFlags% %CompilerOpt% %PlatformFiles% %LinkerFlags% %LinkerOpt% -MAP:%MapDir%%Platform%.map -SUBSYSTEM:windows %Libs%
 set PlatformLastError=%ERRORLEVEL%
 
 :: Jump out of build directory

@@ -98,14 +98,14 @@ POLAR_INPUT_CONTROLLER *ControllerGet(POLAR_INPUT *Input, u32 ControllerIndex);
 
 //TODO: Move these functions to a .cpp file
 //Iterate through strings A & B and push to string C
-void polar_StringConcatenate(size_t StringALength, char *StringA, size_t StringBLength, char *StringB, char *StringC)
+void polar_StringConcatenate(size_t StringALength, const char *StringA, size_t StringBLength, const char *StringB, char *StringC)
 {
-    for(i32 Index = 0; Index < StringALength; ++Index)
+    for(u32 Index = 0; Index < StringALength; ++Index)
     {
         *StringC++ = *StringA++;
     }
 
-    for(i32 Index = 0; Index < StringBLength; ++Index)
+    for(u32 Index = 0; Index < StringBLength; ++Index)
     {
         *StringC++ = *StringB++;
     }
@@ -114,7 +114,7 @@ void polar_StringConcatenate(size_t StringALength, char *StringA, size_t StringB
 }
 
 
-i32 polar_StringLengthGet(char *String)
+i32 polar_StringLengthGet(const char *String)
 {
     i32 Count = 0;
 

@@ -102,7 +102,7 @@ internal void win32_EXEFileNameGet(WIN32_STATE *State)
 }
 
 //Get file path
-internal void win32_BuildEXEPathGet(WIN32_STATE *State, char *FileName, char *Path)
+internal void win32_BuildEXEPathGet(WIN32_STATE *State, const char *FileName, char *Path)
 {
     polar_StringConcatenate(State->EXEFileName - State->EXEPath, State->EXEPath, polar_StringLengthGet(FileName), FileName, Path);
 }
@@ -483,7 +483,6 @@ LRESULT CALLBACK win32_MainCallback(HWND Window, UINT UserMessage, WPARAM WParam
         {
             PAINTSTRUCT Paint;
             HDC PaintDevice = BeginPaint(Window, &Paint);
-            WIN32_WINDOW_DIMENSIONS WindowDimensions = win32_WindowDimensionsGet(Window);
             //TODO: Visualise WASAPI buffer fills
             win32_DisplayBufferInWindow(&GlobalDisplayBuffer, PaintDevice);
             EndPaint(Window, &Paint);
@@ -585,7 +584,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             EngineMemory.TemporaryData = ((uint8 *) EngineMemory.PermanentData + EngineMemory.PermanentDataSize);
 
             //Set file and memory map for state recording
-            for(i32 ReplayIndex = 0; ReplayIndex < ArrayCount(WindowState.ReplayBuffers); ++ReplayIndex)
+            for(u32 ReplayIndex = 0; ReplayIndex < ArrayCount(WindowState.ReplayBuffers); ++ReplayIndex)
             {
                 WIN32_REPLAY_BUFFER *CurrentReplayBuffer = &WindowState.ReplayBuffers[ReplayIndex];
 
@@ -629,7 +628,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                     *NewKeyboardController = {};
                     NewKeyboardController->IsConnected = true;
                     
-                    for(i32 ButtonIndex = 0; ButtonIndex < ArrayCount(NewKeyboardController->State.Buttons); ++ButtonIndex)
+                    for(u32 ButtonIndex = 0; ButtonIndex < ArrayCount(NewKeyboardController->State.Buttons); ++ButtonIndex)
                     {
                         NewKeyboardController->State.Buttons[ButtonIndex].EndedDown = OldKeyboardController->State.Buttons[ButtonIndex].EndedDown;
                     }
@@ -738,7 +737,6 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                         LastCounter = EndCounter;
 
                         //Set window device context for upcoming display
-                        WIN32_WINDOW_DIMENSIONS WindowDimensions = win32_WindowDimensionsGet(Window);
                         HDC DisplayDevice = GetDC(Window);
                         //TODO: Debug info display
                         win32_DisplayBufferInWindow(&GlobalDisplayBuffer, DisplayDevice);
