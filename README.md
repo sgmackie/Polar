@@ -6,13 +6,15 @@
 
 ### About: <a name="about"></a>
 
-Simple real-time audio engine in C/C++. Currently using WASAPI for Windows playback with plans to expand to MacOS (Core Audio).
+Simple real-time audio engine in C/C++. Currently supports Windows (WASAPI) and Linux (ALSA), with support for macOS planned (CoreAudio).
 
 Primary use is as a test bed for any DSP projects I'm currently working on and to experiment with game audio concepts related to audio engine design.
 
 ### Changelog: <a name="changelog"></a>
 
 - v0.2 (Current):
+    - Linux:
+        - Started ALSA implementation
     - Windows:
         - Able to record input and object states and loop them back
 - v0.1 (Rolled back from previous WASAPI build):

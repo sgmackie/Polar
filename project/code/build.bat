@@ -4,7 +4,7 @@ echo Clang x64 (Compatibility)
 
 :: Set name of the Platform .cpp file for unity building
 set Platform=win32_polar
-set Main=polar
+set Engine=polar
 
 :: Set CTime directory relative to current drive and path
 set CTimeDir=%~dp0..\build\ctime
@@ -16,7 +16,7 @@ if not exist %CTimeDir% mkdir %CTimeDir%
 pushd %CTimeDir%
 
 :: Begin CTime on .cpp files
-ctime -begin %Main%.ctm
+ctime -begin %Engine%.ctm
 ctime -begin %Platform%.ctm
 
 :: Step out of CTime directory
@@ -33,7 +33,7 @@ pushd %BuildDir%
 
 :: Set compiler arguments
 set PlatformFiles=..\..\..\project\code\%Platform%.cpp
-set MainFiles=..\..\..\project\code\%Main%.cpp
+set EngineFiles=..\..\..\project\code\%Engine%.cpp
 set ObjDir=.\obj\
 set MapDir=.\map\
 
@@ -91,7 +91,7 @@ del *.pdb > NUL 2> NUL
 :: -PDB:Filename    define name of .pdb file (with random used to generate unique ID)
 :: -MAP:Filename    to store Mapfiles that list all elements in a given .exe or .dll file
 :: -EXPORT          export "extern" functions
-clang-cl %CompilerFlags% %CompilerOpt% %MainFiles% -LD %LinkerFlags% %LinkerOpt% -PDB:polar_%random%.pdb -MAP:%MapDir%%Main%.map -EXPORT:RenderUpdate
+clang-cl %CompilerFlags% %CompilerOpt% %EngineFiles% -LD %LinkerFlags% %LinkerOpt% -PDB:polar_%random%.pdb -MAP:%MapDir%%Engine%.map -EXPORT:RenderUpdate
 set PolarLastError=%ERRORLEVEL%
 
 :: Win32:
@@ -106,7 +106,7 @@ popd
 pushd %CTimeDir%
 
 :: End CTime on .cpp files
-ctime -end %Main%.ctm %PolarLastError%
+ctime -end %Engine%.ctm %PolarLastError%
 ctime -end %Platform%.ctm %PlatformLastError%
 
 :: Exit

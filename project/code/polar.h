@@ -4,6 +4,11 @@
 //Type defines
 #include "../external/polar_typedefs.h"
 
+//TODO: Remove CRT
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h> //memcpy
+
 //Includes
 //Synthesis
 #include "../external/entropy/entropy.h"

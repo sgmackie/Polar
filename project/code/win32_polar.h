@@ -1,6 +1,9 @@
 #ifndef win32_polar_h
 #define win32_polar_h
 
+//TODO: Remove atomic for InterlockedExchanges
+#include <atomic>
+
 /*                   */
 /*  Windows code     */
 /*                   */
