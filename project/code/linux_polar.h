@@ -5,10 +5,14 @@
 /*  Linux code      */
 /*                  */
 
-//Includes
+//System
 #include <sys/mman.h>   //Memory allocations (mmap, munmap)
 #include <sys/stat.h>   //Stat struct for file loading
 #include <dlfcn.h>      //Dynanamic linking (dlopen)
+
+//X11
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
 
 
 //Structs

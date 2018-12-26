@@ -2,7 +2,6 @@
 #include "polar.h"
 #include "polar_file.cpp"
 
-
 //Linux
 #include "linux_polar.h"
 
@@ -171,107 +170,116 @@ internal void linux_EngineCodeUnload(LINUX_ENGINE_CODE *EngineCode)
 
 int main(int argc, char *argv[])
 {
-    POLAR_DATA PolarEngine = {};
-
-
-    ALSA_DATA *ALSA =           linux_ALSA_Create(PolarEngine.Buffer, 48000, 2, 32);
-    PolarEngine.BufferFrames =  PolarEngine.Buffer.FramesAvailable;
-    PolarEngine.Channels =      ALSA->Channels;
-    PolarEngine.SampleRate =    ALSA->SampleRate;
-    //TODO: Convert flags like SND_PCM_FORMAT_FLOAT to numbers
-    PolarEngine.BitRate =       32;
-
-
-    POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
-    OSCILLATOR *SineOsc = entropy_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 440);
-
-
-
     LINUX_STATE LinuxState = {};
     linux_EXEFileNameGet(&LinuxState);
     linux_BuildEXEPathGet(&LinuxState, "polar.so", LinuxState.EngineSourceCodePath);
 
+    Display *X11Display = XOpenDisplay(":0.0");
 
-    POLAR_MEMORY EngineMemory = {};
-    EngineMemory.PermanentDataSize = Megabytes(64);
-    EngineMemory.TemporaryDataSize = Megabytes(32);
-
-
-    LinuxState.TotalSize = EngineMemory.PermanentDataSize + EngineMemory.TemporaryDataSize;
-    LinuxState.EngineMemoryBlock = mmap(nullptr, ((size_t) LinuxState.TotalSize), PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-
-
-    EngineMemory.PermanentData = LinuxState.EngineMemoryBlock;
-    EngineMemory.TemporaryData = ((uint8 *) EngineMemory.PermanentData + EngineMemory.PermanentDataSize);
-
-
-
-    if(EngineMemory.PermanentData && EngineMemory.TemporaryData)
+    if(X11Display)
     {
-        
-        LINUX_ENGINE_CODE PolarState = {};
-        linux_EngineCodeLoad(&PolarState, LinuxState.EngineSourceCodePath, linux_FileIDGet(LinuxState.EngineSourceCodePath));
+        //TODO: Get X11 working and passing input messages
+        // Window X11Window = {};
 
-        POLAR_INPUT Input[2] = {};
-        POLAR_INPUT *NewInput = &Input[0];
-        POLAR_INPUT *OldInput = &Input[1];
-    
-
-        for(int i = 0; i < 5; i++)
+        // if(X11Window)
         {
-            //Extern rendering function
-            if(PolarState.UpdateAndRender)
-            {
-                //Update objects and fill the buffer
-                if(OutputRenderFile != nullptr)
+
+            POLAR_DATA PolarEngine = {};
+            ALSA_DATA *ALSA =           linux_ALSA_Create(PolarEngine.Buffer, 48000, 2, 32);
+            PolarEngine.BufferFrames =  PolarEngine.Buffer.FramesAvailable;
+            PolarEngine.Channels =      ALSA->Channels;
+            PolarEngine.SampleRate =    ALSA->SampleRate;
+            //TODO: Convert flags like SND_PCM_FORMAT_FLOAT to numbers
+            PolarEngine.BitRate =       32;
+
+            POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
+            OSCILLATOR *SineOsc = entropy_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 440);
+
+
+            POLAR_MEMORY EngineMemory = {};
+            EngineMemory.PermanentDataSize = Megabytes(64);
+            EngineMemory.TemporaryDataSize = Megabytes(32);
+
+
+            LinuxState.TotalSize = EngineMemory.PermanentDataSize + EngineMemory.TemporaryDataSize;
+            LinuxState.EngineMemoryBlock = mmap(nullptr, ((size_t) LinuxState.TotalSize), PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+
+
+            EngineMemory.PermanentData = LinuxState.EngineMemoryBlock;
+            EngineMemory.TemporaryData = ((uint8 *) EngineMemory.PermanentData + EngineMemory.PermanentDataSize);
+
+
+
+            if(EngineMemory.PermanentData && EngineMemory.TemporaryData)
+            {   
+                LINUX_ENGINE_CODE PolarState = {};
+                linux_EngineCodeLoad(&PolarState, LinuxState.EngineSourceCodePath, linux_FileIDGet(LinuxState.EngineSourceCodePath));
+
+                POLAR_INPUT Input[2] = {};
+                POLAR_INPUT *NewInput = &Input[0];
+                POLAR_INPUT *OldInput = &Input[1];
+
+
+                for(int i = 0; i < 5; i++)
                 {
-                    PolarState.UpdateAndRender(PolarEngine, OutputRenderFile, SineOsc, &EngineMemory, NewInput);
-                    OutputRenderFile->TotalSampleCount += polar_render_WAVWriteFloat(OutputRenderFile, (PolarEngine.Buffer.FramesAvailable * PolarEngine.Channels), OutputRenderFile->Data);
+                    //Extern rendering function
+                    if(PolarState.UpdateAndRender)
+                    {
+                        //Update objects and fill the buffer
+                        if(OutputRenderFile != nullptr)
+                        {
+                            PolarState.UpdateAndRender(PolarEngine, OutputRenderFile, SineOsc, &EngineMemory, NewInput);
+                            OutputRenderFile->TotalSampleCount += polar_render_WAVWriteFloat(OutputRenderFile, (PolarEngine.Buffer.FramesAvailable * PolarEngine.Channels), OutputRenderFile->Data);
+                        }
+
+                        else
+                        {
+                            PolarState.UpdateAndRender(PolarEngine, nullptr, SineOsc, &EngineMemory, NewInput);
+                        }
+
+                        ALSA->FramesWritten = snd_pcm_writei(ALSA->Device, PolarEngine.Buffer.SampleBuffer, (PolarEngine.BufferFrames));
+
+                        //If no frames are written then try to recover the output stream
+                        if(ALSA->FramesWritten < 0)
+                        {
+                            ALSA->FramesWritten = snd_pcm_recover(ALSA->Device, ALSA->FramesWritten, 0);
+                        }
+
+                        //If recovery fails then quit
+                        if(ALSA->FramesWritten < 0) 
+                        {
+                            ERR_TO_RETURN(ALSA->FramesWritten, "Failed to write any output frames! snd_pcm_writei()", -1);
+                        }
+
+                        //Wrote less frames than the total buffer length
+                        if(ALSA->FramesWritten > 0 && ALSA->FramesWritten < (PolarEngine.BufferFrames))
+                        {
+                            printf("Short write (expected %i, wrote %li)\n", (PolarEngine.BufferFrames), ALSA->FramesWritten);
+                        }
+                    }        
                 }
 
-                else
-                {
-                    PolarState.UpdateAndRender(PolarEngine, nullptr, SineOsc, &EngineMemory, NewInput);
-                }
 
-                ALSA->FramesWritten = snd_pcm_writei(ALSA->Device, PolarEngine.Buffer.SampleBuffer, (PolarEngine.BufferFrames));
 
-                //If no frames are written then try to recover the output stream
-                if(ALSA->FramesWritten < 0)
-                {
-                    ALSA->FramesWritten = snd_pcm_recover(ALSA->Device, ALSA->FramesWritten, 0);
-                }
+                //Reset input for next loop
+                POLAR_INPUT *Temp = NewInput;
+                NewInput = OldInput;
+                OldInput = Temp;
 
-                //If recovery fails then quit
-                if(ALSA->FramesWritten < 0) 
-                {
-                    ERR_TO_RETURN(ALSA->FramesWritten, "Failed to write any output frames! snd_pcm_writei()", -1);
-                }
+            }
 
-                //Wrote less frames than the total buffer length
-                if(ALSA->FramesWritten > 0 && ALSA->FramesWritten < (PolarEngine.BufferFrames))
-                {
-                    printf("Short write (expected %i, wrote %li)\n", (PolarEngine.BufferFrames), ALSA->FramesWritten);
-                }
-            }        
-        }
 
+            printf("Frames written:\t%ld\n", ALSA->FramesWritten);
+            printf("Polar: %lu frames written to %s\n", OutputRenderFile->TotalSampleCount, OutputRenderFile->Path);
     
-
-        //Reset input for next loop
-        POLAR_INPUT *Temp = NewInput;
-        NewInput = OldInput;
-        OldInput = Temp;
-
+            polar_render_WAVWriteDestroy(OutputRenderFile);
+    
+            entropy_wave_OscillatorDestroy(SineOsc);
+            linux_ALSA_Destroy(ALSA, PolarEngine.Buffer);
+        }
     }
 
-    printf("Frames written:\t%ld\n", ALSA->FramesWritten);
-    printf("Polar: %lu frames written to %s\n", OutputRenderFile->TotalSampleCount, OutputRenderFile->Path);
 
-    polar_render_WAVWriteDestroy(OutputRenderFile);
-
-    entropy_wave_OscillatorDestroy(SineOsc);
-    linux_ALSA_Destroy(ALSA, PolarEngine.Buffer);    
     
     return 0;
 }
