@@ -1,114 +1,67 @@
-#include <stdio.h>
-#include <string.h>
-
-#include <sys/mman.h>   //mmap
-#include <sys/stat.h>   //stat struct
-#include <dlfcn.h>      //dynamic library
-
-#include <alsa/asoundlib.h>
-#include <alsa/pcm.h>
-
-
 //Polar
 #include "polar.h"
-
-#include "../external/entropy/entropy.h"
-
-
-#define NONE    //Blank space for returning nothing in void functions
-
-//ALSA Error code print and return
-#define ERR_TO_RETURN(Result, Text, Type)				                    \
-	if(Result < 0)								                            \
-	{												                        \
-		printf(Text "\t[%s]\n", snd_strerror(Result));   	                \
-		return Type;								                        \
-	}
+#include "polar_file.cpp"
 
 
+//Linux
+#include "linux_polar.h"
 
+//Linux globals
+// global bool GlobalRunning;
+// global bool GlobalPause;
 
-typedef struct ALSA_PROPERTIES
+//!Test variables!
+global WAVEFORM Waveform = SINE;
+
+//ALSA setup
+ALSA_DATA *linux_ALSA_Create(POLAR_BUFFER &Buffer, u32 UserSampleRate, u16 UserChannels, u32 UserLatency)
 {
-    u32 SampleRate;
-    u8 ALSAResample;
-    u16 Channels;
-    u32 LatencyInMS;
-    u64 BufferSize;
-    u64 PeriodSize;
-} ALSA_PROPERTIES;
+    //Error handling code passed to snd_strerror()
+    i32 ALSAError;
 
+    ALSA_DATA *Result = (ALSA_DATA *) mmap(nullptr, (sizeof (ALSA_DATA)), PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);;
+    Result->SampleRate = UserSampleRate;
+    Result->ALSAResample = 1;
+    Result->Channels = UserChannels;
+    Result->LatencyInMS = UserLatency;
 
-//? Test function
-internal void FILL(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, void *DeviceBuffer, OSCILLATOR *Osc)
-{	
-	f32 CurrentSample = 0;
-	f32 PanAmp = 0;
+    ALSAError = snd_pcm_open(&Result->Device, "default", SND_PCM_STREAM_PLAYBACK, 0);   
+    ERR_TO_RETURN(ALSAError, "Failed to open default audio device", nullptr);
 
-	//Increase frame counter by the number of channels
-	for(u32 FrameIndex = 0; FrameIndex < FramesToWrite; FrameIndex += ChannelCount)
-	{
-		CurrentSample = (f32) Osc->Tick(Osc);
+    ALSAError = snd_pcm_set_params(Result->Device, SND_PCM_FORMAT_FLOAT, SND_PCM_ACCESS_RW_INTERLEAVED, Result->Channels, Result->SampleRate, Result->ALSAResample, (Result->LatencyInMS * 1000));
+    ERR_TO_RETURN(ALSAError, "Failed to set default device parameters", nullptr);
 
-    	for(u16 ChannelIndex = 0; ChannelIndex < ChannelCount; ++ChannelIndex)
-		{
-            // PanAmp = polar_render_PanPositionGet(ChannelIndex, 0.4, 1);
-            PanAmp = 0.3;
+    ALSAError = snd_pcm_get_params(Result->Device, &Result->BufferSize, &Result->PeriodSize);
+    ERR_TO_RETURN(ALSAError, "Failed to get default device parameters", nullptr);
 
-			SampleBuffer[FrameIndex + ChannelIndex] = CurrentSample * PanAmp;
-		}
-	}
+    Buffer.SampleBuffer = (f32 *) mmap(nullptr, ((sizeof *Buffer.SampleBuffer) * (Result->SampleRate * Result->Channels)), PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+    Buffer.DeviceBuffer = (f32 *) mmap(nullptr, ((sizeof *Buffer.SampleBuffer) * (Result->SampleRate * Result->Channels)), PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+    Buffer.FramesAvailable = ((Result->BufferSize + Result->PeriodSize) * Result->Channels);
 
-	memcpy(DeviceBuffer, SampleBuffer, (sizeof(* SampleBuffer) * FramesToWrite));
+    return Result;
 }
 
-
-typedef struct LINUX_ENGINE_CODE
+//ALSA destroy
+void linux_ALSA_Destroy(ALSA_DATA *Result, POLAR_BUFFER &Buffer)
 {
-    void *GameLibHandle;
-    ino_t GameLibID;
+    munmap(Buffer.SampleBuffer, (sizeof *Buffer.SampleBuffer) * (Result->SampleRate * Result->Channels));
+    munmap(Buffer.DeviceBuffer, (sizeof *Buffer.SampleBuffer) * (Result->SampleRate * Result->Channels));
+    snd_pcm_close(Result->Device);
+    munmap(Result, (sizeof (Result)));
+}
 
-	bool IsDLValid;
-	polar_render_Update *UpdateAndRender;
-} LINUX_ENGINE_CODE;
-
-
-#define LINUX_MAX_FILE_PATH 512
-
-typedef struct LINUX_STATE
-{
-	//State data
-	u64 TotalSize;
-	void *EngineMemoryBlock;
-
-	//Store .exe
-    char EXEPath[LINUX_MAX_FILE_PATH];
-    char *EXEFileName;
-
-	//Store code .dlls
-	char EngineSourceCodePath[LINUX_MAX_FILE_PATH];
-	char TempEngineSourceCodePath[LINUX_MAX_FILE_PATH];
-
-	//File handle for state recording
-	i32 RecordingHandle;
-    i32 InputRecordingIndex;
-
-	//File handle for state playback
-    i32 PlaybackHandle;
-    i32 InputPlayingIndex;
-} LINUX_STATE;
 
 //Linux file handling
 //Find file name of current application
 internal void linux_EXEFileNameGet(LINUX_STATE *State)
 {
-
-    ssize_t NumRead = readlink("/proc/self/exe", State->EXEPath, ArrayCount(State->EXEPath) - 1);
-    if (NumRead > 0)
+    //Read value of a symbolic link and record size
+    ssize_t PathSize = readlink("/proc/self/exe", State->EXEPath, ArrayCount(State->EXEPath) - 1);
+    if(PathSize > 0)
     {
         State->EXEFileName = State->EXEPath;
 
-        //Scan through the full path and remove until the final "\\"
+        //Scan through the full path and record
         for(char *Scan = State->EXEPath; *Scan; ++Scan)
         {
             if(*Scan == '\\')
@@ -125,85 +78,118 @@ internal void linux_BuildEXEPathGet(LINUX_STATE *State, const char *FileName, ch
     polar_StringConcatenate(State->EXEFileName - State->EXEPath, State->EXEPath, polar_StringLengthGet(FileName), FileName, Path);
 }
 
-
+//Record file attributes using stat ("http://pubs.opengroup.org/onlinepubs/000095399/basedefs/sys/stat.h.html") 
 internal ino_t linux_FileIDGet(char *FileName)
 {
-    struct stat Attr = {};
-    if (stat(FileName, &Attr))
+    struct stat FileAttributes = {};
+
+    if(stat(FileName, &FileAttributes))
     {
-        Attr.st_ino = 0;
+        FileAttributes.st_ino = 0;
     }
 
-    return Attr.st_ino;
+    return FileAttributes.st_ino;
 }
 
-internal LINUX_ENGINE_CODE linux_EngineCodeLoad(char *SourceDLLName, ino_t FileID)
+//Wrap dlopen with error handling
+internal void *linux_LibraryOpen(const char *Library)
 {
-    LINUX_ENGINE_CODE Result = {};
+    void *Handle = nullptr;
 
-    Result.GameLibID = FileID;
-    Result.IsDLValid = false;
-    Result.GameLibHandle = dlopen(SourceDLLName, RTLD_NOW | RTLD_LOCAL);
-
-    if(Result.GameLibHandle)
+    Handle = dlopen(Library, RTLD_NOW | RTLD_LOCAL);
+    
+    //Record error using dlerror
+    if(!Handle)
     {
-        dlsym(Result.GameLibHandle, "RenderUpdate");
-        Result.IsDLValid = (Result.UpdateAndRender);
+        printf("Linux: dlopen failed!\t%s\n", dlerror());
     }
 
-    if(!Result.IsDLValid)
-    {
-        Result.UpdateAndRender = 0;
-    }
-
-    return Result;
+    return Handle;
 }
 
+//Wrap dlclose
+internal void linux_LibraryClose(void *Handle)
+{
+    if(Handle != nullptr)
+    {
+        dlclose(Handle);
+        Handle = nullptr;
+    }
+}
+
+//Wrap dlsym with error handling
+internal void *linux_ExternalFunctionLoad(void *Library, const char *Name)
+{
+    void *FunctionSymbol = dlsym(Library, Name);
+
+    if(!FunctionSymbol)
+    {
+        printf("Linux: dlsym failed!\t%s\n", dlerror());
+    }
+
+    return FunctionSymbol;
+}
+
+//Check if file ID's match and load engine code if not
+internal bool linux_EngineCodeLoad(LINUX_ENGINE_CODE *EngineCode, char *DLName, ino_t FileID)
+{
+    if(EngineCode->EngineID != FileID)
+    {
+        linux_LibraryClose(EngineCode->EngineHandle);
+        EngineCode->EngineID = FileID;
+        EngineCode->IsDLValid = false;
+
+        //TODO: Can't actually pass DLName here because Linux want's "./" prefixed, create function to prefix strings
+        EngineCode->EngineHandle = linux_LibraryOpen("./polar.so");
+        if (EngineCode->EngineHandle)
+        {
+            *(void **)(&EngineCode->UpdateAndRender) = linux_ExternalFunctionLoad(EngineCode->EngineHandle, "RenderUpdate");
+
+            EngineCode->IsDLValid = (EngineCode->UpdateAndRender);
+        }
+    }
+
+    if(!EngineCode->IsDLValid)
+    {
+        linux_LibraryClose(EngineCode->EngineHandle);
+        EngineCode->EngineID = 0;
+        EngineCode->UpdateAndRender = 0;
+    }
+
+    return EngineCode->IsDLValid;
+}
+
+//Unload engine code
+internal void linux_EngineCodeUnload(LINUX_ENGINE_CODE *EngineCode)
+{
+    linux_LibraryClose(EngineCode->EngineHandle);
+    EngineCode->EngineID = 0;
+    EngineCode->IsDLValid = false;
+    EngineCode->UpdateAndRender = 0;
+}
 
 
 int main(int argc, char *argv[])
 {
-    //Error handling code passed to snd_strerror()
-    i32 ALSAError;
-
-    snd_pcm_t *Device;
-    snd_pcm_sframes_t FramesWritten;
-
-    ALSA_PROPERTIES DeviceSettings = {};
-    DeviceSettings.SampleRate = 48000;
-    DeviceSettings.ALSAResample = 1;
-    DeviceSettings.Channels = 2;
-    DeviceSettings.LatencyInMS = 32;
-    // DeviceSettings.LatencyInMS = 500;
+    POLAR_DATA PolarEngine = {};
 
 
-    ALSAError = snd_pcm_open(&Device, "default", SND_PCM_STREAM_PLAYBACK, 0);   
-    ERR_TO_RETURN(ALSAError, "Failed to open default audio device", -1);
-
-    ALSAError = snd_pcm_set_params(Device, SND_PCM_FORMAT_FLOAT, SND_PCM_ACCESS_RW_INTERLEAVED, DeviceSettings.Channels, DeviceSettings.SampleRate, DeviceSettings.ALSAResample, (DeviceSettings.LatencyInMS * 1000));
-    ERR_TO_RETURN(ALSAError, "Failed to set default device parameters", -1);
-
-
-    ALSAError = snd_pcm_get_params(Device, &DeviceSettings.BufferSize, &DeviceSettings.PeriodSize);
-    ERR_TO_RETURN(ALSAError, "Failed to get default device parameters", -1);
-
-    POLAR_BUFFER TestBuffer = {};
-    TestBuffer.SampleBuffer = (f32 *) mmap(nullptr, ((sizeof *TestBuffer.SampleBuffer) * (DeviceSettings.SampleRate * DeviceSettings.Channels)), PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-    TestBuffer.DeviceBuffer = (f32 *) mmap(nullptr, ((sizeof *TestBuffer.SampleBuffer) * (DeviceSettings.SampleRate * DeviceSettings.Channels)), PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+    ALSA_DATA *ALSA =           linux_ALSA_Create(PolarEngine.Buffer, 48000, 2, 32);
+    PolarEngine.BufferFrames =  PolarEngine.Buffer.FramesAvailable;
+    PolarEngine.Channels =      ALSA->Channels;
+    PolarEngine.SampleRate =    ALSA->SampleRate;
+    //TODO: Convert flags like SND_PCM_FORMAT_FLOAT to numbers
+    PolarEngine.BitRate =       32;
 
 
-
-    OSCILLATOR *SineOsc = entropy_wave_OscillatorCreate(DeviceSettings.SampleRate, SINE, 440);
-
-
+    POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
+    OSCILLATOR *SineOsc = entropy_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 440);
 
 
 
     LINUX_STATE LinuxState = {};
     linux_EXEFileNameGet(&LinuxState);
-    linux_BuildEXEPathGet(&LinuxState, "linux_polar", LinuxState.EngineSourceCodePath);
-    linux_BuildEXEPathGet(&LinuxState, "polar.so", LinuxState.TempEngineSourceCodePath);
-
+    linux_BuildEXEPathGet(&LinuxState, "polar.so", LinuxState.EngineSourceCodePath);
 
 
     POLAR_MEMORY EngineMemory = {};
@@ -220,60 +206,72 @@ int main(int argc, char *argv[])
 
 
 
-
-
     if(EngineMemory.PermanentData && EngineMemory.TemporaryData)
     {
-        //! Not finding the so file! Debug this
-        LINUX_ENGINE_CODE PolarState = linux_EngineCodeLoad(LinuxState.EngineSourceCodePath, linux_FileIDGet(LinuxState.TempEngineSourceCodePath));
         
-        
-        //Extern rendering function
-        if(PolarState.UpdateAndRender)
-        {
+        LINUX_ENGINE_CODE PolarState = {};
+        linux_EngineCodeLoad(&PolarState, LinuxState.EngineSourceCodePath, linux_FileIDGet(LinuxState.EngineSourceCodePath));
 
-            FILL(DeviceSettings.Channels, (DeviceSettings.SampleRate), TestBuffer.SampleBuffer, TestBuffer.DeviceBuffer, SineOsc);
-
-            //TODO: Fill PolarEngine and Input structs
-            // PolarState.UpdateAndRender(PolarEngine, nullptr, SineOsc, &EngineMemory, NewInput);
-        }
+        POLAR_INPUT Input[2] = {};
+        POLAR_INPUT *NewInput = &Input[0];
+        POLAR_INPUT *OldInput = &Input[1];
+    
 
         for(int i = 0; i < 5; i++)
         {
-            //Send frames to the device
-            FramesWritten = snd_pcm_writei(Device, TestBuffer.SampleBuffer, (DeviceSettings.SampleRate / 2));
-
-            //If no frames are written then try to recover the output stream
-            if(FramesWritten < 0)
+            //Extern rendering function
+            if(PolarState.UpdateAndRender)
             {
-                FramesWritten = snd_pcm_recover(Device, FramesWritten, 0);
-            }
+                //Update objects and fill the buffer
+                if(OutputRenderFile != nullptr)
+                {
+                    PolarState.UpdateAndRender(PolarEngine, OutputRenderFile, SineOsc, &EngineMemory, NewInput);
+                    OutputRenderFile->TotalSampleCount += polar_render_WAVWriteFloat(OutputRenderFile, (PolarEngine.Buffer.FramesAvailable * PolarEngine.Channels), OutputRenderFile->Data);
+                }
 
-            //If recovery fails then quit
-            if(FramesWritten < 0) 
-            {
-                ERR_TO_RETURN(FramesWritten, "Failed to write any output frames! snd_pcm_writei()", -1);
-            }
+                else
+                {
+                    PolarState.UpdateAndRender(PolarEngine, nullptr, SineOsc, &EngineMemory, NewInput);
+                }
 
-            //Wrote less frames than the total buffer length
-            if(FramesWritten > 0 && FramesWritten < (DeviceSettings.SampleRate / 2))
-            {
-                printf("Short write (expected %i, wrote %li)\n", (DeviceSettings.SampleRate / 2), FramesWritten);
-            }
+                ALSA->FramesWritten = snd_pcm_writei(ALSA->Device, PolarEngine.Buffer.SampleBuffer, (PolarEngine.BufferFrames));
 
-            printf("Frames written:\t%ld\n", FramesWritten);
+                //If no frames are written then try to recover the output stream
+                if(ALSA->FramesWritten < 0)
+                {
+                    ALSA->FramesWritten = snd_pcm_recover(ALSA->Device, ALSA->FramesWritten, 0);
+                }
+
+                //If recovery fails then quit
+                if(ALSA->FramesWritten < 0) 
+                {
+                    ERR_TO_RETURN(ALSA->FramesWritten, "Failed to write any output frames! snd_pcm_writei()", -1);
+                }
+
+                //Wrote less frames than the total buffer length
+                if(ALSA->FramesWritten > 0 && ALSA->FramesWritten < (PolarEngine.BufferFrames))
+                {
+                    printf("Short write (expected %i, wrote %li)\n", (PolarEngine.BufferFrames), ALSA->FramesWritten);
+                }
+            }        
         }
+
+    
+
+        //Reset input for next loop
+        POLAR_INPUT *Temp = NewInput;
+        NewInput = OldInput;
+        OldInput = Temp;
 
     }
 
+    printf("Frames written:\t%ld\n", ALSA->FramesWritten);
+    printf("Polar: %lu frames written to %s\n", OutputRenderFile->TotalSampleCount, OutputRenderFile->Path);
 
-    munmap(TestBuffer.SampleBuffer, (sizeof *TestBuffer.SampleBuffer) * (DeviceSettings.SampleRate * DeviceSettings.Channels));
-    munmap(TestBuffer.DeviceBuffer, (sizeof *TestBuffer.SampleBuffer) * (DeviceSettings.SampleRate * DeviceSettings.Channels));
-
+    polar_render_WAVWriteDestroy(OutputRenderFile);
 
     entropy_wave_OscillatorDestroy(SineOsc);
-    snd_pcm_close(Device);
-    
+    linux_ALSA_Destroy(ALSA, PolarEngine.Buffer);    
     
     return 0;
 }

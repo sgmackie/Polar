@@ -3,8 +3,7 @@
 #include "polar.h"
 #include "polar_file.cpp"
 
-//Windows includes
-#include <Windows.h>
+//Windows
 #include "win32_polar.h"
 
 //Win32 globals
@@ -566,7 +565,6 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             GlobalRunning = true;
 
             //Create rendering output file
-            //TODO: File writing is broken! Need to be external functions
             POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
 
             //!Test source

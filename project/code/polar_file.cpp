@@ -62,7 +62,9 @@ POLAR_WAV *polar_render_WAVWriteCreate(const char *FilePath, POLAR_DATA *Engine)
 	File->Path = FilePath;
 
 	//Open file handle
-	fopen_s(&File->WAVFile, File->Path, "wb"); //MSVC specific file open
+	//TODO: Check differences between file opening, write platform specific functions?
+	// fopen_s(&File->WAVFile, File->Path, "wb"); //MSVC specific file open
+	File->WAVFile = fopen(File->Path, "w");
 	if(File->WAVFile == nullptr)
 	{
 		return nullptr;

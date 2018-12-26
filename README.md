@@ -8,7 +8,7 @@
 
 Simple real-time audio engine in C/C++. Currently supports Windows (WASAPI) and Linux (ALSA), with support for macOS planned (CoreAudio).
 
-Primary use is as a test bed for any DSP projects I'm currently working on and to experiment with game audio concepts related to audio engine design.
+Primary use is as a test bed for any DSP projects I'm currently working on and to experiment with game audio concepts related to engine design.
 
 ### Changelog: <a name="changelog"></a>
 
