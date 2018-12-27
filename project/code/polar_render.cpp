@@ -75,32 +75,32 @@ extern "C" POLAR_RENDER_CALLBACK(RenderUpdate)
     {
 		POLAR_INPUT_CONTROLLER *Controller = ControllerGet(Input, ControllerIndex);
 
-		if(Controller->State.ButtonPress.MoveUp.EndedDown)
+		if(Controller->State.Press.MoveUp.EndedDown)
         {
             ObjectState->Amplitude += 0.1f;
         }
 
-        if(Controller->State.ButtonPress.MoveDown.EndedDown)
+        if(Controller->State.Press.MoveDown.EndedDown)
         {
             ObjectState->Amplitude -= 0.1f;
         }
 
-		if(Controller->State.ButtonPress.MoveRight.EndedDown)
+		if(Controller->State.Press.MoveRight.EndedDown)
         {
             ObjectState->Frequency += 10.0f;
         }
             
-        if(Controller->State.ButtonPress.MoveLeft.EndedDown)
+        if(Controller->State.Press.MoveLeft.EndedDown)
         {
             ObjectState->Frequency -= 10.0f;
         }
 
-		if(Controller->State.ButtonPress.ActionRight.EndedDown)
+		if(Controller->State.Press.ActionRight.EndedDown)
         {
             ObjectState->Pan += 0.1f;
         }
             
-        if(Controller->State.ButtonPress.ActionLeft.EndedDown)
+        if(Controller->State.Press.ActionLeft.EndedDown)
         {
             ObjectState->Pan -= 0.1f;
         }

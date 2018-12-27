@@ -37,7 +37,7 @@ typedef struct POLAR_INPUT_CONTROLLER
     {
         POLAR_INPUT_STATE Buttons[12];
         
-		struct ButtonPress
+		struct Press
         {
             POLAR_INPUT_STATE MoveUp;
             POLAR_INPUT_STATE MoveDown;
@@ -56,7 +56,7 @@ typedef struct POLAR_INPUT_CONTROLLER
         	POLAR_INPUT_STATE Start;
             
             POLAR_INPUT_STATE Terminator;
-        } ButtonPress;
+        } Press;
     } State;
 
 } POLAR_INPUT_CONTROLLER;

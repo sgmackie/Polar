@@ -6,8 +6,9 @@
 #include "linux_polar.h"
 
 //Linux globals
-// global bool GlobalRunning;
-// global bool GlobalPause;
+global bool GlobalRunning;
+global bool GlobalPause;
+global LINUX_OFFSCREEN_BUFFER GlobalDisplayBuffer;
 
 //!Test variables!
 global WAVEFORM Waveform = SINE;
@@ -167,6 +168,136 @@ internal void linux_EngineCodeUnload(LINUX_ENGINE_CODE *EngineCode)
     EngineCode->UpdateAndRender = 0;
 }
 
+//Process inputs when released
+internal void linux_InputMessageProcess(POLAR_INPUT_STATE *NewState, bool IsDown)
+{
+    if(NewState->EndedDown != IsDown)
+    {
+        NewState->EndedDown = IsDown;
+        ++NewState->HalfTransitionCount;
+    }
+}
+
+//Process the window message queue
+internal void linux_WindowMessageProcess(LINUX_STATE *State, Display *Display, Window Window, Atom WmDeleteWindow, POLAR_INPUT_CONTROLLER *KeyboardController)
+{
+    while(GlobalRunning && XPending(Display))
+    {
+        XEvent Event;
+        XNextEvent(Display, &Event);
+
+        switch(Event.type)
+        {
+            case ConfigureNotify:
+            case DestroyNotify:
+            {
+                GlobalRunning = false;
+                break;
+            }
+            case ClientMessage:
+            {
+                if ((Atom)Event.xclient.data.l[0] == WmDeleteWindow)
+                {
+                    GlobalRunning = false;
+                }
+                break;
+            }
+            case MotionNotify:
+            case ButtonRelease:
+            case ButtonPress:
+            case KeyPress:
+            case KeyRelease:
+            {
+                if(!GlobalPause)
+                {
+                    if(Event.xkey.keycode == KEYCODE_W)
+                    {
+                        linux_InputMessageProcess(&KeyboardController->State.Press.MoveUp, Event.type == KeyRelease);
+                    }
+                    else if(Event.xkey.keycode == KEYCODE_A)
+                    {
+                        linux_InputMessageProcess(&KeyboardController->State.Press.MoveLeft, Event.type == KeyRelease);
+                    }
+                    else if(Event.xkey.keycode == KEYCODE_S)
+                    {
+                        linux_InputMessageProcess(&KeyboardController->State.Press.MoveDown, Event.type == KeyRelease);
+                    }
+                    else if(Event.xkey.keycode == KEYCODE_D)
+                    {
+                        linux_InputMessageProcess(&KeyboardController->State.Press.MoveRight, Event.type == KeyRelease);
+                    }
+                    else if(Event.xkey.keycode == KEYCODE_Q)
+                    {
+                        linux_InputMessageProcess(&KeyboardController->State.Press.LeftShoulder, Event.type == KeyRelease);
+                    }
+                    else if(Event.xkey.keycode == KEYCODE_E)
+                    {
+                        linux_InputMessageProcess(&KeyboardController->State.Press.RightShoulder, Event.type == KeyRelease);
+                    }
+                    else if(Event.xkey.keycode == KEYCODE_UP)
+                    {
+                        linux_InputMessageProcess(&KeyboardController->State.Press.ActionUp, Event.type == KeyRelease);
+                    }
+                    else if(Event.xkey.keycode == KEYCODE_LEFT)
+                    {
+                        linux_InputMessageProcess(&KeyboardController->State.Press.ActionLeft, Event.type == KeyRelease);
+                    }
+                    else if(Event.xkey.keycode == KEYCODE_DOWN)
+                    {
+                        linux_InputMessageProcess(&KeyboardController->State.Press.ActionDown, Event.type == KeyRelease);
+                    }
+                    else if(Event.xkey.keycode == KEYCODE_RIGHT)
+                    {
+                        linux_InputMessageProcess(&KeyboardController->State.Press.ActionRight, Event.type == KeyRelease);
+                    }
+                    else if(Event.xkey.keycode == KEYCODE_ESCAPE)
+                    {
+                        linux_InputMessageProcess(&KeyboardController->State.Press.Start, Event.type == KeyRelease);
+                    }
+                    else if(Event.xkey.keycode == KEYCODE_SPACE)
+                    {
+                        linux_InputMessageProcess(&KeyboardController->State.Press.Back, Event.type == KeyRelease);
+                    }
+                }
+                
+                else if(Event.xkey.keycode == KEYCODE_P)
+                {
+                    if(Event.type == KeyRelease)
+                    {
+                        GlobalPause = !GlobalPause;
+                    }
+                }
+
+                break;
+            }
+            default:
+            {
+                break;
+            }
+        }
+    }
+}
+
+//Create display buffer
+internal LINUX_OFFSCREEN_BUFFER linux_WindowDimensionsGet(u32 Width, u32 Height)
+{
+    LINUX_OFFSCREEN_BUFFER Buffer = {};
+    Buffer.Width = Width;
+    Buffer.Height = Height;
+    Buffer.Pitch = Align16(Buffer.Width * Buffer.BytesPerPixel);
+    u32 Size = Buffer.Pitch * Buffer.Height;
+
+    Buffer.Data = (u8 *) mmap(nullptr, Size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    
+    if(Buffer.Data == MAP_FAILED)
+    {
+        Buffer.Width = 0;
+        Buffer.Height = 0;
+        return Buffer;
+    }
+
+    return Buffer;
+}
 
 int main(int argc, char *argv[])
 {
@@ -174,15 +305,36 @@ int main(int argc, char *argv[])
     linux_EXEFileNameGet(&LinuxState);
     linux_BuildEXEPathGet(&LinuxState, "polar.so", LinuxState.EngineSourceCodePath);
 
+    GlobalDisplayBuffer = linux_WindowDimensionsGet(1280, 720);
     Display *X11Display = XOpenDisplay(":0.0");
 
     if(X11Display)
     {
-        //TODO: Get X11 working and passing input messages
-        // Window X11Window = {};
+  	    i32 Screen = DefaultScreen(X11Display);
+        Window X11Window = XCreateSimpleWindow(X11Display, DefaultRootWindow(X11Display), 0, 0, 1280, 720, 5, WhitePixel(X11Display, Screen), BlackPixel(X11Display, Screen));
+        
+        //!Inputs need this to process but are stuck in infinte loop (and Pause key doesn't work), debug this!
+        // XSelectInput(X11Display, X11Window, ExposureMask|KeyReleaseMask);
 
-        // if(X11Window)
+        if(X11Window)
         {
+            GC GraphicsContext = XCreateGC(X11Display, X11Window, 0,0); 
+
+            XSetBackground(X11Display, GraphicsContext, WhitePixel(X11Display, Screen));
+	        XSetForeground(X11Display, GraphicsContext, BlackPixel(X11Display, Screen));
+            
+            XSizeHints SizeHints = {};
+            SizeHints.x = 0;
+            SizeHints.y = 0;
+            SizeHints.width  = GlobalDisplayBuffer.Width;
+            SizeHints.height = GlobalDisplayBuffer.Height;
+            SizeHints.flags = USSize | USPosition;
+
+            XSetNormalHints(X11Display, X11Window, &SizeHints);
+            XSetStandardProperties(X11Display, X11Window, "Polar", "glsync text", None, nullptr, 0, &SizeHints);
+
+            Atom WmDeleteWindow = XInternAtom(X11Display, "WM_DELETE_WINDOW", False);
+            XSetWMProtocols(X11Display, X11Window, &WmDeleteWindow, 1);
 
             POLAR_DATA PolarEngine = {};
             ALSA_DATA *ALSA =           linux_ALSA_Create(PolarEngine.Buffer, 48000, 2, 32);
@@ -191,6 +343,9 @@ int main(int argc, char *argv[])
             PolarEngine.SampleRate =    ALSA->SampleRate;
             //TODO: Convert flags like SND_PCM_FORMAT_FLOAT to numbers
             PolarEngine.BitRate =       32;
+
+            //Start infinite loop
+            GlobalRunning = true;
 
             POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
             OSCILLATOR *SineOsc = entropy_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 440);
@@ -209,7 +364,6 @@ int main(int argc, char *argv[])
             EngineMemory.TemporaryData = ((uint8 *) EngineMemory.PermanentData + EngineMemory.PermanentDataSize);
 
 
-
             if(EngineMemory.PermanentData && EngineMemory.TemporaryData)
             {   
                 LINUX_ENGINE_CODE PolarState = {};
@@ -220,56 +374,76 @@ int main(int argc, char *argv[])
                 POLAR_INPUT *OldInput = &Input[1];
 
 
-                for(int i = 0; i < 5; i++)
+	            XMapRaised(X11Display, X11Window);
+
+                while(GlobalRunning)
                 {
-                    //Extern rendering function
-                    if(PolarState.UpdateAndRender)
+                    POLAR_INPUT_CONTROLLER *OldKeyboardController = ControllerGet(OldInput, 0);
+                    POLAR_INPUT_CONTROLLER *NewKeyboardController = ControllerGet(NewInput, 0);
+                    *NewKeyboardController = {};
+                    NewKeyboardController->IsConnected = true;
+                    
+                    for(u32 ButtonIndex = 0; ButtonIndex < ArrayCount(NewKeyboardController->State.Buttons); ++ButtonIndex)
                     {
-                        //Update objects and fill the buffer
-                        if(OutputRenderFile != nullptr)
+                        NewKeyboardController->State.Buttons[ButtonIndex].EndedDown = OldKeyboardController->State.Buttons[ButtonIndex].EndedDown;
+                    }
+
+                    for(u32 ButtonIndex = 0; ButtonIndex < 5; ++ButtonIndex)
+                    {
+                        NewInput->MouseButtons[ButtonIndex] = OldInput->MouseButtons[ButtonIndex];
+                        NewInput->MouseButtons[ButtonIndex].HalfTransitionCount = 0;
+                    }
+
+                    linux_WindowMessageProcess(&LinuxState, X11Display, X11Window, WmDeleteWindow, NewKeyboardController);
+
+                    if(!GlobalPause)
+                    {
+                        //Extern rendering function
+                        if(PolarState.UpdateAndRender)
                         {
-                            PolarState.UpdateAndRender(PolarEngine, OutputRenderFile, SineOsc, &EngineMemory, NewInput);
-                            OutputRenderFile->TotalSampleCount += polar_render_WAVWriteFloat(OutputRenderFile, (PolarEngine.Buffer.FramesAvailable * PolarEngine.Channels), OutputRenderFile->Data);
+                            //Update objects and fill the buffer
+                            if(OutputRenderFile != nullptr)
+                            {
+                                PolarState.UpdateAndRender(PolarEngine, OutputRenderFile, SineOsc, &EngineMemory, NewInput);
+                                OutputRenderFile->TotalSampleCount += polar_render_WAVWriteFloat(OutputRenderFile, (PolarEngine.Buffer.FramesAvailable * PolarEngine.Channels), OutputRenderFile->Data);
+                            }
+
+                            else
+                            {
+                                PolarState.UpdateAndRender(PolarEngine, nullptr, SineOsc, &EngineMemory, NewInput);
+                            }
+
+                            ALSA->FramesWritten = snd_pcm_writei(ALSA->Device, PolarEngine.Buffer.SampleBuffer, (PolarEngine.BufferFrames));
+
+                            //If no frames are written then try to recover the output stream
+                            if(ALSA->FramesWritten < 0)
+                            {
+                                ALSA->FramesWritten = snd_pcm_recover(ALSA->Device, ALSA->FramesWritten, 0);
+                            }
+
+                            //If recovery fails then quit
+                            if(ALSA->FramesWritten < 0) 
+                            {
+                                ERR_TO_RETURN(ALSA->FramesWritten, "ALSA: Failed to write any output frames! snd_pcm_writei()", -1);
+                            }
+
+                            //Wrote less frames than the total buffer length
+                            if(ALSA->FramesWritten > 0 && ALSA->FramesWritten < (PolarEngine.BufferFrames))
+                            {
+                                printf("ALSA: Short write!\tExpected %i, wrote %li\n", (PolarEngine.BufferFrames), ALSA->FramesWritten);
+                            }
+
+                            printf("ALSA: Frames written:\t%ld\n", ALSA->FramesWritten);
                         }
 
-                        else
-                        {
-                            PolarState.UpdateAndRender(PolarEngine, nullptr, SineOsc, &EngineMemory, NewInput);
-                        }
-
-                        ALSA->FramesWritten = snd_pcm_writei(ALSA->Device, PolarEngine.Buffer.SampleBuffer, (PolarEngine.BufferFrames));
-
-                        //If no frames are written then try to recover the output stream
-                        if(ALSA->FramesWritten < 0)
-                        {
-                            ALSA->FramesWritten = snd_pcm_recover(ALSA->Device, ALSA->FramesWritten, 0);
-                        }
-
-                        //If recovery fails then quit
-                        if(ALSA->FramesWritten < 0) 
-                        {
-                            ERR_TO_RETURN(ALSA->FramesWritten, "Failed to write any output frames! snd_pcm_writei()", -1);
-                        }
-
-                        //Wrote less frames than the total buffer length
-                        if(ALSA->FramesWritten > 0 && ALSA->FramesWritten < (PolarEngine.BufferFrames))
-                        {
-                            printf("Short write (expected %i, wrote %li)\n", (PolarEngine.BufferFrames), ALSA->FramesWritten);
-                        }
-                    }        
+                        //Reset input for next loop
+                        POLAR_INPUT *Temp = NewInput;
+                        NewInput = OldInput;
+                        OldInput = Temp;
+                    }      
                 }
-
-
-
-                //Reset input for next loop
-                POLAR_INPUT *Temp = NewInput;
-                NewInput = OldInput;
-                OldInput = Temp;
-
             }
 
-
-            printf("Frames written:\t%ld\n", ALSA->FramesWritten);
             printf("Polar: %lu frames written to %s\n", OutputRenderFile->TotalSampleCount, OutputRenderFile->Path);
     
             polar_render_WAVWriteDestroy(OutputRenderFile);
@@ -278,8 +452,6 @@ int main(int argc, char *argv[])
             linux_ALSA_Destroy(ALSA, PolarEngine.Buffer);
         }
     }
-
-
     
     return 0;
 }

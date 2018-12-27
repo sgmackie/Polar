@@ -43,7 +43,7 @@ PlatformFiles=../../../project/code/${Platform}.cpp
 # -Wno              to disable Clang warnings:  unused-function
 # -pedantic         warn about language extensions
 # -std=c++11        choose C++ 2011 Standard if linking to the C++ library
-CompilerFlags="-g -Wall -Werror -Wno-unused-function -pedantic"
+CompilerFlags="-g -Wall -Werror -Wno-unused-function -pedantic -std=c++11"
 
 # Set Compiler optimsation level for debug or release builds
 # -O0               compiler optimisations level

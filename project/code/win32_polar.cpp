@@ -282,51 +282,51 @@ internal void win32_WindowMessageProcess(WIN32_STATE *State, POLAR_INPUT_CONTROL
                 {
                     if(VKCode == 'W')
                     {
-                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.MoveUp, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.Press.MoveUp, IsDown);
                     }
                     else if(VKCode == 'A')
                     {
-                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.MoveLeft, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.Press.MoveLeft, IsDown);
                     }
                     else if(VKCode == 'S')
                     {
-                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.MoveDown, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.Press.MoveDown, IsDown);
                     }
                     else if(VKCode == 'D')
                     {
-                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.MoveRight, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.Press.MoveRight, IsDown);
                     }
                     else if(VKCode == 'Q')
                     {
-                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.LeftShoulder, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.Press.LeftShoulder, IsDown);
                     }
                     else if(VKCode == 'E')
                     {
-                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.RightShoulder, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.Press.RightShoulder, IsDown);
                     }
                     else if(VKCode == VK_UP)
                     {
-                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.ActionUp, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.Press.ActionUp, IsDown);
                     }
                     else if(VKCode == VK_LEFT)
                     {
-                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.ActionLeft, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.Press.ActionLeft, IsDown);
                     }
                     else if(VKCode == VK_DOWN)
                     {
-                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.ActionDown, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.Press.ActionDown, IsDown);
                     }
                     else if(VKCode == VK_RIGHT)
                     {
-                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.ActionRight, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.Press.ActionRight, IsDown);
                     }
                     else if(VKCode == VK_ESCAPE)
                     {
-                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.Start, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.Press.Start, IsDown);
                     }
                     else if(VKCode == VK_SPACE)
                     {
-                        win32_InputMessageProcess(&KeyboardController->State.ButtonPress.Back, IsDown);
+                        win32_InputMessageProcess(&KeyboardController->State.Press.Back, IsDown);
                     }
                     else if(VKCode == 'P')
                     {
