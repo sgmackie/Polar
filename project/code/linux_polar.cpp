@@ -1,6 +1,7 @@
 //Polar
 #include "polar.h"
 #include "polar_file.cpp"
+#include "polar_dsp.cpp"
 
 //Linux
 #include "linux_polar.h"
@@ -34,8 +35,8 @@ ALSA_DATA *linux_ALSA_Create(POLAR_BUFFER &Buffer, u32 UserSampleRate, u16 UserC
     ALSAError = snd_pcm_get_params(Result->Device, &Result->BufferSize, &Result->PeriodSize);
     ERR_TO_RETURN(ALSAError, "Failed to get default device parameters", nullptr);
 
-    Buffer.SampleBuffer = (f32 *) mmap(nullptr, ((sizeof *Buffer.SampleBuffer) * (Result->SampleRate * Result->Channels)), PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-    Buffer.DeviceBuffer = (f32 *) mmap(nullptr, ((sizeof *Buffer.SampleBuffer) * (Result->SampleRate * Result->Channels)), PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+    Buffer.SampleBuffer = (f32 *) mmap(nullptr, ((sizeof *Buffer.SampleBuffer) * (Result->SampleRate * Result->Channels)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    Buffer.DeviceBuffer = (f32 *) mmap(nullptr, ((sizeof *Buffer.SampleBuffer) * (Result->SampleRate * Result->Channels)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     Buffer.FramesAvailable = ((Result->BufferSize + Result->PeriodSize) * Result->Channels);
 
     return Result;
@@ -348,7 +349,16 @@ int main(int argc, char *argv[])
             GlobalRunning = true;
 
             POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
-            OSCILLATOR *SineOsc = entropy_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 440);
+            //Create objects
+            POLAR_OBJECT_ARRAY Oscillators = {};
+            Oscillators.Count = 4;
+            Oscillators.Objects = (POLAR_OBJECT **) mmap(nullptr, ((sizeof (POLAR_OBJECT)) * (Oscillators.Count)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            for(u32 i = 0; i < Oscillators.Count; ++i)
+            {
+                Oscillators.Objects[i] = (POLAR_OBJECT *) mmap(nullptr, (sizeof (POLAR_OBJECT)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+                Oscillators.Objects[i]->UID = i;
+                Oscillators.Objects[i]->Oscillator = polar_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 0);
+            }
 
 
             POLAR_MEMORY EngineMemory = {};
@@ -357,7 +367,7 @@ int main(int argc, char *argv[])
 
 
             LinuxState.TotalSize = EngineMemory.PermanentDataSize + EngineMemory.TemporaryDataSize;
-            LinuxState.EngineMemoryBlock = mmap(nullptr, ((size_t) LinuxState.TotalSize), PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+            LinuxState.EngineMemoryBlock = mmap(nullptr, ((size_t) LinuxState.TotalSize), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
 
             EngineMemory.PermanentData = LinuxState.EngineMemoryBlock;
@@ -372,7 +382,6 @@ int main(int argc, char *argv[])
                 POLAR_INPUT Input[2] = {};
                 POLAR_INPUT *NewInput = &Input[0];
                 POLAR_INPUT *OldInput = &Input[1];
-
 
 	            XMapRaised(X11Display, X11Window);
 
@@ -404,13 +413,13 @@ int main(int argc, char *argv[])
                             //Update objects and fill the buffer
                             if(OutputRenderFile != nullptr)
                             {
-                                PolarState.UpdateAndRender(PolarEngine, OutputRenderFile, SineOsc, &EngineMemory, NewInput);
+                                PolarState.UpdateAndRender(PolarEngine, OutputRenderFile, &Oscillators, &EngineMemory, NewInput);
                                 OutputRenderFile->TotalSampleCount += polar_render_WAVWriteFloat(OutputRenderFile, (PolarEngine.Buffer.FramesAvailable * PolarEngine.Channels), OutputRenderFile->Data);
                             }
 
                             else
                             {
-                                PolarState.UpdateAndRender(PolarEngine, nullptr, SineOsc, &EngineMemory, NewInput);
+                                PolarState.UpdateAndRender(PolarEngine, nullptr, &Oscillators, &EngineMemory, NewInput);
                             }
 
                             ALSA->FramesWritten = snd_pcm_writei(ALSA->Device, PolarEngine.Buffer.SampleBuffer, (PolarEngine.BufferFrames));
@@ -448,7 +457,18 @@ int main(int argc, char *argv[])
     
             polar_render_WAVWriteDestroy(OutputRenderFile);
     
-            entropy_wave_OscillatorDestroy(SineOsc);
+            for(u32 i = 0; i < Oscillators.Count; ++i)
+            {
+                polar_wave_OscillatorDestroy(Oscillators.Objects[i]->Oscillator);
+            }
+
+            for(u32 i = 0; i < Oscillators.Count; ++i)
+            {
+                munmap(Oscillators.Objects[i], (sizeof (POLAR_OBJECT)));
+            }
+
+            munmap(Oscillators.Objects, ((sizeof (POLAR_OBJECT)) * (Oscillators.Count)));
+            munmap(LinuxState.EngineMemoryBlock, ((size_t) LinuxState.TotalSize));
             linux_ALSA_Destroy(ALSA, PolarEngine.Buffer);
         }
     }

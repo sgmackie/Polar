@@ -1,5 +1,5 @@
 #!/bin/bash
-# Debian: run chmod u+x program_name if complaining about permissions
+# Debian: run chmod u+x build.sh if complaining about permissions
 # Make sure EOL sequence is LF! Editing scripts on Windows can change that
 
 # Stop at script errors
@@ -13,12 +13,17 @@ CurDir=$(pwd)
 # Set CTime directory relative to current drive and path
 CTimeDir="${CurDir}/../build/ctime"
 
+# Check if CTime path exists
+if [ ! -d "${CTimeDir}" ]; then
+	mkdir -p ${CTimeDir}
+fi
+
 # Move to CTime directory
 pushd ${CTimeDir} > /dev/null
 
 # Begin CTime on .cpp files
-./ctime_linux -begin ${Engine}.ctm
-./ctime_linux -begin ${Platform}.ctm
+#./ctime_linux -begin ${Engine}.ctm
+#./ctime_linux -begin ${Platform}.ctm
 
 # Step out of CTime directory
 popd > /dev/null
@@ -27,14 +32,16 @@ popd > /dev/null
 BuildDir="${CurDir}/../build/linux"
 
 # Make build directory if it doesn't exist
-mkdir -p ${BuildDir}
+if [ ! -d "${BuildDir}" ]; then
+	mkdir -p ${BuildDir}
+fi
 
 # Move to build directory
 pushd ${BuildDir} > /dev/null
 
 # Set compiler arguments
-EngineFiles=../../../project/code/${Engine}.cpp
-PlatformFiles=../../../project/code/${Platform}.cpp
+EngineFiles="${CurDir}/${Engine}.cpp"
+PlatformFiles="${CurDir}/${Platform}.cpp"
 
 # Set Clang compiler flags (https://clang.llvm.org/docs/genindex.html)
 # -g                generate debug information
@@ -78,8 +85,8 @@ popd > /dev/null
 pushd ${CTimeDir} > /dev/null
 
 # End CTime on .cpp files
-./ctime_linux -end ${Engine}.ctm ${PolarLastError}
-./ctime_linux -end ${Platform}.ctm ${PlatformLastError}
+#./ctime_linux -end ${Engine}.ctm ${PolarLastError}
+#./ctime_linux -end ${Platform}.ctm ${PlatformLastError}
 
 # Exit
 popd > /dev/null

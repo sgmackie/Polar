@@ -563,7 +563,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             Oscillators.Objects = (POLAR_OBJECT **) VirtualAlloc(0, ((sizeof (POLAR_OBJECT)) * (Oscillators.Count)), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
             for(u32 i = 0; i < Oscillators.Count; ++i)
             {
-                Oscillators.Objects[i] = (POLAR_OBJECT *) VirtualAlloc(0, (sizeof (POLAR_OBJECT)), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);;
+                Oscillators.Objects[i] = (POLAR_OBJECT *) VirtualAlloc(0, (sizeof (POLAR_OBJECT)), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
                 Oscillators.Objects[i]->UID = i;
                 Oscillators.Objects[i]->Oscillator = polar_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 0);
             }
