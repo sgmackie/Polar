@@ -214,28 +214,27 @@ typedef enum WAVEFORM
 } WAVEFORM;
 
 //Wave oscillator
-typedef struct OSCILLATOR
+typedef struct POLAR_OSCILLATOR
 {
     WAVEFORM Waveform;
-    f64 (*Tick) (OSCILLATOR *Oscillator);   //Function pointer to the different waveform ticks
+    f64 (*Tick) (POLAR_OSCILLATOR *Oscillator);   //Function pointer to the different waveform ticks
     f64 TwoPiOverSampleRate;                //2 * Pi / Sample rate is a constant variable
     f64 PhaseCurrent;
     f64 PhaseIncrement;                     //Store calculated phase increment
     f64 FrequencyCurrent;
-
-} OSCILLATOR;
+} POLAR_OSCILLATOR;
 
 
 //Prototypes
-OSCILLATOR *entropy_wave_OscillatorCreate(u32 SampleRate, WAVEFORM WaveformSelect, f64 InitialFrequency);                                                                                //Allocation and initialisation functions in one
-void entropy_wave_OscillatorDestroy(OSCILLATOR *Oscillator);                                                                //Free oscillator struct
-void entropy_wave_OscillatorInit(OSCILLATOR *Oscillator, u32 SampleRate, WAVEFORM WaveformSelect, f64 InitialFrequency);    //Initialise elements of oscillator (can be used to reset)
-f64 entropy_wave_PhaseWrap(f64 &Phase);                                                                                     //Wrap phase 2*Pi as precaution against sin(x) function on different compilers failing to wrap large scale values internally
-f64 entropy_wave_TickSine(OSCILLATOR *Oscillator);                                                                          //Calculate sine wave samples
-f64 entropy_wave_TickSquare(OSCILLATOR *Oscillator);                                                                        //Calculate square wave samples
-f64 entropy_wave_TickSawDown(OSCILLATOR *Oscillator);                                                                       //Calculate downward square wave samples
-f64 entropy_wave_TickSawUp(OSCILLATOR *Oscillator);                                                                         //Calculate upward square wave samples
-f64 entropy_wave_TickTriangle(OSCILLATOR *Oscillator);    
+POLAR_OSCILLATOR *polar_wave_OscillatorCreate(u32 SampleRate, WAVEFORM WaveformSelect, f64 InitialFrequency);                                                                                //Allocation and initialisation functions in one
+void polar_wave_OscillatorDestroy(POLAR_OSCILLATOR *Oscillator);                                                                //Free oscillator struct
+void polar_wave_OscillatorInit(POLAR_OSCILLATOR *Oscillator, u32 SampleRate, WAVEFORM WaveformSelect, f64 InitialFrequency);    //Initialise elements of oscillator (can be used to reset)
+f64 polar_wave_PhaseWrap(f64 &Phase);                                                                                     //Wrap phase 2*Pi as precaution against sin(x) function on different compilers failing to wrap large scale values internally
+f64 polar_wave_TickSine(POLAR_OSCILLATOR *Oscillator);                                                                          //Calculate sine wave samples
+f64 polar_wave_TickSquare(POLAR_OSCILLATOR *Oscillator);                                                                        //Calculate square wave samples
+f64 polar_wave_TickSawDown(POLAR_OSCILLATOR *Oscillator);                                                                       //Calculate downward square wave samples
+f64 polar_wave_TickSawUp(POLAR_OSCILLATOR *Oscillator);                                                                         //Calculate upward square wave samples
+f64 polar_wave_TickTriangle(POLAR_OSCILLATOR *Oscillator);    
 
 
 /*                  */
@@ -254,7 +253,7 @@ typedef struct POLAR_OBJECT
 {
     u32 UID;
     char Name[64];
-    OSCILLATOR *Oscillator;
+    POLAR_OSCILLATOR *Oscillator;
     POLAR_OBJECT_STATE *State;
 } POLAR_OBJECT;
 
@@ -273,7 +272,7 @@ typedef struct POLAR_OBJECT_ARRAY
 //Prototypes
 //Rendering
 internal f32 polar_render_PanPositionGet(u16 Position, f32 Amplitude, f32 PanFactor);    //Calculate stereo pan position
-internal void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, void *DeviceBuffer, f32 *FileSamples, OSCILLATOR *Osc, POLAR_OBJECT_STATE *State);
+internal void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, void *DeviceBuffer, f32 *FileSamples, POLAR_OSCILLATOR *Osc, POLAR_OBJECT_STATE *State);
 
 //Create function pointer for rendering callback (an external function loaded dynamically)
 #define POLAR_RENDER_CALLBACK(FunctionName) void FunctionName(POLAR_DATA &Engine, POLAR_WAV *File, POLAR_OBJECT_ARRAY *Array, POLAR_MEMORY *Memory, POLAR_INPUT *Input)

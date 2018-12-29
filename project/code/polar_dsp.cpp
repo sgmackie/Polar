@@ -3,10 +3,10 @@
 
 
 //Allocation and initialisation functions in one
-OSCILLATOR *entropy_wave_OscillatorCreate(u32 SampleRate, WAVEFORM WaveformSelect, f64 InitialFrequency)
+POLAR_OSCILLATOR *polar_wave_OscillatorCreate(u32 SampleRate, WAVEFORM WaveformSelect, f64 InitialFrequency)
 {
     //TODO: Look into creating own allocator
-    OSCILLATOR *Oscillator = (OSCILLATOR *) malloc(sizeof *Oscillator);
+    POLAR_OSCILLATOR *Oscillator = (POLAR_OSCILLATOR *) malloc(sizeof *Oscillator);
 
     if(!Oscillator)
     {
@@ -15,14 +15,14 @@ OSCILLATOR *entropy_wave_OscillatorCreate(u32 SampleRate, WAVEFORM WaveformSelec
 
     if(SampleRate != 0 || WaveformSelect != 0 || InitialFrequency != 0)
     {
-        entropy_wave_OscillatorInit(Oscillator, SampleRate, WaveformSelect, InitialFrequency);
+        polar_wave_OscillatorInit(Oscillator, SampleRate, WaveformSelect, InitialFrequency);
     }
 
     return Oscillator;
 }
 
 //Free oscillator struct
-void entropy_wave_OscillatorDestroy(OSCILLATOR *Oscillator)
+void polar_wave_OscillatorDestroy(POLAR_OSCILLATOR *Oscillator)
 {
     if(Oscillator)
     {
@@ -32,7 +32,7 @@ void entropy_wave_OscillatorDestroy(OSCILLATOR *Oscillator)
 }
 
 //Initialise elements of oscillator (can be used to reset)
-void entropy_wave_OscillatorInit(OSCILLATOR *Oscillator, u32 SampleRate, WAVEFORM WaveformSelect, f64 InitialFrequency)
+void polar_wave_OscillatorInit(POLAR_OSCILLATOR *Oscillator, u32 SampleRate, WAVEFORM WaveformSelect, f64 InitialFrequency)
 {   
     Oscillator->Waveform = WaveformSelect;
 
@@ -40,32 +40,32 @@ void entropy_wave_OscillatorInit(OSCILLATOR *Oscillator, u32 SampleRate, WAVEFOR
     {
         case SINE:
         {
-            Oscillator->Tick = entropy_wave_TickSine;
+            Oscillator->Tick = polar_wave_TickSine;
             break;
         }
         case SQUARE:
         {
-            Oscillator->Tick = entropy_wave_TickSquare;
+            Oscillator->Tick = polar_wave_TickSquare;
             break;
         }
         case SAWDOWN:
         {
-            Oscillator->Tick = entropy_wave_TickSawDown;
+            Oscillator->Tick = polar_wave_TickSawDown;
             break;
         }
         case SAWUP:
         {
-            Oscillator->Tick = entropy_wave_TickSawUp;
+            Oscillator->Tick = polar_wave_TickSawUp;
             break;
         }
         case TRIANGLE:
         {
-            Oscillator->Tick = entropy_wave_TickTriangle;
+            Oscillator->Tick = polar_wave_TickTriangle;
             break;
         }
         default:
         {
-            Oscillator->Tick = entropy_wave_TickSine;
+            Oscillator->Tick = polar_wave_TickSine;
         }
     }
 
@@ -86,7 +86,7 @@ void entropy_wave_OscillatorInit(OSCILLATOR *Oscillator, u32 SampleRate, WAVEFOR
 }
 
 //Wrap phase 2*Pi as precaution against sin(x) function on different compilers failing to wrap large scale values internally
-f64 entropy_wave_PhaseWrap(f64 &Phase)
+f64 polar_wave_PhaseWrap(f64 &Phase)
 {    
     if(Phase >= TWO_PI32)
     {
@@ -103,7 +103,7 @@ f64 entropy_wave_PhaseWrap(f64 &Phase)
 
 
 //Calculate sine wave samples
-f64 entropy_wave_TickSine(OSCILLATOR *Oscillator)
+f64 polar_wave_TickSine(POLAR_OSCILLATOR *Oscillator)
 {
     f64 SineValue;
 
@@ -113,13 +113,13 @@ f64 entropy_wave_TickSine(OSCILLATOR *Oscillator)
     Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->FrequencyCurrent; //Load atomic value, multiply to get the phase increment
     Oscillator->PhaseCurrent += Oscillator->PhaseIncrement; //Increase phase by the calculated cycle increment
     
-    entropy_wave_PhaseWrap(Oscillator->PhaseCurrent);
+    polar_wave_PhaseWrap(Oscillator->PhaseCurrent);
 
     return SineValue;
 }
 
 //Calculate square wave samples
-f64 entropy_wave_TickSquare(OSCILLATOR *Oscillator)
+f64 polar_wave_TickSquare(POLAR_OSCILLATOR *Oscillator)
 {
     f64 SquareValue;
     
@@ -136,13 +136,13 @@ f64 entropy_wave_TickSquare(OSCILLATOR *Oscillator)
     }
     
     Oscillator->PhaseCurrent += Oscillator->PhaseIncrement;
-    entropy_wave_PhaseWrap(Oscillator->PhaseCurrent);
+    polar_wave_PhaseWrap(Oscillator->PhaseCurrent);
 
     return SquareValue;
 }
 
 //Calculate downward square wave samples
-f64 entropy_wave_TickSawDown(OSCILLATOR *Oscillator)
+f64 polar_wave_TickSawDown(POLAR_OSCILLATOR *Oscillator)
 {
     f64 SawDownValue;
     
@@ -151,13 +151,13 @@ f64 entropy_wave_TickSawDown(OSCILLATOR *Oscillator)
     Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->FrequencyCurrent;
     Oscillator->PhaseCurrent += Oscillator->PhaseIncrement;
     
-    entropy_wave_PhaseWrap(Oscillator->PhaseCurrent);
+    polar_wave_PhaseWrap(Oscillator->PhaseCurrent);
     
     return SawDownValue;
 }
 
 //Calculate upward square wave samples
-f64 entropy_wave_TickSawUp(OSCILLATOR *Oscillator)
+f64 polar_wave_TickSawUp(POLAR_OSCILLATOR *Oscillator)
 {
     f64 SawUpValue;
     
@@ -166,13 +166,13 @@ f64 entropy_wave_TickSawUp(OSCILLATOR *Oscillator)
     Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->FrequencyCurrent;
     Oscillator->PhaseCurrent += Oscillator->PhaseIncrement;
     
-    entropy_wave_PhaseWrap(Oscillator->PhaseCurrent);
+    polar_wave_PhaseWrap(Oscillator->PhaseCurrent);
     
     return SawUpValue;
 }
 
 //Calculate triangle wave samples
-f64 entropy_wave_TickTriangle(OSCILLATOR *Oscillator)
+f64 polar_wave_TickTriangle(POLAR_OSCILLATOR *Oscillator)
 {
     f64 TriangleValue;
     
@@ -188,7 +188,7 @@ f64 entropy_wave_TickTriangle(OSCILLATOR *Oscillator)
     Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->FrequencyCurrent;
     Oscillator->PhaseCurrent += Oscillator->PhaseIncrement;
     
-    entropy_wave_PhaseWrap(Oscillator->PhaseCurrent);
+    polar_wave_PhaseWrap(Oscillator->PhaseCurrent);
     
     return TriangleValue;
 }

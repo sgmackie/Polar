@@ -47,8 +47,10 @@ internal WASAPI_DATA *win32_WASAPI_Create(POLAR_BUFFER &Buffer, u32 UserSampleRa
 }
 
 //Remove WASAPI struct
-internal void win32_WASAPI_Destroy(WASAPI_DATA *WASAPI)
+internal void win32_WASAPI_Destroy(WASAPI_DATA *WASAPI, POLAR_BUFFER &Buffer)
 {
+    VirtualFree(Buffer.SampleBuffer, 0, MEM_RELEASE);
+
 	wasapi_DeviceDeInit(*WASAPI);
 	wasapi_InterfaceDestroy(WASAPI);
 }
@@ -577,7 +579,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             {
                 Oscillators.Objects[i] = (POLAR_OBJECT *) VirtualAlloc(0, (sizeof (POLAR_OBJECT)), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);;
                 Oscillators.Objects[i]->UID = i;
-                Oscillators.Objects[i]->Oscillator = entropy_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 0);
+                Oscillators.Objects[i]->Oscillator = polar_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 0);
             }
 
             //Allocate engine memory block
@@ -797,12 +799,17 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             
             for(u32 i = 0; i < Oscillators.Count; ++i)
             {
-                entropy_wave_OscillatorDestroy(Oscillators.Objects[i]->Oscillator);
+                polar_wave_OscillatorDestroy(Oscillators.Objects[i]->Oscillator);
+            }
+
+            for(u32 i = 0; i < Oscillators.Count; ++i)
+            {
+                VirtualFree(Oscillators.Objects[i], 0, MEM_RELEASE);
             }
 
             VirtualFree(Oscillators.Objects, 0, MEM_RELEASE);
-
-            win32_WASAPI_Destroy(WASAPI);
+            VirtualFree(WindowState.EngineMemoryBlock, 0, MEM_RELEASE);
+            win32_WASAPI_Destroy(WASAPI, PolarEngine.Buffer);
 		}
 	}
 

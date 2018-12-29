@@ -20,7 +20,7 @@ internal f32 polar_render_PanPositionGet(u16 Position, f32 Amplitude, f32 PanFac
 	return PanPosition;
 }
 
-internal void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, void *DeviceBuffer, f32 *FileSamples, OSCILLATOR *Osc, POLAR_OBJECT_STATE *State)
+internal void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, void *DeviceBuffer, f32 *FileSamples, POLAR_OSCILLATOR *Osc, POLAR_OBJECT_STATE *State)
 {	
 	f32 CurrentSample = 0;
 	f32 PanAmp = 0;
@@ -51,7 +51,7 @@ internal void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *
 extern "C" POLAR_RENDER_CALLBACK(RenderUpdate)
 {
 	//Memory checking	
-	Assert(sizeof(POLAR_OBJECT_STATE) <= Memory->PermanentDataSize);
+	Assert(sizeof (POLAR_OBJECT_STATE) <= Memory->PermanentDataSize);
 	Array->Objects[0]->State = (POLAR_OBJECT_STATE *) Memory->PermanentData;
 
 	//Initial object initialisation
