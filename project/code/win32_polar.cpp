@@ -362,7 +362,7 @@ internal void win32_WindowMessageProcess(WIN32_STATE *State, POLAR_INPUT_CONTROL
                     }
                 }
 
-                bool32 AltKeyWasDown = (Message.lParam & (1 << 29));
+                bool AltKeyWasDown = (Message.lParam & (1 << 29));
                 if((VKCode == VK_F4) && AltKeyWasDown)
                 {
                     GlobalRunning = false;

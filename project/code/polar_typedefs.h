@@ -60,44 +60,11 @@ typedef int32_t i32;
 typedef int64_t int64;
 typedef int64_t i64;
 
-//Fast integers
-//Unsigned
-typedef uint_fast8_t uint8fast;
-typedef uint_fast16_t uint16fast;
-typedef uint_fast32_t uint32fast;
-typedef uint_fast64_t uint64fast;
-
-//Signed
-typedef int_fast8_t int8fast;
-typedef int_fast16_t int16fast;
-typedef int_fast32_t int32fast;
-typedef int_fast64_t int64fast;
-
-//Least integers
-//Unsigned
-typedef uint_least8_t uint8least;
-typedef uint_least16_t uint16least;
-typedef uint_least32_t uint32least;
-typedef uint_least64_t uint64least;
-
-//Signed
-typedef int_least8_t int8least;
-typedef int_least16_t int16least;
-typedef int_least32_t int32least;
-typedef int_least64_t int64least;
-
 //Floating points
 //32-bit
 typedef float float32;
 typedef float f32;
-typedef float real32;
-typedef float r32;
 
 //64-bit
 typedef double float64;
 typedef double f64;
-typedef double real64;
-typedef double r64;
-
-//Bools
-typedef i32 bool32;
