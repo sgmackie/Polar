@@ -1,6 +1,7 @@
 # Polar
 
 - [About](#about)
+- [Build](#build)
 - [Changelog](#changelog)
 - [Acknowledegments](#acknowledgements)
 
@@ -9,6 +10,15 @@
 Simple real-time audio engine in C/C++. Currently supports Windows (WASAPI) and Linux (ALSA), with support for macOS planned (CoreAudio).
 
 Primary use is as a test bed for any DSP projects I'm currently working on and to experiment with game audio concepts related to engine design.
+
+### Build: <a name="build"></a>
+
+All platforms are built using the Clang toolset (https://releases.llvm.org/download.html)
+
+- Windows (x64):
+    - VS2017: Call vcvars64.bat from the Visual Studio install directory and run build.bat (or build_MSVC.bat if Clang is not installed)
+- Linux (x64):
+    - Clang: Run build.sh
 
 ### Changelog: <a name="changelog"></a>
 

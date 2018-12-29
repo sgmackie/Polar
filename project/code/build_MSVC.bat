@@ -4,10 +4,10 @@ echo MSVC x64
 
 :: Set name of the Platform .cpp file for unity building
 set Platform=win32_polar
-set Main=polar
+set Engine=polar
 
 :: Set CTime directory relative to current drive and path
-set CTimeDir=%~dp0..\build\ctime
+set CTimeDir="%~dp0..\build\ctime"
 
 :: Create CTime path if it doesn't exist
 if not exist %CTimeDir% mkdir %CTimeDir%
@@ -16,14 +16,14 @@ if not exist %CTimeDir% mkdir %CTimeDir%
 pushd %CTimeDir%
 
 :: Begin CTime on .cpp files
-ctime -begin %Main%.ctm
+ctime -begin %Engine%.ctm
 ctime -begin %Platform%.ctm
 
 :: Step out of CTime directory
 popd
 
 :: Set build directory relative to current drive and path
-set BuildDir=%~dp0..\build\win32
+set BuildDir="%~dp0..\build\win32"
 
 :: Create build path if it doesn't exist
 if not exist %BuildDir% mkdir %BuildDir%
@@ -32,8 +32,8 @@ if not exist %BuildDir% mkdir %BuildDir%
 pushd %BuildDir%
 
 :: Set compiler arguments
-set PlatformFiles=..\..\..\project\code\%Platform%.cpp
-set MainFiles=..\..\..\project\code\%Main%.cpp
+set PlatformFiles="%~dp0%Platform%.cpp"
+set EngineFiles="%~dp0%Engine%.cpp"
 set ObjDir=.\obj\
 set MapDir=.\map\
 
@@ -104,7 +104,7 @@ popd
 pushd %CTimeDir%
 
 :: End CTime on .cpp files
-ctime -end %Main%.ctm %PolarLastError%
+ctime -end %Engine%.ctm %PolarLastError%
 ctime -end %Platform%.ctm %PlatformLastError%
 
 :: Exit
