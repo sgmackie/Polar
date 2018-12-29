@@ -1,9 +1,10 @@
 ﻿//Polar
-//TODO: Create entropy.lib for source code
 #include "polar.h"
 #include "polar_file.cpp"
+#include "polar_dsp.cpp"
 
 //Windows
+//TODO: Test Vista and Windows 7 on VM
 #include "win32_polar.h"
 
 //Win32 globals
@@ -537,10 +538,10 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
         if(Window) //Process message queue
         {
-            //Create window device context
+            // Create window device context
             HDC RendererDC = GetDC(Window);
 
-            //Get the monitor refresh rate
+            // Get the monitor refresh rate
             i32 win32_RefreshRate = GetDeviceCaps(RendererDC, VREFRESH);
             
             if(win32_RefreshRate > 1)
@@ -549,7 +550,8 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             }
 
             //Set target update FPS
-            f32 EngineUpdateRate = (MonitorRefreshRate / 2.0f);
+            //TODO: Setup a proper frame timer so the engine update can be controlled (dividing by 2 breaks up the buffer fills)
+            f32 EngineUpdateRate = MonitorRefreshRate;
             f32 TargetSecondsPerFrame = 1.0f / (f32) EngineUpdateRate;
 
             //Initialise Polar
@@ -567,8 +569,16 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             //Create rendering output file
             POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
 
-            //!Test source
-            OSCILLATOR *Osc = entropy_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 0);
+            //Create objects
+            POLAR_OBJECT_ARRAY Oscillators = {};
+            Oscillators.Count = 4;
+            Oscillators.Objects = (POLAR_OBJECT **) VirtualAlloc(0, ((sizeof (POLAR_OBJECT)) * (Oscillators.Count)), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            for(u32 i = 0; i < Oscillators.Count; ++i)
+            {
+                Oscillators.Objects[i] = (POLAR_OBJECT *) VirtualAlloc(0, (sizeof (POLAR_OBJECT)), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);;
+                Oscillators.Objects[i]->UID = i;
+                Oscillators.Objects[i]->Oscillator = entropy_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 0);
+            }
 
             //Allocate engine memory block
             POLAR_MEMORY EngineMemory = {};
@@ -616,9 +626,9 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                     FILETIME DLLWriteTime = win32_LastWriteTimeGet(WindowState.EngineSourceCodePath);
                     if(CompareFileTime(&DLLWriteTime, &PolarState.DLLLastWriteTime) != 0)
                     {
-                            win32_EngineCodeUnload(&PolarState);
-                            PolarState = win32_EngineCodeLoad(WindowState.EngineSourceCodePath, WindowState.TempEngineSourceCodePath);
-                            LoadCounter = 0;
+                        win32_EngineCodeUnload(&PolarState);
+                        PolarState = win32_EngineCodeLoad(WindowState.EngineSourceCodePath, WindowState.TempEngineSourceCodePath);
+                        LoadCounter = 0;
                     }         
 
                     POLAR_INPUT_CONTROLLER *OldKeyboardController = ControllerGet(OldInput, 0);
@@ -676,12 +686,12 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                             //Update objects and fill the buffer
                             if(OutputRenderFile != nullptr)
                             {
-                                PolarState.UpdateAndRender(PolarEngine, OutputRenderFile, Osc, &EngineMemory, NewInput);
+                                PolarState.UpdateAndRender(PolarEngine, OutputRenderFile, &Oscillators, &EngineMemory, NewInput);
                                 OutputRenderFile->TotalSampleCount += polar_render_WAVWriteFloat(OutputRenderFile, (PolarEngine.Buffer.FramesAvailable * PolarEngine.Channels), OutputRenderFile->Data);
                             }
                             else
                             {
-                                PolarState.UpdateAndRender(PolarEngine, nullptr, Osc, &EngineMemory, NewInput);
+                                PolarState.UpdateAndRender(PolarEngine, nullptr, &Oscillators, &EngineMemory, NewInput);
                             }
 
                             //Give the requested samples back to WASAPI
@@ -701,7 +711,11 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                                 DWORD SleepTimeInMS = (DWORD)(1000.0f * (TargetSecondsPerFrame - SecondsElapsedForFrame));
                                 if(SleepTimeInMS > 0)
                                 {
-                                    Sleep(SleepTimeInMS);
+                                    Sleep(SleepTimeInMS); 
+                                   
+                                    char SleepTimer[256];
+                                    sprintf_s(SleepTimer, "Polar: Sleep\n");
+                                    OutputDebugString(SleepTimer);
                                 }
                             }
                         
@@ -710,9 +724,9 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                             if(TestSecondsElapsedForFrame < TargetSecondsPerFrame)
                             {
                                 //!Missed sleep!
-                                // char SleepTimer[256];
-                                // sprintf_s(SleepTimer, "Polar: Missed sleep timer!\n");
-                                // OutputDebugString(SleepTimer);
+                                char SleepTimer[256];
+                                sprintf_s(SleepTimer, "Polar: Missed sleep timer!\n");
+                                OutputDebugString(SleepTimer);
                             }
                         
                             while(SecondsElapsedForFrame < TargetSecondsPerFrame)
@@ -780,7 +794,14 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
             //TODO: File is written but header not fully finalised, won't show the total time in file explorer
             polar_render_WAVWriteDestroy(OutputRenderFile);
-            entropy_wave_OscillatorDestroy(Osc);
+            
+            for(u32 i = 0; i < Oscillators.Count; ++i)
+            {
+                entropy_wave_OscillatorDestroy(Oscillators.Objects[i]->Oscillator);
+            }
+
+            VirtualFree(Oscillators.Objects, 0, MEM_RELEASE);
+
             win32_WASAPI_Destroy(WASAPI);
 		}
 	}

@@ -25,24 +25,24 @@ internal bool polar_render_WAVWriteHeader(POLAR_WAV *File, POLAR_DATA *Engine)
 	
 	//Write WAV formatting chunk
 	u64 FMTChunkSize = 16;
-	CurrentPosition += fwrite("fmt ", 1, 4, (FILE *)File->WAVFile);
-	CurrentPosition += fwrite(&FMTChunkSize, 1, 4, (FILE *)File->WAVFile);
+	CurrentPosition += fwrite("fmt ", 1, 4, (FILE *) File->WAVFile);
+	CurrentPosition += fwrite(&FMTChunkSize, 1, 4, (FILE *) File->WAVFile);
 
 	//Write above properties to the header
-	CurrentPosition += fwrite(&File->WAVHeader.AudioFormat, 1, 2, (FILE *)File->WAVFile);
-	CurrentPosition += fwrite(&File->WAVHeader.NumChannels, 1, 2, (FILE *)File->WAVFile);
-	CurrentPosition += fwrite(&File->WAVHeader.SampleRate, 1, 4, (FILE *)File->WAVFile);
-	CurrentPosition += fwrite(&File->WAVHeader.ByteRate, 1, 4, (FILE *)File->WAVFile);
-	CurrentPosition += fwrite(&File->WAVHeader.BlockAlign, 1, 2, (FILE *)File->WAVFile);
-	CurrentPosition += fwrite(&File->WAVHeader.BitsPerSample, 1, 2, (FILE *)File->WAVFile);
+	CurrentPosition += fwrite(&File->WAVHeader.AudioFormat, 1, 2, (FILE *) File->WAVFile);
+	CurrentPosition += fwrite(&File->WAVHeader.NumChannels, 1, 2, (FILE *) File->WAVFile);
+	CurrentPosition += fwrite(&File->WAVHeader.SampleRate, 1, 4, (FILE *) File->WAVFile);
+	CurrentPosition += fwrite(&File->WAVHeader.ByteRate, 1, 4, (FILE *) File->WAVFile);
+	CurrentPosition += fwrite(&File->WAVHeader.BlockAlign, 1, 2, (FILE *) File->WAVFile);
+	CurrentPosition += fwrite(&File->WAVHeader.BitsPerSample, 1, 2, (FILE *) File->WAVFile);
 
 	//Set position in file where data chunk starts for writing samples to
 	File->WAVHeader.DataChunkDataStart = CurrentPosition;
 
 	//Set up data chunk
 	u32 DataChunkSize = (u32)DataChunkSizeInitial;
-	CurrentPosition += fwrite("data", 1, 4, (FILE *)File->WAVFile);
-	CurrentPosition += fwrite(&DataChunkSize, 1, 4, (FILE *)File->WAVFile);
+	CurrentPosition += fwrite("data", 1, 4, (FILE *) File->WAVFile);
+	CurrentPosition += fwrite(&DataChunkSize, 1, 4, (FILE *) File->WAVFile);
 
 	//Exit if chunks not written
 	if(CurrentPosition != 20 + FMTChunkSize + 8)
@@ -63,8 +63,11 @@ POLAR_WAV *polar_render_WAVWriteCreate(const char *FilePath, POLAR_DATA *Engine)
 
 	//Open file handle
 	//TODO: Check differences between file opening, write platform specific functions?
-	// fopen_s(&File->WAVFile, File->Path, "wb"); //MSVC specific file open
+#if _WIN32
+	fopen_s(&File->WAVFile, File->Path, "wb"); //MSVC specific file open
+#else
 	File->WAVFile = fopen(File->Path, "w");
+#endif
 	if(File->WAVFile == nullptr)
 	{
 		return nullptr;

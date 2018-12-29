@@ -21,11 +21,7 @@ internal f32 polar_render_PanPositionGet(u16 Position, f32 Amplitude, f32 PanFac
 }
 
 internal void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, void *DeviceBuffer, f32 *FileSamples, OSCILLATOR *Osc, POLAR_OBJECT_STATE *State)
-{
-	//Cast from float to BYTE
-	//?Looks like this isn't needed? Compiles without it on Windows
-	// SampleBuffer = reinterpret_cast<f32 *>(DeviceBuffer);
-	
+{	
 	f32 CurrentSample = 0;
 	f32 PanAmp = 0;
 
@@ -52,20 +48,27 @@ internal void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *
 	memcpy(DeviceBuffer, SampleBuffer, (sizeof(* SampleBuffer) * FramesToWrite));
 }
 
-
-// internal void polar_render_Update(POLAR_DATA &Engine, POLAR_WAV *File, OSCILLATOR *Osc, POLAR_MEMORY *Memory, POLAR_INPUT *Input)
 extern "C" POLAR_RENDER_CALLBACK(RenderUpdate)
 {
-	//Memory checking
+	//Memory checking	
 	Assert(sizeof(POLAR_OBJECT_STATE) <= Memory->PermanentDataSize);
-	POLAR_OBJECT_STATE *ObjectState = (POLAR_OBJECT_STATE *)Memory->PermanentData;
+	Array->Objects[0]->State = (POLAR_OBJECT_STATE *) Memory->PermanentData;
 
 	//Initial object initialisation
 	if(!Memory->IsInitialized)
-    {       
-        ObjectState->Frequency = 440;
-        ObjectState->Amplitude = 0.35f;
-        ObjectState->Pan = 0;
+    {
+		//!Can't loop through array because each state needs to be allocated like above; divide PermanentData into chunks to hand out in a loop
+		// for(u32 i = 0; i < Array->Count; ++i)
+        // {
+        //     Array->Objects[i]->State->Frequency = 440;
+        //     Array->Objects[i]->State->Amplitude = 0.35f;
+        //     Array->Objects[i]->State->Pan = 0;
+		// }
+
+        Array->Objects[0]->State->Frequency = 440;
+        Array->Objects[0]->State->Amplitude = 0.2f;
+        Array->Objects[0]->State->Pan = 0;
+        Array->Objects[0]->State->Waveform = SINE;
 
         Memory->IsInitialized = true;
     }
@@ -77,44 +80,54 @@ extern "C" POLAR_RENDER_CALLBACK(RenderUpdate)
 
 		if(Controller->State.Press.MoveUp.EndedDown)
         {
-            ObjectState->Amplitude += 0.1f;
+            Array->Objects[0]->State->Amplitude += 0.1f;
         }
 
         if(Controller->State.Press.MoveDown.EndedDown)
         {
-            ObjectState->Amplitude -= 0.1f;
+            Array->Objects[0]->State->Amplitude -= 0.1f;
         }
 
 		if(Controller->State.Press.MoveRight.EndedDown)
         {
-            ObjectState->Frequency += 10.0f;
+            Array->Objects[0]->State->Frequency += 10.0f;
         }
             
         if(Controller->State.Press.MoveLeft.EndedDown)
         {
-            ObjectState->Frequency -= 10.0f;
+            Array->Objects[0]->State->Frequency -= 10.0f;
         }
 
 		if(Controller->State.Press.ActionRight.EndedDown)
         {
-            ObjectState->Pan += 0.1f;
+            Array->Objects[0]->State->Pan += 0.1f;
         }
             
         if(Controller->State.Press.ActionLeft.EndedDown)
         {
-            ObjectState->Pan -= 0.1f;
+            Array->Objects[0]->State->Pan -= 0.1f;
         }
+
+        if(Controller->State.Press.LeftShoulder.EndedDown)
+		{
+			Array->Objects[0]->State->Waveform = SINE;
+		}
+
+		if(Controller->State.Press.RightShoulder.EndedDown)
+		{
+			Array->Objects[0]->State->Waveform = TRIANGLE;
+		}
 	}
 
 	//Write sound buffer
 	if(File != nullptr)
 	{
-        polar_render_BufferFill(Engine.Channels, (Engine.Buffer.FramesAvailable * Engine.Channels), Engine.Buffer.SampleBuffer, Engine.Buffer.DeviceBuffer, File->Data, Osc, ObjectState);
+        polar_render_BufferFill(Engine.Channels, (Engine.Buffer.FramesAvailable * Engine.Channels), Engine.Buffer.SampleBuffer, Engine.Buffer.DeviceBuffer, File->Data, Array->Objects[0]->Oscillator,  Array->Objects[0]->State);
 	}
 
 	else
 	{
-		polar_render_BufferFill(Engine.Channels, (Engine.Buffer.FramesAvailable * Engine.Channels), Engine.Buffer.SampleBuffer, Engine.Buffer.DeviceBuffer, nullptr, Osc, ObjectState);
+		polar_render_BufferFill(Engine.Channels, (Engine.Buffer.FramesAvailable * Engine.Channels), Engine.Buffer.SampleBuffer, Engine.Buffer.DeviceBuffer, nullptr, Array->Objects[0]->Oscillator,  Array->Objects[0]->State);
 	}
 }
 

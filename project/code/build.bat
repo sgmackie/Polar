@@ -7,7 +7,7 @@ set Platform=win32_polar
 set Engine=polar
 
 :: Set CTime directory relative to current drive and path
-set CTimeDir=%~dp0..\build\ctime
+set CTimeDir="%~dp0..\build\ctime"
 
 :: Create CTime path if it doesn't exist
 if not exist %CTimeDir% mkdir %CTimeDir%
@@ -23,7 +23,7 @@ ctime -begin %Platform%.ctm
 popd
 
 :: Set build directory relative to current drive and path
-set BuildDir=%~dp0..\build\win32
+set BuildDir="%~dp0..\build\win32"
 
 :: Create build path if it doesn't exist
 if not exist %BuildDir% mkdir %BuildDir%
@@ -32,8 +32,8 @@ if not exist %BuildDir% mkdir %BuildDir%
 pushd %BuildDir%
 
 :: Set compiler arguments
-set PlatformFiles=..\..\..\project\code\%Platform%.cpp
-set EngineFiles=..\..\..\project\code\%Engine%.cpp
+set PlatformFiles="%~dp0%Platform%.cpp"
+set EngineFiles="%~dp0%Engine%.cpp"
 set ObjDir=.\obj\
 set MapDir=.\map\
 
