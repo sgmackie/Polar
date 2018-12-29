@@ -2,7 +2,7 @@ echo MSVC x64
 
 @echo off
 
-:: Set name of the Platform .cpp file for unity building
+:: Set name of the platform .cpp file for unity building
 set Platform=win32_polar
 set Engine=polar
 
@@ -49,14 +49,16 @@ if not exist %MapDir% mkdir %MapDir%
 :: -Gm              to enable minimal rebuilds
 :: -GR              enable runtime type information for insepcting objects
 :: -EHa             to enable C++ exception handling
-:: -WX              to treat compiler warnings as errors
-:: -W4              warning level (prefer -Wall but difficult when including Windows.h)
-:: -wd4201          to disable unnamed union/struct warning
 :: -Fo path         to store Object files
 :: -Fm path         to store Mapfiles that list all elements in a given .exe or .dll file
 :: -DWIN32_METRICS  for frame timing information printed to Visual Studio/Code debug console
 :: -DWASAPI_INFO    for WASAPI device and format info
-set CompilerFlags=-nologo -Z7 -FC -MTd -GR -EHa -WX -W4 -wd4201 -Fo%ObjDir% -Fm%MapDir% -DWIN32_METRICS=1 -DWASAPI_INFO=1
+set CompilerFlags=-nologo -Z7 -FC -MTd -GR -EHa -Fo%ObjDir% -Fm%MapDir% -DWIN32_METRICS=1 -DWASAPI_INFO=1
+
+:: Set warning labels:
+:: -Wall            warning level (-W4 for Windows due to include errors)
+:: -WX              to treat compiler warnings as errors
+set CommonWarnings=-W4 -WX
 
 :: Set Compiler optimsation level for debug or release builds
 :: -Oi              to generate intrinsic functions when applicable
@@ -90,11 +92,11 @@ del *.pdb > NUL 2> NUL
 :: -LD              to create DLL for export functions
 :: -PDB             define name of .pdb file (with random used to generate unique ID)
 :: -EXPORT          export "extern" functions
-cl %CompilerFlags% %CompilerOpt% %MainFiles% -LD %LinkerFlags% %LinkerOpt% -PDB:polar_%random%.pdb -EXPORT:RenderUpdate
+cl %CompilerFlags% %CommonWarnings% %CompilerOpt% %EngineFiles% -LD %LinkerFlags% %LinkerOpt% -PDB:polar_%random%.pdb -EXPORT:RenderUpdate
 set PolarLastError=%ERRORLEVEL%
 
 :: Win32:
-cl %CompilerFlags% %CompilerOpt% %PlatformFiles% %LinkerFlags% %LinkerOpt% -SUBSYSTEM:windows %Libs%
+cl %CompilerFlags% %CommonWarnings% %CompilerOpt% %PlatformFiles% %LinkerFlags% %LinkerOpt% -SUBSYSTEM:windows %Libs%
 set PlatformLastError=%ERRORLEVEL%
 
 :: Jump out of build directory

@@ -49,14 +49,16 @@ if not exist %MapDir% mkdir %MapDir%
 :: -Gm              to enable minimal rebuilds
 :: -GR              enable runtime type information for insepcting objects
 :: -EHa             to enable C++ exception handling
-:: -WX              to treat compiler warnings as errors
-:: -W4              warning level (prefer -Wall but difficult when including Windows.h)
-:: -wd4201          to disable unnamed union/struct warning
-:: -Wno             to disable Clang warnings:  unused-function
 :: -Fo path         to store Object files
 :: -DWIN32_METRICS  for frame timing information printed to Visual Studio/Code debug console
 :: -DWASAPI_INFO    for WASAPI device and format info
-set CompilerFlags=-nologo -Z7 -FC -MTd -GR -EHa -WX -W4 -wd4201 -Wno-unused-function -Fo%ObjDir% -DWIN32_METRICS=1 -DWASAPI_INFO=1
+set CompilerFlags=-nologo -Z7 -FC -MTd -GR -EHa -Fo%ObjDir% -DWIN32_METRICS=1 -DWASAPI_INFO=1
+
+:: Set warning labels:
+:: -Wall            warning level (-W4 for Windows due to include errors)
+:: -WX              to treat compiler warnings as errors
+:: -Wno             to disable Clang warnings:  unused-function
+set CommonWarnings=-W4 -WX -Wno-unused-function
 
 :: Set Compiler optimsation level for debug or release builds
 :: -Oi              to generate intrinsic functions when applicable
@@ -91,12 +93,12 @@ del *.pdb > NUL 2> NUL
 :: -PDB:Filename    define name of .pdb file (with random used to generate unique ID)
 :: -MAP:Filename    to store Mapfiles that list all elements in a given .exe or .dll file
 :: -EXPORT          export "extern" functions
-clang-cl %CompilerFlags% %CompilerOpt% %EngineFiles% -LD %LinkerFlags% %LinkerOpt% -PDB:polar_%random%.pdb -MAP:%MapDir%%Engine%.map -EXPORT:RenderUpdate
+clang-cl %CompilerFlags% %CommonWarnings% %CompilerOpt% %EngineFiles% -LD %LinkerFlags% %LinkerOpt% -PDB:polar_%random%.pdb -MAP:%MapDir%%Engine%.map -EXPORT:RenderUpdate
 set PolarLastError=%ERRORLEVEL%
 
 :: Win32:
 :: -SUBYSTEM        define subsystem for application (Window, Console)
-clang-cl %CompilerFlags% %CompilerOpt% %PlatformFiles% %LinkerFlags% %LinkerOpt% -MAP:%MapDir%%Platform%.map -SUBSYSTEM:windows %Libs%
+clang-cl %CompilerFlags% %CommonWarnings% %CompilerOpt% %PlatformFiles% %LinkerFlags% %LinkerOpt% -MAP:%MapDir%%Platform%.map -SUBSYSTEM:windows %Libs%
 set PlatformLastError=%ERRORLEVEL%
 
 :: Jump out of build directory

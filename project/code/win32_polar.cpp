@@ -381,20 +381,6 @@ internal void win32_WindowMessageProcess(WIN32_STATE *State, POLAR_INPUT_CONTROL
 }
 
 //Display rendering
-//Get the current window dimensions
-internal WIN32_WINDOW_DIMENSIONS win32_WindowDimensionsGet(HWND Window)
-{
-    WIN32_WINDOW_DIMENSIONS Result;
-
-    RECT ClientRect; 					//Rect structure for window dimensions
-    GetClientRect(Window, &ClientRect); //Function to get current window dimensions in a RECT format
-    
-    Result.Width = ClientRect.right - ClientRect.left;
-    Result.Height = ClientRect.bottom - ClientRect.top;
-
-    return Result;
-}
-
 //Resize input buffer to a specific width and height
 internal void win32_BitmapBufferResize(WIN32_OFFSCREEN_BUFFER *Buffer, i32 TargetWidth, i32 TargetHeight)
 {
@@ -553,7 +539,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
 
             //Set target update FPS
             //TODO: Setup a proper frame timer so the engine update can be controlled (dividing by 2 breaks up the buffer fills)
-            f32 EngineUpdateRate = MonitorRefreshRate;
+            f32 EngineUpdateRate = (f32) MonitorRefreshRate;
             f32 TargetSecondsPerFrame = 1.0f / (f32) EngineUpdateRate;
 
             //Initialise Polar

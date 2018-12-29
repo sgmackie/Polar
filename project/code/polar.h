@@ -87,8 +87,8 @@ typedef struct POLAR_DATA       //Struct to hold platform specific audio API imp
 
 //Prototypes
 //String handling
-void polar_StringConcatenate(size_t StringALength, char *StringA, size_t StringBLength, char *StringB, char *StringC);
-i32 polar_StringLengthGet(char *String);
+void polar_StringConcatenate(size_t StringALength, const char *StringA, size_t StringBLength, const char *StringB, char *StringC);
+i32 polar_StringLengthGet(const char *String);
 
 //Input handling
 POLAR_INPUT_CONTROLLER *ControllerGet(POLAR_INPUT *Input, u32 ControllerIndex);
@@ -210,7 +210,7 @@ typedef enum WAVEFORM
     SQUARE,
     SAWDOWN,
     SAWUP,
-    TRIANGLE,
+    TRIANGLE
 } WAVEFORM;
 
 //Wave oscillator
