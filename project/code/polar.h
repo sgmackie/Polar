@@ -257,12 +257,17 @@ typedef struct POLAR_OBJECT
     POLAR_OBJECT_STATE *State;
 } POLAR_OBJECT;
 
-#define MAX_OBJECTS 256
-
 typedef struct POLAR_OBJECT_ARRAY 
 {
     u32 Count;
     POLAR_OBJECT **Objects;
+
+    POLAR_OBJECT_STATE *States;
+    u32 StateCount;
+
+    POLAR_OSCILLATOR *Oscillators;
+    u32 OscillatorCount;
+
 } POLAR_OBJECT_ARRAY;
 
 /*                  */
@@ -277,6 +282,32 @@ internal void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *
 //Create function pointer for rendering callback (an external function loaded dynamically)
 #define POLAR_RENDER_CALLBACK(FunctionName) void FunctionName(POLAR_DATA &Engine, POLAR_WAV *File, POLAR_OBJECT_ARRAY *Array, POLAR_MEMORY *Memory, POLAR_INPUT *Input)
 typedef POLAR_RENDER_CALLBACK(polar_render_Update);
+
+
+
+
+POLAR_OSCILLATOR *polar_wave_OscillatorNextInArray(POLAR_OSCILLATOR *Array, u32 *Count);
+
+POLAR_OSCILLATOR *polar_wave_OscillatorNextInArray(POLAR_OSCILLATOR *Array, u32 *Count)
+{
+    POLAR_OSCILLATOR *Result = &Array[*Count];
+    Count += 1;
+    return Result;
+}
+
+
+POLAR_OBJECT_STATE *polar_object_StateNextInArray(POLAR_OBJECT_STATE *Array, u32 *Count);
+
+POLAR_OBJECT_STATE *polar_object_StateNextInArray(POLAR_OBJECT_STATE *Array, u32 *Count)
+{
+    POLAR_OBJECT_STATE *Result = &Array[*Count];
+    Count += 1;
+    return Result;
+}
+
+
+
+
 
 
 #endif

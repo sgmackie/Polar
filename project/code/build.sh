@@ -22,8 +22,8 @@ fi
 pushd ${CTimeDir} > /dev/null
 
 # Begin CTime on .cpp files
-#./ctime_linux -begin ${Engine}.ctm
-#./ctime_linux -begin ${Platform}.ctm
+./ctime_linux -begin ${Engine}.ctm
+./ctime_linux -begin ${Platform}.ctm
 
 # Step out of CTime directory
 popd > /dev/null
@@ -85,8 +85,8 @@ popd > /dev/null
 pushd ${CTimeDir} > /dev/null
 
 # End CTime on .cpp files
-#./ctime_linux -end ${Engine}.ctm ${PolarLastError}
-#./ctime_linux -end ${Platform}.ctm ${PlatformLastError}
+./ctime_linux -end ${Engine}.ctm ${PolarLastError}
+./ctime_linux -end ${Platform}.ctm ${PlatformLastError}
 
 # Exit
 popd > /dev/null

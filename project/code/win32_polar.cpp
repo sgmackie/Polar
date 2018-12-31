@@ -17,6 +17,14 @@ global i64 GlobalPerformanceCounterFrequency;
 //!Test variables!
 global WAVEFORM Waveform = SINE;
 
+
+
+
+
+
+
+
+
 //WASAPI setup
 //Create and initialise WASAPI struct
 internal WASAPI_DATA *win32_WASAPI_Create(POLAR_BUFFER &Buffer, u32 UserSampleRate, u16 UserBitRate, u16 UserChannels)
@@ -558,15 +566,21 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
 
             //Create objects
-            POLAR_OBJECT_ARRAY Oscillators = {};
-            Oscillators.Count = 4;
-            Oscillators.Objects = (POLAR_OBJECT **) VirtualAlloc(0, ((sizeof (POLAR_OBJECT)) * (Oscillators.Count)), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-            for(u32 i = 0; i < Oscillators.Count; ++i)
+            POLAR_OBJECT_ARRAY Synths = {};
+            Synths.Count = 1;
+            Synths.Objects = (POLAR_OBJECT **) VirtualAlloc(0, ((sizeof (POLAR_OBJECT)) * (Synths.Count)), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            
+            for(u32 i = 0; i < Synths.Count; ++i)
             {
-                Oscillators.Objects[i] = (POLAR_OBJECT *) VirtualAlloc(0, (sizeof (POLAR_OBJECT)), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-                Oscillators.Objects[i]->UID = i;
-                Oscillators.Objects[i]->Oscillator = polar_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 0);
+                Synths.Objects[i] = (POLAR_OBJECT *) VirtualAlloc(0, (sizeof (POLAR_OBJECT)), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+                Synths.Objects[i]->UID = i;
+                
+                Synths.Objects[i]->Oscillator = polar_wave_OscillatorNextInArray(Synths.Oscillators, &Synths.OscillatorCount);
+                Synths.Objects[i]->Oscillator = polar_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 0);
+
+                Synths.Objects[i]->State = polar_object_StateNextInArray(Synths.States, &Synths.StateCount);
             }
+
 
             //Allocate engine memory block
             POLAR_MEMORY EngineMemory = {};
@@ -674,12 +688,12 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                             //Update objects and fill the buffer
                             if(OutputRenderFile != nullptr)
                             {
-                                PolarState.UpdateAndRender(PolarEngine, OutputRenderFile, &Oscillators, &EngineMemory, NewInput);
+                                PolarState.UpdateAndRender(PolarEngine, OutputRenderFile, &Synths, &EngineMemory, NewInput);
                                 OutputRenderFile->TotalSampleCount += polar_render_WAVWriteFloat(OutputRenderFile, (PolarEngine.Buffer.FramesAvailable * PolarEngine.Channels), OutputRenderFile->Data);
                             }
                             else
                             {
-                                PolarState.UpdateAndRender(PolarEngine, nullptr, &Oscillators, &EngineMemory, NewInput);
+                                PolarState.UpdateAndRender(PolarEngine, nullptr, &Synths, &EngineMemory, NewInput);
                             }
 
                             //Give the requested samples back to WASAPI
@@ -783,17 +797,18 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             //TODO: File is written but header not fully finalised, won't show the total time in file explorer
             polar_render_WAVWriteDestroy(OutputRenderFile);
             
-            for(u32 i = 0; i < Oscillators.Count; ++i)
+            for(u32 i = 0; i < Synths.Count; ++i)
             {
-                polar_wave_OscillatorDestroy(Oscillators.Objects[i]->Oscillator);
+                Synths.Objects[i]->Oscillator = polar_wave_OscillatorNextInArray(Synths.Oscillators, &Synths.OscillatorCount);
+                polar_wave_OscillatorDestroy(Synths.Objects[i]->Oscillator);
             }
 
-            for(u32 i = 0; i < Oscillators.Count; ++i)
+            for(u32 i = 0; i < Synths.Count; ++i)
             {
-                VirtualFree(Oscillators.Objects[i], 0, MEM_RELEASE);
+                VirtualFree(Synths.Objects[i], 0, MEM_RELEASE);
             }
 
-            VirtualFree(Oscillators.Objects, 0, MEM_RELEASE);
+            VirtualFree(Synths.Objects, 0, MEM_RELEASE);
             VirtualFree(WindowState.EngineMemoryBlock, 0, MEM_RELEASE);
             win32_WASAPI_Destroy(WASAPI, PolarEngine.Buffer);
 		}

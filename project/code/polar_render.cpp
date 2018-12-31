@@ -48,27 +48,33 @@ internal void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *
 	memcpy(DeviceBuffer, SampleBuffer, (sizeof(* SampleBuffer) * FramesToWrite));
 }
 
+
+f32 polar_math_LinearInterpolation(f32 Current, f32 Delta, f32 Goal)
+{
+    f32 Result = ((1.0f - Delta) * (Current + (Delta * Goal)));
+
+    return(Result);
+}
+
+
 extern "C" POLAR_RENDER_CALLBACK(RenderUpdate)
 {
 	//Memory checking	
 	Assert(sizeof (POLAR_OBJECT_STATE) <= Memory->PermanentDataSize);
-	Array->Objects[0]->State = (POLAR_OBJECT_STATE *) Memory->PermanentData;
+	Array->States = (POLAR_OBJECT_STATE *) Memory->PermanentData;
 
 	//Initial object initialisation
 	if(!Memory->IsInitialized)
     {
-		//!Can't loop through array because each state needs to be allocated like above; divide PermanentData into chunks to hand out in a loop
-		// for(u32 i = 0; i < Array->Count; ++i)
-        // {
-        //     Array->Objects[i]->State->Frequency = 440;
-        //     Array->Objects[i]->State->Amplitude = 0.35f;
-        //     Array->Objects[i]->State->Pan = 0;
-		// }
+		for(u32 i = 0; i < Array->Count; ++i)
+        {
+			Array->Objects[i]->State = polar_object_StateNextInArray(Array->States, &Array->StateCount);
 
-        Array->Objects[0]->State->Frequency = 440;
-        Array->Objects[0]->State->Amplitude = 0.2f;
-        Array->Objects[0]->State->Pan = 0;
-        Array->Objects[0]->State->Waveform = SINE;
+        	Array->Objects[i]->State->Frequency = 440;
+        	Array->Objects[i]->State->Amplitude = 0.2f;
+        	Array->Objects[i]->State->Pan = 0;
+        	Array->Objects[i]->State->Waveform = SINE;
+		}
 
         Memory->IsInitialized = true;
     }
@@ -76,46 +82,51 @@ extern "C" POLAR_RENDER_CALLBACK(RenderUpdate)
 	//Use input to change states
     for(u32 ControllerIndex = 0; ControllerIndex < ArrayCount(Input->Controllers); ++ControllerIndex)
     {
-		POLAR_INPUT_CONTROLLER *Controller = ControllerGet(Input, ControllerIndex);
-
-		if(Controller->State.Press.MoveUp.EndedDown)
-        {
-            Array->Objects[0]->State->Amplitude += 0.1f;
-        }
-
-        if(Controller->State.Press.MoveDown.EndedDown)
-        {
-            Array->Objects[0]->State->Amplitude -= 0.1f;
-        }
-
-		if(Controller->State.Press.MoveRight.EndedDown)
-        {
-            Array->Objects[0]->State->Frequency += 10.0f;
-        }
-            
-        if(Controller->State.Press.MoveLeft.EndedDown)
-        {
-            Array->Objects[0]->State->Frequency -= 10.0f;
-        }
-
-		if(Controller->State.Press.ActionRight.EndedDown)
-        {
-            Array->Objects[0]->State->Pan += 0.1f;
-        }
-            
-        if(Controller->State.Press.ActionLeft.EndedDown)
-        {
-            Array->Objects[0]->State->Pan -= 0.1f;
-        }
-
-        if(Controller->State.Press.LeftShoulder.EndedDown)
+		for(u32 i = 0; i < Array->Count; ++i)
 		{
-			Array->Objects[0]->State->Waveform = SINE;
-		}
+			POLAR_INPUT_CONTROLLER *Controller = ControllerGet(Input, ControllerIndex);
 
-		if(Controller->State.Press.RightShoulder.EndedDown)
-		{
-			Array->Objects[0]->State->Waveform = TRIANGLE;
+			if(Controller->State.Press.MoveUp.EndedDown)
+        	{
+        	    // Array->Objects[i]->State->Amplitude += 0.1f;
+        	    Array->Objects[i]->State->Amplitude = polar_math_LinearInterpolation(Array->Objects[i]->State->Amplitude, 0.1f, (Array->Objects[i]->State->Amplitude += 0.1f));
+        	}
+
+        	if(Controller->State.Press.MoveDown.EndedDown)
+        	{
+        	    // Array->Objects[i]->State->Amplitude -= 0.1f;
+        	    Array->Objects[i]->State->Amplitude = polar_math_LinearInterpolation(Array->Objects[i]->State->Amplitude, 0.1f, (Array->Objects[i]->State->Amplitude -= 0.1f));
+        	}
+
+			if(Controller->State.Press.MoveRight.EndedDown)
+        	{
+        	    Array->Objects[i]->State->Frequency += 10.0f;
+        	}
+            
+        	if(Controller->State.Press.MoveLeft.EndedDown)
+        	{
+        	    Array->Objects[i]->State->Frequency -= 10.0f;
+        	}
+
+			if(Controller->State.Press.ActionRight.EndedDown)
+        	{
+        	    Array->Objects[i]->State->Pan += 0.1f;
+        	}
+            
+        	if(Controller->State.Press.ActionLeft.EndedDown)
+        	{
+        	    Array->Objects[i]->State->Pan -= 0.1f;
+        	}
+
+        	if(Controller->State.Press.LeftShoulder.EndedDown)
+			{
+				Array->Objects[i]->State->Waveform = SINE;
+			}
+
+			if(Controller->State.Press.RightShoulder.EndedDown)
+			{
+				Array->Objects[i]->State->Waveform = TRIANGLE;
+			}
 		}
 	}
 

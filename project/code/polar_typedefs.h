@@ -24,6 +24,7 @@
 #define Align4(Value)   ((Value + 3) & ~3)
 #define Align8(Value)   ((Value + 7) & ~7)
 #define Align16(Value)  ((Value + 15) & ~15)
+#define Align32(Value)  ((Value + 31) & ~31)
 
 //3 ways to use static
 #define global static       //Global access to variable
