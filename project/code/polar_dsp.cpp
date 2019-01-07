@@ -102,6 +102,7 @@ f64 polar_wave_PhaseWrap(f64 &Phase)
 }
 
 
+
 //Calculate sine wave samples
 f64 polar_wave_TickSine(POLAR_OSCILLATOR *Oscillator)
 {

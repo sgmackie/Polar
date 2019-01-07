@@ -93,7 +93,7 @@ del *.pdb > NUL 2> NUL
 :: -PDB:Filename    define name of .pdb file (with random used to generate unique ID)
 :: -MAP:Filename    to store Mapfiles that list all elements in a given .exe or .dll file
 :: -EXPORT          export "extern" functions
-clang-cl %CompilerFlags% %CommonWarnings% %CompilerOpt% %EngineFiles% -LD %LinkerFlags% %LinkerOpt% -PDB:polar_%random%.pdb -MAP:%MapDir%%Engine%.map -EXPORT:RenderUpdate
+clang-cl %CompilerFlags% %CommonWarnings% %CompilerOpt% %EngineFiles% -LD %LinkerFlags% %LinkerOpt% -PDB:polar_%random%.pdb -MAP:%MapDir%%Engine%.map -EXPORT:Update -EXPORT:Render
 set PolarLastError=%ERRORLEVEL%
 
 :: Win32:

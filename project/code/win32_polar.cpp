@@ -14,16 +14,6 @@ global WIN32_OFFSCREEN_BUFFER GlobalDisplayBuffer;
 global i32 MonitorRefreshRate = 60;
 global i64 GlobalPerformanceCounterFrequency;
 
-//!Test variables!
-global WAVEFORM Waveform = SINE;
-
-
-
-
-
-
-
-
 
 //WASAPI setup
 //Create and initialise WASAPI struct
@@ -150,13 +140,15 @@ internal WIN32_ENGINE_CODE win32_EngineCodeLoad(char *SourceDLLName, char *TempD
     
     if(Result.EngineDLL)
     {
-        Result.UpdateAndRender = (polar_render_Update *) GetProcAddress(Result.EngineDLL, "RenderUpdate");
-        Result.IsDLLValid = (Result.UpdateAndRender);
+        Result.UpdateCallback = (polar_render_Update *) GetProcAddress(Result.EngineDLL, "Update");
+        Result.RenderCallback = (polar_render_Render *) GetProcAddress(Result.EngineDLL, "Render");
+        Result.IsDLLValid = (Result.RenderCallback);
     }
 
     if(!Result.IsDLLValid)
     {
-        Result.UpdateAndRender = 0;
+        Result.UpdateCallback = 0;
+        Result.RenderCallback = 0;
     }
 
     return Result;
@@ -172,7 +164,8 @@ internal void win32_EngineCodeUnload(WIN32_ENGINE_CODE *EngineCode)
     }
 
     EngineCode->IsDLLValid = false;
-    EngineCode->UpdateAndRender = 0;
+    EngineCode->UpdateCallback = 0;
+    EngineCode->RenderCallback = 0;
 }
 
 //State handling
@@ -334,6 +327,14 @@ internal void win32_WindowMessageProcess(WIN32_STATE *State, POLAR_INPUT_CONTROL
                     else if(VKCode == VK_ESCAPE)
                     {
                         win32_InputMessageProcess(&KeyboardController->State.Press.Start, IsDown);
+                    }
+                    else if(VKCode == VK_LSHIFT)
+                    {
+                        win32_InputMessageProcess(&KeyboardController->State.Press.LeftTrigger, IsDown);
+                    }
+                    else if(VKCode == VK_LCONTROL)
+                    {
+                        win32_InputMessageProcess(&KeyboardController->State.Press.RightTrigger, IsDown);
                     }
                     else if(VKCode == VK_SPACE)
                     {
@@ -551,7 +552,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             f32 TargetSecondsPerFrame = 1.0f / (f32) EngineUpdateRate;
 
             //Initialise Polar
-            POLAR_DATA PolarEngine = {};
+            POLAR_ENGINE PolarEngine = {};
             //TODO: User define properties in SHARED_MODE dont work, IsFormatSupported returns null Adjusted WAVEFORMATEX
             WASAPI_DATA *WASAPI =       win32_WASAPI_Create(PolarEngine.Buffer, 0, 0, 0);
             PolarEngine.BufferFrames =  WASAPI->OutputBufferFrames;
@@ -559,36 +560,13 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
             PolarEngine.SampleRate =    WASAPI->OutputWaveFormat->Format.nSamplesPerSec;
             PolarEngine.BitRate =       WASAPI->OutputWaveFormat->Format.wBitsPerSample;
 
-            //Start infinite loop
-            GlobalRunning = true;
-
-            //Create rendering output file
-            POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
-
-            //Create objects
-            POLAR_OBJECT_ARRAY Synths = {};
-            Synths.Count = 1;
-            Synths.Objects = (POLAR_OBJECT **) VirtualAlloc(0, ((sizeof (POLAR_OBJECT)) * (Synths.Count)), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-            
-            for(u32 i = 0; i < Synths.Count; ++i)
-            {
-                Synths.Objects[i] = (POLAR_OBJECT *) VirtualAlloc(0, (sizeof (POLAR_OBJECT)), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-                Synths.Objects[i]->UID = i;
-                
-                Synths.Objects[i]->Oscillator = polar_wave_OscillatorNextInArray(Synths.Oscillators, &Synths.OscillatorCount);
-                Synths.Objects[i]->Oscillator = polar_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 0);
-
-                Synths.Objects[i]->State = polar_object_StateNextInArray(Synths.States, &Synths.StateCount);
-            }
-
-
             //Allocate engine memory block
-            POLAR_MEMORY EngineMemory = {};
-            EngineMemory.PermanentDataSize = Megabytes(64);
-            EngineMemory.TemporaryDataSize = Megabytes(32);
+            POLAR_MEMORY_GLOBAL EngineMemory = {};
+            EngineMemory.PermanentDataSize = Megabytes(32);
+            EngineMemory.TemporaryDataSize = Megabytes(8);
 
             WindowState.TotalSize = EngineMemory.PermanentDataSize + EngineMemory.TemporaryDataSize;
-            WindowState.EngineMemoryBlock = VirtualAlloc(0, ((size_t) WindowState.TotalSize), MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+            WindowState.EngineMemoryBlock = VirtualAlloc(0, ((size_t) WindowState.TotalSize), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
             EngineMemory.PermanentData = WindowState.EngineMemoryBlock;
             EngineMemory.TemporaryData = ((uint8 *) EngineMemory.PermanentData + EngineMemory.PermanentDataSize);
@@ -608,6 +586,43 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                 CurrentReplayBuffer->MemoryBlock = MapViewOfFile(CurrentReplayBuffer->MemoryMap, FILE_MAP_ALL_ACCESS, 0, 0, WindowState.TotalSize);
             }
 
+            //Create objects
+            //!Move all of this into a memory arena
+            POLAR_OBJECT *TestObjects = (POLAR_OBJECT *) VirtualAlloc(0, (sizeof (POLAR_OBJECT) * MAX_OBJECTS), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            
+            TestObjects[0].UID = 1;
+            TestObjects[0].Name = "C";
+            TestObjects[0].Oscillator = polar_wave_OscillatorCreate(PolarEngine.SampleRate, SINE, 440);
+            TestObjects[0].State = (POLAR_OBJECT_STATE *) VirtualAlloc(0, (sizeof (POLAR_OBJECT_STATE)), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            TestObjects[0].State->Frequency = 261.63;
+            TestObjects[0].State->Amplitude = 0.8;
+            TestObjects[0].State->Pan = 0.2;
+    
+            TestObjects[1].UID = 2;
+            TestObjects[1].Name = "E";
+            TestObjects[1].Oscillator = polar_wave_OscillatorCreate(PolarEngine.SampleRate, SINE, 440);
+            TestObjects[1].State = (POLAR_OBJECT_STATE *) VirtualAlloc(0, (sizeof (POLAR_OBJECT_STATE)), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            TestObjects[1].State->Frequency = 329.63;
+            TestObjects[1].State->Amplitude = 0.5;
+            TestObjects[1].State->Pan = 0.2;
+
+            TestObjects[2].UID = 3;
+            TestObjects[2].Name = "G";
+            TestObjects[2].Oscillator = polar_wave_OscillatorCreate(PolarEngine.SampleRate, SINE, 440);
+            TestObjects[2].State = (POLAR_OBJECT_STATE *) VirtualAlloc(0, (sizeof (POLAR_OBJECT_STATE)), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            TestObjects[2].State->Frequency = 392.00;
+            TestObjects[2].State->Amplitude = 0.6;
+            TestObjects[2].State->Pan = -0.2;
+
+            TestObjects[3].UID = 4;
+            TestObjects[3].Name = "B";
+            TestObjects[3].Oscillator = polar_wave_OscillatorCreate(PolarEngine.SampleRate, SINE, 440);
+            TestObjects[3].State = (POLAR_OBJECT_STATE *) VirtualAlloc(0, (sizeof (POLAR_OBJECT_STATE)), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            TestObjects[3].State->Frequency = 493.88;
+            TestObjects[3].State->Amplitude = 0.7;
+            TestObjects[3].State->Pan = -0.2;
+
+
             if(EngineMemory.PermanentData && EngineMemory.TemporaryData)
             {
                 WIN32_ENGINE_CODE PolarState = win32_EngineCodeLoad(WindowState.EngineSourceCodePath, WindowState.TempEngineSourceCodePath);
@@ -622,6 +637,12 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                 LARGE_INTEGER FlipWallClock = win32_WallClockGet();
 
                 u64 LastCycleCount = __rdtsc();
+
+                //Create rendering output file
+                POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
+
+                //Start infinite loop
+                GlobalRunning = true;
 
                 while(GlobalRunning)
                 {
@@ -679,8 +700,14 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                             win32_InputPlayback(&WindowState, NewInput);
                         }
 
+                        //Extern update function
+                        if(PolarState.UpdateCallback)
+                        {
+                            PolarState.UpdateCallback(&PolarEngine, &EngineMemory, NewInput, TestObjects);
+                        }
+
                         //Extern rendering function
-                        if(PolarState.UpdateAndRender)
+                        if(PolarState.RenderCallback)
                         {
                             //Get the BYTE buffer and number of samples to fill    
                             win32_WASAPI_BufferGet(WASAPI, PolarEngine.Buffer);
@@ -688,12 +715,12 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                             //Update objects and fill the buffer
                             if(OutputRenderFile != nullptr)
                             {
-                                PolarState.UpdateAndRender(PolarEngine, OutputRenderFile, &Synths, &EngineMemory, NewInput);
+                                PolarState.RenderCallback(&PolarEngine, OutputRenderFile, &EngineMemory);
                                 OutputRenderFile->TotalSampleCount += polar_render_WAVWriteFloat(OutputRenderFile, (PolarEngine.Buffer.FramesAvailable * PolarEngine.Channels), OutputRenderFile->Data);
                             }
                             else
                             {
-                                PolarState.UpdateAndRender(PolarEngine, nullptr, &Synths, &EngineMemory, NewInput);
+                                PolarState.RenderCallback(&PolarEngine, nullptr, &EngineMemory);
                             }
 
                             //Give the requested samples back to WASAPI
@@ -786,29 +813,15 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLi
                     }
 #endif	
                 }
-			}
-
 #if WIN32_METRICS
             char MetricsBuffer[256];
             sprintf_s(MetricsBuffer, "Polar: %llu frames written to %s\n", OutputRenderFile->TotalSampleCount, OutputRenderFile->Path);
             OutputDebugString(MetricsBuffer);
 #endif
+                //TODO: File is written but header not fully finalised, won't show the total time in file explorer
+                polar_render_WAVWriteDestroy(OutputRenderFile);
+			}
 
-            //TODO: File is written but header not fully finalised, won't show the total time in file explorer
-            polar_render_WAVWriteDestroy(OutputRenderFile);
-            
-            for(u32 i = 0; i < Synths.Count; ++i)
-            {
-                Synths.Objects[i]->Oscillator = polar_wave_OscillatorNextInArray(Synths.Oscillators, &Synths.OscillatorCount);
-                polar_wave_OscillatorDestroy(Synths.Objects[i]->Oscillator);
-            }
-
-            for(u32 i = 0; i < Synths.Count; ++i)
-            {
-                VirtualFree(Synths.Objects[i], 0, MEM_RELEASE);
-            }
-
-            VirtualFree(Synths.Objects, 0, MEM_RELEASE);
             VirtualFree(WindowState.EngineMemoryBlock, 0, MEM_RELEASE);
             win32_WASAPI_Destroy(WASAPI, PolarEngine.Buffer);
 		}

@@ -349,30 +349,51 @@ int main(int argc, char *argv[])
             GlobalRunning = true;
 
             POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
+            
             //Create objects
-            POLAR_OBJECT_ARRAY Oscillators = {};
-            Oscillators.Count = 4;
-            Oscillators.Objects = (POLAR_OBJECT **) mmap(nullptr, ((sizeof (POLAR_OBJECT)) * (Oscillators.Count)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-            for(u32 i = 0; i < Oscillators.Count; ++i)
-            {
-                Oscillators.Objects[i] = (POLAR_OBJECT *) mmap(nullptr, (sizeof (POLAR_OBJECT)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-                Oscillators.Objects[i]->UID = i;
-                Oscillators.Objects[i]->Oscillator = polar_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 0);
-            }
+            //!Move all of this into a memory arena
+            POLAR_PLAYING_SOUND *TestSine = (POLAR_PLAYING_SOUND *) mmap(nullptr, (sizeof (POLAR_PLAYING_SOUND)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            TestSine->UID = 1;
+            TestSine->Oscillator = polar_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 440);
+            TestSine->State = (POLAR_OBJECT_STATE *) mmap(nullptr, (sizeof (POLAR_OBJECT_STATE)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            TestSine->State->Frequency = 207.65;
+            TestSine->State->Amplitude = 0.8;
+            TestSine->State->Pan = 0.2;
+    
+            POLAR_PLAYING_SOUND *TestTriangle = (POLAR_PLAYING_SOUND *) mmap(nullptr, (sizeof (POLAR_PLAYING_SOUND)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            TestTriangle->UID = 2;
+            TestTriangle->Oscillator = polar_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 440);
+            TestTriangle->State = (POLAR_OBJECT_STATE *) mmap(nullptr, (sizeof (POLAR_OBJECT_STATE)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            TestTriangle->State->Frequency = 164.81;
+            TestTriangle->State->Amplitude = 0.5;
+            TestTriangle->State->Pan = 0.2;
 
+            POLAR_PLAYING_SOUND *TestSquare = (POLAR_PLAYING_SOUND *) mmap(nullptr, (sizeof (POLAR_PLAYING_SOUND)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            TestSquare->UID = 3;
+            TestSquare->Oscillator = polar_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 440);
+            TestSquare->State = (POLAR_OBJECT_STATE *) mmap(nullptr, (sizeof (POLAR_OBJECT_STATE)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            TestSquare->State->Frequency = 233.08;
+            TestSquare->State->Amplitude = 0.6;
+            TestSquare->State->Pan = -0.2;
 
+            POLAR_PLAYING_SOUND *Test03 = (POLAR_PLAYING_SOUND *) mmap(nullptr, (sizeof (POLAR_PLAYING_SOUND)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            Test03->UID = 4;
+            Test03->Oscillator = polar_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 440);
+            Test03->State = (POLAR_OBJECT_STATE *) mmap(nullptr, (sizeof (POLAR_OBJECT_STATE)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            Test03->State->Frequency = 293.66;
+            Test03->State->Amplitude = 0.7;
+            Test03->State->Pan = -0.2;
+
+            //Allocate engine memory block
             POLAR_MEMORY EngineMemory = {};
-            EngineMemory.PermanentDataSize = Megabytes(64);
-            EngineMemory.TemporaryDataSize = Megabytes(32);
-
+            EngineMemory.PermanentDataSize = Megabytes(32);
+            EngineMemory.TemporaryDataSize = Megabytes(8);
 
             LinuxState.TotalSize = EngineMemory.PermanentDataSize + EngineMemory.TemporaryDataSize;
             LinuxState.EngineMemoryBlock = mmap(nullptr, ((size_t) LinuxState.TotalSize), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
-
             EngineMemory.PermanentData = LinuxState.EngineMemoryBlock;
             EngineMemory.TemporaryData = ((uint8 *) EngineMemory.PermanentData + EngineMemory.PermanentDataSize);
-
 
             if(EngineMemory.PermanentData && EngineMemory.TemporaryData)
             {   
@@ -413,13 +434,13 @@ int main(int argc, char *argv[])
                             //Update objects and fill the buffer
                             if(OutputRenderFile != nullptr)
                             {
-                                PolarState.UpdateAndRender(PolarEngine, OutputRenderFile, &Oscillators, &EngineMemory, NewInput);
+                                PolarState.UpdateAndRender(PolarEngine, OutputRenderFile, &EngineMemory, NewInput, TestSine, TestTriangle, TestSquare, Test03);
                                 OutputRenderFile->TotalSampleCount += polar_render_WAVWriteFloat(OutputRenderFile, (PolarEngine.Buffer.FramesAvailable * PolarEngine.Channels), OutputRenderFile->Data);
                             }
 
                             else
                             {
-                                PolarState.UpdateAndRender(PolarEngine, nullptr, &Oscillators, &EngineMemory, NewInput);
+                                PolarState.UpdateAndRender(PolarEngine, nullptr, &EngineMemory, NewInput, TestSine, TestTriangle, TestSquare, Test03);
                             }
 
                             ALSA->FramesWritten = snd_pcm_writei(ALSA->Device, PolarEngine.Buffer.SampleBuffer, (PolarEngine.BufferFrames));
@@ -457,17 +478,7 @@ int main(int argc, char *argv[])
     
             polar_render_WAVWriteDestroy(OutputRenderFile);
     
-            for(u32 i = 0; i < Oscillators.Count; ++i)
-            {
-                polar_wave_OscillatorDestroy(Oscillators.Objects[i]->Oscillator);
-            }
 
-            for(u32 i = 0; i < Oscillators.Count; ++i)
-            {
-                munmap(Oscillators.Objects[i], (sizeof (POLAR_OBJECT)));
-            }
-
-            munmap(Oscillators.Objects, ((sizeof (POLAR_OBJECT)) * (Oscillators.Count)));
             munmap(LinuxState.EngineMemoryBlock, ((size_t) LinuxState.TotalSize));
             linux_ALSA_Destroy(ALSA, PolarEngine.Buffer);
         }

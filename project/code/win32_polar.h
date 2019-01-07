@@ -26,7 +26,8 @@ typedef struct WIN32_ENGINE_CODE
     HMODULE EngineDLL;
     FILETIME DLLLastWriteTime;
 	bool IsDLLValid;
-	polar_render_Update *UpdateAndRender;
+	polar_render_Update *UpdateCallback;
+	polar_render_Render *RenderCallback;
 } WIN32_ENGINE_CODE;
 
 typedef struct WIN32_STATE

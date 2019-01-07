@@ -3,7 +3,7 @@
 
 //TODO: Possible to remove CRT functions like fwrite and fseek?
 //TODO: Add BWAV support "https://tech.ebu.ch/docs/tech/tech3285.pdf"
-internal bool polar_render_WAVWriteHeader(POLAR_WAV *File, POLAR_DATA *Engine)
+internal bool polar_render_WAVWriteHeader(POLAR_WAV *File, POLAR_ENGINE *Engine)
 {
 	//Assign engine values to the file header
 	File->WAVHeader.AudioFormat = 3;
@@ -53,7 +53,7 @@ internal bool polar_render_WAVWriteHeader(POLAR_WAV *File, POLAR_DATA *Engine)
 	return true;
 }
 
-POLAR_WAV *polar_render_WAVWriteCreate(const char *FilePath, POLAR_DATA *Engine)
+POLAR_WAV *polar_render_WAVWriteCreate(const char *FilePath, POLAR_ENGINE *Engine)
 {
 	//Allocate memory
 	POLAR_WAV *File = (POLAR_WAV *) malloc((sizeof *File));
