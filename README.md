@@ -23,6 +23,10 @@ All platforms were built using the current Clang toolset (https://releases.llvm.
 ### Changelog: <a name="changelog"></a>
 
 - v0.2 (Current):
+    - Polar:
+        - Memory arenas for runtime allocation/freeing of object data
+        - Basic playback functionality
+        - Mix sounds pulled from a linked list
     - Linux:
         - Started ALSA implementation
     - Windows:
