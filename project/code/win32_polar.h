@@ -1,105 +1,8 @@
 #ifndef win32_polar_h
 #define win32_polar_h
 
-//TODO: Remove atomic for InterlockedExchanges
+#define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
-#include <atomic>
-
-/*                   */
-/*  Windows code     */
-/*                   */
-
-#define WIN32_MAX_FILE_PATH MAX_PATH	//Max file path length
-
-//Structs
-typedef struct WIN32_REPLAY_BUFFER
-{
-    HANDLE File;
-    HANDLE MemoryMap;
-    char FileName[WIN32_MAX_FILE_PATH];
-    void *MemoryBlock;
-} WIN32_REPLAY_BUFFER;
-
-
-typedef struct WIN32_ENGINE_CODE
-{
-    HMODULE EngineDLL;
-    FILETIME DLLLastWriteTime;
-	bool IsDLLValid;
-	polar_render_Update *UpdateCallback;
-	polar_render_Render *RenderCallback;
-} WIN32_ENGINE_CODE;
-
-typedef struct WIN32_STATE
-{
-	//State data
-	u64 TotalSize;
-	void *EngineMemoryBlock;
-	WIN32_REPLAY_BUFFER ReplayBuffers[4];	//Switched from 4
-
-	//Store .exe
-    char EXEPath[WIN32_MAX_FILE_PATH];
-    char *EXEFileName;
-
-	//Store code .dlls
-	char EngineSourceCodePath[WIN32_MAX_FILE_PATH];
-	char TempEngineSourceCodePath[WIN32_MAX_FILE_PATH];
-
-	//File handle for state recording
-	HANDLE RecordingHandle;
-    i32 InputRecordingIndex;
-
-	//File handle for state playback
-    HANDLE PlaybackHandle;
-    i32 InputPlayingIndex;
-} WIN32_STATE;
-
-typedef struct WIN32_WINDOW_DIMENSIONS
-{
-    i32 Width;
-    i32 Height;
-} WIN32_WINDOW_DIMENSIONS;
-
-typedef struct WIN32_OFFSCREEN_BUFFER
-{
-    BITMAPINFO BitmapInfo;
-    void *Data;
-    i32 Width;
-    i32 Height;
-    i32 Pitch;
-    i32 BytesPerPixel;
-} WIN32_OFFSCREEN_BUFFER;
-
-//Prototypes
-//File handling
-internal void win32_EXEFileNameGet(WIN32_STATE *State);														//Find file name of current application
-internal void win32_BuildEXEPathGet(WIN32_STATE *State, const char *FileName, char *Path);					//Get file path
-internal void win32_InputFilePathGet(WIN32_STATE *State, bool InputStream, i32 SlotIndex, char *Path);		//"Print" to a custom text file for looping editss
-internal FILETIME win32_LastWriteTimeGet(char *Filename);													//Find the last time a file was written to
-internal WIN32_ENGINE_CODE win32_EngineCodeLoad(char *SourceDLLName, char *TempDLLName);					//Load dll for dynamic render code
-internal void win32_EngineCodeUnload(WIN32_ENGINE_CODE *EngineCode);										//Unload .dll
-
-//State recording
-internal WIN32_REPLAY_BUFFER *win32_ReplayBufferGet(WIN32_STATE *State, u32 Index);							//Get the current replay buffer
-internal void win32_StateRecordingStart(WIN32_STATE *State, i32 InputRecordingIndex);						//Start recording the engine state
-internal void win32_StateRecordingStop(WIN32_STATE *State);													//Stop recording the engine state
-internal void win32_StatePlaybackStart(WIN32_STATE *State, i32 InputPlayingIndex);							//Start playback of the recorded state
-internal void win32_StatePlaybackStop(WIN32_STATE *State);													//Stop playback of the recorded state
-
-//Input state handlings
-internal void win32_InputMessageProcess(POLAR_INPUT_STATE *NewState, bool IsDown);							//Process inputs when released
-internal void win32_WindowMessageProcess(WIN32_STATE *State, POLAR_INPUT_CONTROLLER *KeyboardController);	//Process the window message queue
-internal void win32_InputRecord(WIN32_STATE *State, POLAR_INPUT *NewInput);									//Start recording input parameters						
-internal void win32_InputPlayback(WIN32_STATE *State, POLAR_INPUT *NewInput);								//Start playback of recorded inputs
-
-//Display rendering
-internal WIN32_WINDOW_DIMENSIONS win32_WindowDimensionsGet(HWND Window);									//Get the current window dimensions
-internal void win32_BitmapBufferResize(WIN32_OFFSCREEN_BUFFER *Buffer, i32 TargetWidth, i32 TargetHeight);	//Resize input buffer to a specific width and height
-internal void win32_DisplayBufferInWindow(WIN32_OFFSCREEN_BUFFER *Buffer, HDC DeviceContext);				//Copy buffer to a specified device
-
-//Performance timing
-internal LARGE_INTEGER win32_WallClockGet();																//Get the current position of the perfomance counter (https://msdn.microsoft.com/en-us/library/windows/desktop/ms644904(v=vs.85).aspx)
-internal f32 win32_SecondsElapsedGet(LARGE_INTEGER Start, LARGE_INTEGER End);								//Determine the amount of seconfs elapised against the perfomance counter
 
 /*                  */
 /*  WASAPI code     */
@@ -107,6 +10,7 @@ internal f32 win32_SecondsElapsedGet(LARGE_INTEGER Start, LARGE_INTEGER End);			
 
 //WASAPI includes
 #include <audioclient.h>                    //WASAPI
+#include <initguid.h>
 #include <mmdeviceapi.h>                    //Audio endpoints
 #include <Functiondiscoverykeys_devpkey.h>  //Used for getting "FriendlyNames" from audio endpoints
 #include <avrt.h>
@@ -176,15 +80,6 @@ global const TCHAR *wasapi_HRString(HRESULT Result)
 	}
 
 
-//Store current state of WASAPI
-enum WASAPI_STATE
-{
-	Stopped,
-	Playing,
-	Paused,
-};
-
-//TODO: Clean this up; if variables are being calculated, do they need to be stored? What is actually being used multiple times here?
 //Structure containing common properties defined by WASAPI
 typedef struct WASAPI_DATA
 {
@@ -199,55 +94,18 @@ typedef struct WASAPI_DATA
 	IAudioClient *AudioClient;
 	IAudioRenderClient *AudioRenderClient;
 
-	//Audio clock
-	IAudioClock* AudioClock;
+	i32 FramesWritten;
 
-	//Device state
-	bool UsingDefaultDevice;
-	//TODO: Swap Atomic for InterlockedExchange
-	std::atomic<WASAPI_STATE> DeviceState;
-	bool DeviceReady;
-	DWORD DeviceFlags;
-
-	//Output properties
-	WAVEFORMATEXTENSIBLE *OutputWaveFormat;
-	bool UsingDefaultWaveFormat;
+    WAVEFORMATEX *DeviceWaveFormat;
+	u32 PaddingFrames;
 	u32 OutputBufferFrames;
-	f64 OutputBufferPeriod;
-	u64 OutputLatency;
+
+	REFERENCE_TIME DevicePeriod;
+	REFERENCE_TIME DevicePeriodMin;
 
 	//Rendering state
 	HANDLE RenderEvent;  
 } WASAPI_DATA;
-
-
-//Prototypes
-WASAPI_DATA *wasapi_InterfaceCreate();                                                                                  			//Create struct for WASAPI properties including output/rendering device info
-void wasapi_InterfaceDestroy(WASAPI_DATA *WASAPI);                                                                      			//Destroy WASAPI data struct
-void wasapi_InterfaceInit(WASAPI_DATA &Interface);                                                                      			//Set/reset WASAPI data struct
-bool wasapi_DeviceInit(HRESULT &HR, WASAPI_DATA &Interface);                                                            			//Initialise WASAPI device
-void wasapi_DeviceDeInit(WASAPI_DATA &Interface);                                                                       			//Release WASAPI devices
-internal void wasapi_DevicePrint(HRESULT &HR, IMMDevice *Device);                                                                	//Print default audio endpoint
-internal bool wasapi_DeviceGetDefault(HRESULT &HR, WASAPI_DATA &Interface);                             							//Get default audio endpoint
-internal bool wasapi_FormatGet(HRESULT &HR, WASAPI_DATA &Interface, WAVEFORMATEXTENSIBLE *Custom);  								//Get default waveformat or use user defined one
-
-
-#include "win32_internal_WASAPI.cpp"
-
-
-
-/*                  */
-/*  Platform code   */
-/*                  */
-
-//Prototypes
-//WASAPI
-internal WASAPI_DATA *win32_WASAPI_Create(POLAR_BUFFER &Buffer, u32 UserSampleRate, u16 UserBitRate, u16 UserChannels);				//Create and initialise WASAPI struct
-internal void win32_WASAPI_Destroy(WASAPI_DATA *WASAPI);                                 											//Remove WASAPI struct
-internal void win32_WASAPI_BufferGet(WASAPI_DATA *WASAPI, POLAR_BUFFER &Buffer);        											//Get WASAPI buffer and the maxium samples to fill
-internal void win32_WASAPI_BufferRelease(WASAPI_DATA *WASAPI, POLAR_BUFFER &Buffer);    											//Release byte buffer after the rendering loop
-
-
 
 
 #endif

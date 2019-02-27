@@ -1,488 +1,220 @@
-//Polar
+//Perfomance defines (will change stack allocation sizes for things like max sources per container)
+#define MAX_STRING_LENGTH 64
+#define MAX_CHANNELS 4
+#define MAX_CONTAINERS 4
+#define MAX_SOURCES 128
+#define MAX_BREAKPOINTS 64
+#define MAX_ENVELOPES 4
+#define DEFAULT_AMPLITUDE 0.8
+#define DEFAULT_SAMPLERATE 48000
+
 #include "polar.h"
-#include "polar_file.cpp"
-#include "polar_dsp.cpp"
-
-//Linux
 #include "linux_polar.h"
-
-//Linux globals
-global bool GlobalRunning;
-global bool GlobalPause;
-global LINUX_OFFSCREEN_BUFFER GlobalDisplayBuffer;
-
-//!Test variables!
-global WAVEFORM Waveform = SINE;
+#include "../external/external_code.h"
+#include "polar.cpp"
 
 //ALSA setup
-ALSA_DATA *linux_ALSA_Create(POLAR_BUFFER &Buffer, u32 UserSampleRate, u16 UserChannels, u32 UserLatency)
+ALSA_DATA *linux_ALSA_Create(MEMORY_ARENA *Arena, i32 &FramesAvailable, u32 UserSampleRate, u16 UserChannels, u32 UserFrames)
 {
-    //Error handling code passed to snd_strerror()
-    i32 ALSAError;
-
-    ALSA_DATA *Result = (ALSA_DATA *) mmap(nullptr, (sizeof (ALSA_DATA)), PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);;
+    ALSA_DATA *Result = 0;
+    Result = (ALSA_DATA *) memory_arena_Push(Arena, Result, (sizeof (ALSA_DATA)));
     Result->SampleRate = UserSampleRate;
     Result->ALSAResample = 1;
     Result->Channels = UserChannels;
-    Result->LatencyInMS = UserLatency;
+    Result->Frames = UserFrames;
 
-    ALSAError = snd_pcm_open(&Result->Device, "default", SND_PCM_STREAM_PLAYBACK, 0);   
-    ERR_TO_RETURN(ALSAError, "Failed to open default audio device", nullptr);
+    //Error handling code passed to snd_strerror()
+    Result->ALSAError = 0;
 
-    ALSAError = snd_pcm_set_params(Result->Device, SND_PCM_FORMAT_FLOAT, SND_PCM_ACCESS_RW_INTERLEAVED, Result->Channels, Result->SampleRate, Result->ALSAResample, (Result->LatencyInMS * 1000));
-    ERR_TO_RETURN(ALSAError, "Failed to set default device parameters", nullptr);
+    Result->ALSAError = snd_pcm_open(&Result->Device, "default", SND_PCM_STREAM_PLAYBACK, SND_PCM_NONBLOCK | SND_PCM_ASYNC);   
+    ERR_TO_RETURN(Result->ALSAError, "Failed to open default audio device", nullptr);
 
-    ALSAError = snd_pcm_get_params(Result->Device, &Result->BufferSize, &Result->PeriodSize);
-    ERR_TO_RETURN(ALSAError, "Failed to get default device parameters", nullptr);
+    Result->HardwareParameters = (snd_pcm_hw_params_t *) ArenaPush(Arena, Result->HardwareParameters, (sizeof (Result->HardwareParameters)));
+    Result->SoftwareParameters = (snd_pcm_sw_params_t *) ArenaPush(Arena, Result->SoftwareParameters, (sizeof (Result->SoftwareParameters)));
 
-    Buffer.SampleBuffer = (f32 *) mmap(nullptr, ((sizeof *Buffer.SampleBuffer) * (Result->SampleRate * Result->Channels)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    Buffer.DeviceBuffer = (f32 *) mmap(nullptr, ((sizeof *Buffer.SampleBuffer) * (Result->SampleRate * Result->Channels)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    Buffer.FramesAvailable = ((Result->BufferSize + Result->PeriodSize) * Result->Channels);
+    Result->ALSAError = snd_pcm_hw_params_any(Result->Device, Result->HardwareParameters);
+    ERR_TO_RETURN(Result->ALSAError, "Failed to initialise hardware parameters", nullptr);
+
+    Result->ALSAError = snd_pcm_hw_params_set_access(Result->Device, Result->HardwareParameters, SND_PCM_ACCESS_RW_INTERLEAVED);
+    ERR_TO_RETURN(Result->ALSAError, "Failed to set PCM read and write access", nullptr);
+
+    Result->ALSAError = snd_pcm_hw_params_set_format(Result->Device, Result->HardwareParameters, SND_PCM_FORMAT_FLOAT);
+    ERR_TO_RETURN(Result->ALSAError, "Failed to set PCM output format", nullptr);
+
+    Result->ALSAError = snd_pcm_hw_params_set_rate(Result->Device, Result->HardwareParameters, Result->SampleRate, 0);
+    ERR_TO_RETURN(Result->ALSAError, "Failed to set sample rate", nullptr);
+
+    Result->ALSAError = snd_pcm_hw_params_set_rate_resample(Result->Device, Result->HardwareParameters, Result->ALSAResample);
+    ERR_TO_RETURN(Result->ALSAError, "Failed to set resampling", nullptr);
+
+    Result->ALSAError = snd_pcm_hw_params_set_channels(Result->Device, Result->HardwareParameters, Result->Channels);
+    ERR_TO_RETURN(Result->ALSAError, "Failed to set channels", nullptr);
+
+    Result->ALSAError = snd_pcm_hw_params(Result->Device, Result->HardwareParameters);
+    ERR_TO_RETURN(Result->ALSAError, "Failed to set period", nullptr);
+
+    Result->ALSAError = snd_pcm_sw_params_current(Result->Device, Result->SoftwareParameters);
+    ERR_TO_RETURN(Result->ALSAError, "Failed to get current software parameters", nullptr);
+
+    Result->ALSAError = snd_pcm_sw_params_set_avail_min(Result->Device, Result->SoftwareParameters, Result->Frames);
+    ERR_TO_RETURN(Result->ALSAError, "Failed to set software available frames", nullptr);
+
+    Result->ALSAError = snd_pcm_sw_params_set_start_threshold(Result->Device, Result->SoftwareParameters, 0);
+    ERR_TO_RETURN(Result->ALSAError, "Failed to set software available frames", nullptr);
+    
+    Result->ALSAError = snd_pcm_sw_params(Result->Device, Result->SoftwareParameters);
+    ERR_TO_RETURN(Result->ALSAError, "Failed to set software parameters", nullptr);
+    
+    Result->ALSAError = snd_pcm_prepare(Result->Device);
+    ERR_TO_RETURN(Result->ALSAError, "Failed to start PCM device", nullptr);
+
+    Result->ALSAError = snd_pcm_hw_params_get_period_size_max(Result->HardwareParameters, &Result->PeriodSizeMin, 0);
+    ERR_TO_RETURN(Result->ALSAError, "Failed to get minimum period size", nullptr);
+
+    Result->ALSAError = snd_pcm_hw_params_get_period_size_max(Result->HardwareParameters, &Result->PeriodSizeMax, 0);
+    ERR_TO_RETURN(Result->ALSAError, "Failed to get maximum period size", nullptr);
+
+    Result->ALSAError = snd_pcm_hw_params_get_buffer_size_min(Result->HardwareParameters, &Result->BufferSizeMin);
+    ERR_TO_RETURN(Result->ALSAError, "Failed to get minimum buffer size", nullptr);
+
+    Result->ALSAError = snd_pcm_hw_params_get_buffer_size_max(Result->HardwareParameters, &Result->BufferSizeMax);
+    ERR_TO_RETURN(Result->ALSAError, "Failed to get maximum buffer size", nullptr);
+
+    Result->ALSAError = snd_pcm_hw_params_get_periods(Result->HardwareParameters, &Result->Periods, 0);
+    ERR_TO_RETURN(Result->ALSAError, "Failed to get period count", nullptr);
+
+    FramesAvailable = (Result->PeriodSizeMin * Result->Channels);
 
     return Result;
 }
 
+
 //ALSA destroy
-void linux_ALSA_Destroy(ALSA_DATA *Result, POLAR_BUFFER &Buffer)
+void linux_ALSA_Destroy(MEMORY_ARENA *Arena, ALSA_DATA *ALSA)
 {
-    munmap(Buffer.SampleBuffer, (sizeof *Buffer.SampleBuffer) * (Result->SampleRate * Result->Channels));
-    munmap(Buffer.DeviceBuffer, (sizeof *Buffer.SampleBuffer) * (Result->SampleRate * Result->Channels));
-    snd_pcm_close(Result->Device);
-    munmap(Result, (sizeof (Result)));
+    snd_pcm_close(ALSA->Device);
+    memory_arena_Reset(Arena);
+    memory_arena_Pull(Arena);
 }
 
-
-//Linux file handling
-//Find file name of current application
-internal void linux_EXEFileNameGet(LINUX_STATE *State)
+void linux_ALSA_Callback(ALSA_DATA *ALSA, POLAR_ENGINE PolarEngine, POLAR_MIXER *Mixer, POLAR_RINGBUFFER *CallbackBuffer)
 {
-    //Read value of a symbolic link and record size
-    ssize_t PathSize = readlink("/proc/self/exe", State->EXEPath, ArrayCount(State->EXEPath) - 1);
-    if(PathSize > 0)
-    {
-        State->EXEFileName = State->EXEPath;
+    snd_pcm_wait(ALSA->Device, -1);
 
-        //Scan through the full path and record
-        for(char *Scan = State->EXEPath; *Scan; ++Scan)
+    if(polar_ringbuffer_WriteCheck(CallbackBuffer))
+    {
+        Callback(PolarEngine, Mixer, polar_ringbuffer_WriteData(CallbackBuffer));
+        polar_ringbuffer_WriteFinish(CallbackBuffer);
+    }
+
+    if(polar_ringbuffer_ReadCheck(CallbackBuffer))
+    {
+        ALSA->FramesWritten = snd_pcm_writei(ALSA->Device, polar_ringbuffer_ReadData(CallbackBuffer), (PolarEngine.BufferFrames / PolarEngine.Channels));
+        if(ALSA->FramesWritten < 0)
         {
-            if(*Scan == '\\')
-            {
-                State->EXEFileName = Scan + 1;
-            }
+            ALSA->FramesWritten = snd_pcm_recover(ALSA->Device, ALSA->FramesWritten, 0);
         }
-    }
-}
-
-//Get file path
-internal void linux_BuildEXEPathGet(LINUX_STATE *State, const char *FileName, char *Path)
-{
-    polar_StringConcatenate(State->EXEFileName - State->EXEPath, State->EXEPath, polar_StringLengthGet(FileName), FileName, Path);
-}
-
-//Record file attributes using stat ("http://pubs.opengroup.org/onlinepubs/000095399/basedefs/sys/stat.h.html") 
-internal ino_t linux_FileIDGet(char *FileName)
-{
-    struct stat FileAttributes = {};
-
-    if(stat(FileName, &FileAttributes))
-    {
-        FileAttributes.st_ino = 0;
-    }
-
-    return FileAttributes.st_ino;
-}
-
-//Wrap dlopen with error handling
-internal void *linux_LibraryOpen(const char *Library)
-{
-    void *Handle = nullptr;
-
-    Handle = dlopen(Library, RTLD_NOW | RTLD_LOCAL);
-    
-    //Record error using dlerror
-    if(!Handle)
-    {
-        printf("Linux: dlopen failed!\t%s\n", dlerror());
-    }
-
-    return Handle;
-}
-
-//Wrap dlclose
-internal void linux_LibraryClose(void *Handle)
-{
-    if(Handle != nullptr)
-    {
-        dlclose(Handle);
-        Handle = nullptr;
-    }
-}
-
-//Wrap dlsym with error handling
-internal void *linux_ExternalFunctionLoad(void *Library, const char *Name)
-{
-    void *FunctionSymbol = dlsym(Library, Name);
-
-    if(!FunctionSymbol)
-    {
-        printf("Linux: dlsym failed!\t%s\n", dlerror());
-    }
-
-    return FunctionSymbol;
-}
-
-//Check if file ID's match and load engine code if not
-internal bool linux_EngineCodeLoad(LINUX_ENGINE_CODE *EngineCode, char *DLName, ino_t FileID)
-{
-    if(EngineCode->EngineID != FileID)
-    {
-        linux_LibraryClose(EngineCode->EngineHandle);
-        EngineCode->EngineID = FileID;
-        EngineCode->IsDLValid = false;
-
-        //TODO: Can't actually pass DLName here because Linux want's "./" prefixed, create function to prefix strings
-        EngineCode->EngineHandle = linux_LibraryOpen("./polar.so");
-        if (EngineCode->EngineHandle)
+        if(ALSA->FramesWritten < 0) 
         {
-            *(void **)(&EngineCode->UpdateAndRender) = linux_ExternalFunctionLoad(EngineCode->EngineHandle, "RenderUpdate");
-
-            EngineCode->IsDLValid = (EngineCode->UpdateAndRender);
+            ERR_TO_RETURN(ALSA->FramesWritten, "ALSA: Failed to write any output frames! snd_pcm_writei()", NONE);
         }
-    }
-
-    if(!EngineCode->IsDLValid)
-    {
-        linux_LibraryClose(EngineCode->EngineHandle);
-        EngineCode->EngineID = 0;
-        EngineCode->UpdateAndRender = 0;
-    }
-
-    return EngineCode->IsDLValid;
-}
-
-//Unload engine code
-internal void linux_EngineCodeUnload(LINUX_ENGINE_CODE *EngineCode)
-{
-    linux_LibraryClose(EngineCode->EngineHandle);
-    EngineCode->EngineID = 0;
-    EngineCode->IsDLValid = false;
-    EngineCode->UpdateAndRender = 0;
-}
-
-//Process inputs when released
-internal void linux_InputMessageProcess(POLAR_INPUT_STATE *NewState, bool IsDown)
-{
-    if(NewState->EndedDown != IsDown)
-    {
-        NewState->EndedDown = IsDown;
-        ++NewState->HalfTransitionCount;
-    }
-}
-
-//Process the window message queue
-internal void linux_WindowMessageProcess(LINUX_STATE *State, Display *Display, Window Window, Atom WmDeleteWindow, POLAR_INPUT_CONTROLLER *KeyboardController)
-{
-    while(GlobalRunning && XPending(Display))
-    {
-        XEvent Event;
-        XNextEvent(Display, &Event);
-
-        switch(Event.type)
+        if(ALSA->FramesWritten > 0 && ALSA->FramesWritten < (PolarEngine.BufferFrames / PolarEngine.Channels))
         {
-            case ConfigureNotify:
-            case DestroyNotify:
-            {
-                GlobalRunning = false;
-                break;
-            }
-            case ClientMessage:
-            {
-                if ((Atom)Event.xclient.data.l[0] == WmDeleteWindow)
-                {
-                    GlobalRunning = false;
-                }
-                break;
-            }
-            case MotionNotify:
-            case ButtonRelease:
-            case ButtonPress:
-            case KeyPress:
-            case KeyRelease:
-            {
-                if(!GlobalPause)
-                {
-                    if(Event.xkey.keycode == KEYCODE_W)
-                    {
-                        linux_InputMessageProcess(&KeyboardController->State.Press.MoveUp, Event.type == KeyRelease);
-                    }
-                    else if(Event.xkey.keycode == KEYCODE_A)
-                    {
-                        linux_InputMessageProcess(&KeyboardController->State.Press.MoveLeft, Event.type == KeyRelease);
-                    }
-                    else if(Event.xkey.keycode == KEYCODE_S)
-                    {
-                        linux_InputMessageProcess(&KeyboardController->State.Press.MoveDown, Event.type == KeyRelease);
-                    }
-                    else if(Event.xkey.keycode == KEYCODE_D)
-                    {
-                        linux_InputMessageProcess(&KeyboardController->State.Press.MoveRight, Event.type == KeyRelease);
-                    }
-                    else if(Event.xkey.keycode == KEYCODE_Q)
-                    {
-                        linux_InputMessageProcess(&KeyboardController->State.Press.LeftShoulder, Event.type == KeyRelease);
-                    }
-                    else if(Event.xkey.keycode == KEYCODE_E)
-                    {
-                        linux_InputMessageProcess(&KeyboardController->State.Press.RightShoulder, Event.type == KeyRelease);
-                    }
-                    else if(Event.xkey.keycode == KEYCODE_UP)
-                    {
-                        linux_InputMessageProcess(&KeyboardController->State.Press.ActionUp, Event.type == KeyRelease);
-                    }
-                    else if(Event.xkey.keycode == KEYCODE_LEFT)
-                    {
-                        linux_InputMessageProcess(&KeyboardController->State.Press.ActionLeft, Event.type == KeyRelease);
-                    }
-                    else if(Event.xkey.keycode == KEYCODE_DOWN)
-                    {
-                        linux_InputMessageProcess(&KeyboardController->State.Press.ActionDown, Event.type == KeyRelease);
-                    }
-                    else if(Event.xkey.keycode == KEYCODE_RIGHT)
-                    {
-                        linux_InputMessageProcess(&KeyboardController->State.Press.ActionRight, Event.type == KeyRelease);
-                    }
-                    else if(Event.xkey.keycode == KEYCODE_ESCAPE)
-                    {
-                        linux_InputMessageProcess(&KeyboardController->State.Press.Start, Event.type == KeyRelease);
-                    }
-                    else if(Event.xkey.keycode == KEYCODE_SPACE)
-                    {
-                        linux_InputMessageProcess(&KeyboardController->State.Press.Back, Event.type == KeyRelease);
-                    }
-                }
-                
-                else if(Event.xkey.keycode == KEYCODE_P)
-                {
-                    if(Event.type == KeyRelease)
-                    {
-                        GlobalPause = !GlobalPause;
-                    }
-                }
-
-                break;
-            }
-            default:
-            {
-                break;
-            }
+            printf("ALSA: Short write!\tExpected %i, wrote %li\n", (PolarEngine.BufferFrames / PolarEngine.Channels), ALSA->FramesWritten);
         }
+
+        polar_ringbuffer_ReadFinish(CallbackBuffer);
     }
-}
-
-//Create display buffer
-internal LINUX_OFFSCREEN_BUFFER linux_WindowDimensionsGet(u32 Width, u32 Height)
-{
-    LINUX_OFFSCREEN_BUFFER Buffer = {};
-    Buffer.Width = Width;
-    Buffer.Height = Height;
-    Buffer.Pitch = Align16(Buffer.Width * Buffer.BytesPerPixel);
-    u32 Size = Buffer.Pitch * Buffer.Height;
-
-    Buffer.Data = (u8 *) mmap(nullptr, Size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    
-    if(Buffer.Data == MAP_FAILED)
-    {
-        Buffer.Width = 0;
-        Buffer.Height = 0;
-        return Buffer;
-    }
-
-    return Buffer;
 }
 
 int main(int argc, char *argv[])
 {
-    LINUX_STATE LinuxState = {};
-    linux_EXEFileNameGet(&LinuxState);
-    linux_BuildEXEPathGet(&LinuxState, "polar.so", LinuxState.EngineSourceCodePath);
+    //Allocate memory
+    MEMORY_ARENA *EngineArena = memory_arena_Create(Kilobytes(500));
+    MEMORY_ARENA *SourceArena = memory_arena_Create(Megabytes(100));
 
-    GlobalDisplayBuffer = linux_WindowDimensionsGet(1280, 720);
-    Display *X11Display = XOpenDisplay(":0.0");
+    POLAR_ENGINE Engine = {};
+    i32 FramesAvailable = 0;
+    ALSA_DATA *ALSA =      linux_ALSA_Create(EngineArena, FramesAvailable, 48000, 2, 32);
+    Engine.BufferFrames =  FramesAvailable;
+    Engine.Channels =      ALSA->Channels;
+    Engine.SampleRate =    ALSA->SampleRate;
 
-    if(X11Display)
+    //Define the callback and channel summing functions
+    Callback = &polar_render_Callback;
+    switch(Engine.Channels)
     {
-  	    i32 Screen = DefaultScreen(X11Display);
-        Window X11Window = XCreateSimpleWindow(X11Display, DefaultRootWindow(X11Display), 0, 0, 1280, 720, 5, WhitePixel(X11Display, Screen), BlackPixel(X11Display, Screen));
-        
-        //!Inputs need this to process but are stuck in infinte loop (and Pause key doesn't work), debug this!
-        // XSelectInput(X11Display, X11Window, ExposureMask|KeyReleaseMask);
-
-        if(X11Window)
+        case 2:
         {
-            GC GraphicsContext = XCreateGC(X11Display, X11Window, 0,0); 
-
-            XSetBackground(X11Display, GraphicsContext, WhitePixel(X11Display, Screen));
-	        XSetForeground(X11Display, GraphicsContext, BlackPixel(X11Display, Screen));
-            
-            XSizeHints SizeHints = {};
-            SizeHints.x = 0;
-            SizeHints.y = 0;
-            SizeHints.width  = GlobalDisplayBuffer.Width;
-            SizeHints.height = GlobalDisplayBuffer.Height;
-            SizeHints.flags = USSize | USPosition;
-
-            XSetNormalHints(X11Display, X11Window, &SizeHints);
-            XSetStandardProperties(X11Display, X11Window, "Polar", "glsync text", None, nullptr, 0, &SizeHints);
-
-            Atom WmDeleteWindow = XInternAtom(X11Display, "WM_DELETE_WINDOW", False);
-            XSetWMProtocols(X11Display, X11Window, &WmDeleteWindow, 1);
-
-            POLAR_DATA PolarEngine = {};
-            ALSA_DATA *ALSA =           linux_ALSA_Create(PolarEngine.Buffer, 48000, 2, 32);
-            PolarEngine.BufferFrames =  PolarEngine.Buffer.FramesAvailable;
-            PolarEngine.Channels =      ALSA->Channels;
-            PolarEngine.SampleRate =    ALSA->SampleRate;
-            //TODO: Convert flags like SND_PCM_FORMAT_FLOAT to numbers
-            PolarEngine.BitRate =       32;
-
-            //Start infinite loop
-            GlobalRunning = true;
-
-            POLAR_WAV *OutputRenderFile = polar_render_WAVWriteCreate("Polar_Output.wav", &PolarEngine);
-            
-            //Create objects
-            //!Move all of this into a memory arena
-            POLAR_PLAYING_SOUND *TestSine = (POLAR_PLAYING_SOUND *) mmap(nullptr, (sizeof (POLAR_PLAYING_SOUND)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-            TestSine->UID = 1;
-            TestSine->Oscillator = polar_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 440);
-            TestSine->State = (POLAR_OBJECT_STATE *) mmap(nullptr, (sizeof (POLAR_OBJECT_STATE)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-            TestSine->State->Frequency = 207.65;
-            TestSine->State->Amplitude = 0.8;
-            TestSine->State->Pan = 0.2;
-    
-            POLAR_PLAYING_SOUND *TestTriangle = (POLAR_PLAYING_SOUND *) mmap(nullptr, (sizeof (POLAR_PLAYING_SOUND)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-            TestTriangle->UID = 2;
-            TestTriangle->Oscillator = polar_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 440);
-            TestTriangle->State = (POLAR_OBJECT_STATE *) mmap(nullptr, (sizeof (POLAR_OBJECT_STATE)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-            TestTriangle->State->Frequency = 164.81;
-            TestTriangle->State->Amplitude = 0.5;
-            TestTriangle->State->Pan = 0.2;
-
-            POLAR_PLAYING_SOUND *TestSquare = (POLAR_PLAYING_SOUND *) mmap(nullptr, (sizeof (POLAR_PLAYING_SOUND)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-            TestSquare->UID = 3;
-            TestSquare->Oscillator = polar_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 440);
-            TestSquare->State = (POLAR_OBJECT_STATE *) mmap(nullptr, (sizeof (POLAR_OBJECT_STATE)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-            TestSquare->State->Frequency = 233.08;
-            TestSquare->State->Amplitude = 0.6;
-            TestSquare->State->Pan = -0.2;
-
-            POLAR_PLAYING_SOUND *Test03 = (POLAR_PLAYING_SOUND *) mmap(nullptr, (sizeof (POLAR_PLAYING_SOUND)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-            Test03->UID = 4;
-            Test03->Oscillator = polar_wave_OscillatorCreate(PolarEngine.SampleRate, Waveform, 440);
-            Test03->State = (POLAR_OBJECT_STATE *) mmap(nullptr, (sizeof (POLAR_OBJECT_STATE)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-            Test03->State->Frequency = 293.66;
-            Test03->State->Amplitude = 0.7;
-            Test03->State->Pan = -0.2;
-
-            //Allocate engine memory block
-            POLAR_MEMORY EngineMemory = {};
-            EngineMemory.PermanentDataSize = Megabytes(32);
-            EngineMemory.TemporaryDataSize = Megabytes(8);
-
-            LinuxState.TotalSize = EngineMemory.PermanentDataSize + EngineMemory.TemporaryDataSize;
-            LinuxState.EngineMemoryBlock = mmap(nullptr, ((size_t) LinuxState.TotalSize), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-
-            EngineMemory.PermanentData = LinuxState.EngineMemoryBlock;
-            EngineMemory.TemporaryData = ((uint8 *) EngineMemory.PermanentData + EngineMemory.PermanentDataSize);
-
-            if(EngineMemory.PermanentData && EngineMemory.TemporaryData)
-            {   
-                LINUX_ENGINE_CODE PolarState = {};
-                linux_EngineCodeLoad(&PolarState, LinuxState.EngineSourceCodePath, linux_FileIDGet(LinuxState.EngineSourceCodePath));
-
-                POLAR_INPUT Input[2] = {};
-                POLAR_INPUT *NewInput = &Input[0];
-                POLAR_INPUT *OldInput = &Input[1];
-
-	            XMapRaised(X11Display, X11Window);
-
-                while(GlobalRunning)
-                {
-                    POLAR_INPUT_CONTROLLER *OldKeyboardController = ControllerGet(OldInput, 0);
-                    POLAR_INPUT_CONTROLLER *NewKeyboardController = ControllerGet(NewInput, 0);
-                    *NewKeyboardController = {};
-                    NewKeyboardController->IsConnected = true;
-                    
-                    for(u32 ButtonIndex = 0; ButtonIndex < ArrayCount(NewKeyboardController->State.Buttons); ++ButtonIndex)
-                    {
-                        NewKeyboardController->State.Buttons[ButtonIndex].EndedDown = OldKeyboardController->State.Buttons[ButtonIndex].EndedDown;
-                    }
-
-                    for(u32 ButtonIndex = 0; ButtonIndex < 5; ++ButtonIndex)
-                    {
-                        NewInput->MouseButtons[ButtonIndex] = OldInput->MouseButtons[ButtonIndex];
-                        NewInput->MouseButtons[ButtonIndex].HalfTransitionCount = 0;
-                    }
-
-                    linux_WindowMessageProcess(&LinuxState, X11Display, X11Window, WmDeleteWindow, NewKeyboardController);
-
-                    if(!GlobalPause)
-                    {
-                        //Extern rendering function
-                        if(PolarState.UpdateAndRender)
-                        {
-                            //Update objects and fill the buffer
-                            if(OutputRenderFile != nullptr)
-                            {
-                                PolarState.UpdateAndRender(PolarEngine, OutputRenderFile, &EngineMemory, NewInput, TestSine, TestTriangle, TestSquare, Test03);
-                                OutputRenderFile->TotalSampleCount += polar_render_WAVWriteFloat(OutputRenderFile, (PolarEngine.Buffer.FramesAvailable * PolarEngine.Channels), OutputRenderFile->Data);
-                            }
-
-                            else
-                            {
-                                PolarState.UpdateAndRender(PolarEngine, nullptr, &EngineMemory, NewInput, TestSine, TestTriangle, TestSquare, Test03);
-                            }
-
-                            ALSA->FramesWritten = snd_pcm_writei(ALSA->Device, PolarEngine.Buffer.SampleBuffer, (PolarEngine.BufferFrames));
-
-                            //If no frames are written then try to recover the output stream
-                            if(ALSA->FramesWritten < 0)
-                            {
-                                ALSA->FramesWritten = snd_pcm_recover(ALSA->Device, ALSA->FramesWritten, 0);
-                            }
-
-                            //If recovery fails then quit
-                            if(ALSA->FramesWritten < 0) 
-                            {
-                                ERR_TO_RETURN(ALSA->FramesWritten, "ALSA: Failed to write any output frames! snd_pcm_writei()", -1);
-                            }
-
-                            //Wrote less frames than the total buffer length
-                            if(ALSA->FramesWritten > 0 && ALSA->FramesWritten < (PolarEngine.BufferFrames))
-                            {
-                                printf("ALSA: Short write!\tExpected %i, wrote %li\n", (PolarEngine.BufferFrames), ALSA->FramesWritten);
-                            }
-
-                            printf("ALSA: Frames written:\t%ld\n", ALSA->FramesWritten);
-                        }
-
-                        //Reset input for next loop
-                        POLAR_INPUT *Temp = NewInput;
-                        NewInput = OldInput;
-                        OldInput = Temp;
-                    }      
-                }
-            }
-
-            printf("Polar: %lu frames written to %s\n", OutputRenderFile->TotalSampleCount, OutputRenderFile->Path);
-    
-            polar_render_WAVWriteDestroy(OutputRenderFile);
-    
-
-            munmap(LinuxState.EngineMemoryBlock, ((size_t) LinuxState.TotalSize));
-            linux_ALSA_Destroy(ALSA, PolarEngine.Buffer);
+            Summing = &polar_render_SumStereo;
+            break;
+        }
+        default:
+        {
+            Summing = &polar_render_SumStereo;
+            break;
         }
     }
+
+    //PCG Random Setup
+    i32 Rounds = 5;
+    pcg32_srandom(time(NULL) ^ (intptr_t) &printf, (intptr_t) &Rounds);
+
+    //Create ringbuffer with a specified block count (default is 3)
+    POLAR_RINGBUFFER *CallbackBuffer = polar_ringbuffer_Create(EngineArena, Engine.BufferFrames, 3);
+
+    //Create mixer object that holds all submixes and their containers
+    POLAR_MIXER *MasterOutput = polar_mixer_Create(SourceArena, -1);
     
+    //Sine sources
+    polar_mixer_SubmixCreate(SourceArena, MasterOutput, 0, "SM_SineChordMix", -1);
+    polar_mixer_ContainerCreate(MasterOutput, "SM_SineChordMix", "CO_ChordContainer", -1);
+    polar_source_CreateFromFile(SourceArena, MasterOutput, Engine, "../../data/asset_lists/Source_Import.txt");
+
+    //File sources
+    polar_mixer_SubmixCreate(SourceArena, MasterOutput, 0, "SM_FileMix", -1);
+    polar_mixer_ContainerCreate(MasterOutput, "SM_FileMix", "CO_FileContainer", -1);
+    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_WPN_Phasor", Stereo, SO_FILE, "../../data/audio/wpn_phasor.wav");
+    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_AMB_Forest_01", Stereo, SO_FILE, "../../data/audio/amb_river.wav");
+    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_Whiterun", Stereo, SO_FILE, "../../data/audio/Whiterun48.wav");
+
+    //Silent first loop
+    printf("Polar: Pre-roll silence\n");
+    MasterOutput->Amplitude = DB(-99);
+    for(u32 i = 0; i < 60; ++i)
+    {
+        linux_ALSA_Callback(ALSA, Engine, MasterOutput, CallbackBuffer);
+    }
+
+    printf("Polar: Playback\n");
+    MasterOutput->Amplitude = DB(-6);
+    for(u32 i = 0; i < 2000; ++i)
+    {
+        polar_source_UpdatePlaying(MasterOutput);
+
+        if(i == 100)
+        {
+            f32 StackPositions[MAX_CHANNELS] = {0.0};
+            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_A", 6, StackPositions, FX_DRY, EN_BREAKPOINT, "../../data/breakpoints/breaks.txt");
+            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_C", 6, StackPositions, FX_DRY, EN_BREAKPOINT, "breaks.txt");
+            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_D", 6, StackPositions, FX_DRY, EN_BREAKPOINT, "breaks.txt");
+
+            polar_source_Play(MasterOutput, "SO_SineChord_Segment_B", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "../../data/breakpoints/breaks2.txt");
+
+            polar_source_Play(MasterOutput, "SO_Whiterun", 8, StackPositions, FX_DRY, EN_NONE, AMP(-4));
+        }
+
+        linux_ALSA_Callback(ALSA, Engine, MasterOutput, CallbackBuffer);
+        // printf("ALSA: Frames written:\t%ld\n", ALSA->FramesWritten);
+    }
+
+    polar_mixer_Destroy(EngineArena, MasterOutput);
+
+    polar_ringbuffer_Destroy(EngineArena, CallbackBuffer);
+    linux_ALSA_Destroy(EngineArena, ALSA);
+
+    memory_arena_Destroy(EngineArena);
+    memory_arena_Destroy(SourceArena);
+
     return 0;
 }

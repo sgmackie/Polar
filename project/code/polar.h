@@ -8,244 +8,189 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h> //memcpy
-
-
-//TODO: Finish rest of the comments
-/*                  */
-/*  DSP code        */
-/*                  */
-
+#include <time.h>
+#include <stdarg.h>
 #include "math.h"
 
-#define PI32 3.14159265359f
-#define TWO_PI32 (2.0 * PI32)
-
-//Structs
-//Waveform select
-typedef enum WAVEFORM
-{
-    SINE,
-    SQUARE,
-    SAWDOWN,
-    SAWUP,
-    TRIANGLE
-} WAVEFORM;
-
-//Wave oscillator
-typedef struct POLAR_OSCILLATOR
-{
-    WAVEFORM Waveform;
-    f64 (*Tick) (POLAR_OSCILLATOR *Oscillator);   //Function pointer to the different waveform ticks
-    f64 TwoPiOverSampleRate;                //2 * Pi / Sample rate is a constant variable
-    f64 PhaseCurrent;
-    f64 PhaseIncrement;                     //Store calculated phase increment
-    f64 FrequencyCurrent;
-} POLAR_OSCILLATOR;
-
-
-//Prototypes
-POLAR_OSCILLATOR *polar_wave_OscillatorCreate(u32 SampleRate, WAVEFORM WaveformSelect, f64 InitialFrequency);                                                                                //Allocation and initialisation functions in one
-void polar_wave_OscillatorDestroy(POLAR_OSCILLATOR *Oscillator);                                                                //Free oscillator struct
-void polar_wave_OscillatorInit(POLAR_OSCILLATOR *Oscillator, u32 SampleRate, WAVEFORM WaveformSelect, f64 InitialFrequency);    //Initialise elements of oscillator (can be used to reset)
-f64 polar_wave_PhaseWrap(f64 &Phase);                                                                                           //Wrap phase 2*Pi as precaution against sin(x) function on different compilers failing to wrap large scale values internally
-f64 polar_wave_TickSine(POLAR_OSCILLATOR *Oscillator);                                                                          //Calculate sine wave samples
-f64 polar_wave_TickSquare(POLAR_OSCILLATOR *Oscillator);                                                                        //Calculate square wave samples
-f64 polar_wave_TickSawDown(POLAR_OSCILLATOR *Oscillator);                                                                       //Calculate downward square wave samples
-f64 polar_wave_TickSawUp(POLAR_OSCILLATOR *Oscillator);                                                                         //Calculate upward square wave samples
-f64 polar_wave_TickTriangle(POLAR_OSCILLATOR *Oscillator);    
-
-
 /*                  */
-/*  Object code  	*/
+/*  Global code  	*/
 /*                  */
 
-#define MAX_OBJECTS 4
 
-typedef struct POLAR_OBJECT_STATE
-{
-    f32 Amplitude;
-	f32 Frequency;
-	f32 Pan;
-    WAVEFORM Waveform;
-} POLAR_OBJECT_STATE;
+//Hex defines
+#define SO_NONE                 0x09070232
+#define SO_OSCILLATOR           0x1c5903fe
+#define SO_FILE                 0x08d10222
+#define FX_DRY                  0x06a701ed
+#define FX_AM                   0x04af018c
+#define FX_ECHO                 0x0898021d
+#define EN_NONE                 0x089f0223
+#define EN_ADSR                 0x0861021d
+#define EN_BREAKPOINT           0x1b0903e2
+#define EN_AMPLITUDE            0x178a0398
+#define EN_FREQUENCY            0x182603a5
+#define RN_FREQUENCY            0x184903b2
+#define RN_PAN                  0x06b401df
 
+//General Defines
+#define Mono    1
+#define Stereo  2
+#define Quad    4
 
-struct POLAR_OBJECT
-{
-    u32 UID;
-    const char *Name;
-    u32 SampleCount;
-    i32 SamplesPlayed;
-    POLAR_OSCILLATOR *Oscillator;
-    POLAR_OBJECT_STATE *State;
-    POLAR_OBJECT *Next;
-};
-
+//Function macros
+#define Hash(X) math_HashGenerate(X)
+#define DB(X) math_DecibelToLinear(X)
+#define AMP_MIN(X) DB(X)
+#define AMP_MAX(X) DB(X)
+#define AMP(X) DB(X)
 
 
 /*                  */
 /*  Memory code  	*/
 /*                  */
 
-//Macros
-#define polar_PushStruct(Arena, type) (type *) polar_PushSize(Arena, sizeof(type))
-#define polar_PushArray(Arena, Count, type) (type *) polar_PushSize(Arena, (Count) * sizeof(type))
+//Defines
+//Define maximum alignemt Size fron integral types
+typedef f64 max_align_type;
+global size_t MaxAlignment = alignof(max_align_type);
+#define ARENA_DEFAULT_CHUNK_SIZE 2048
 
 //Structs
-typedef struct POLAR_MEMORY_GLOBAL
+//Chunks are a linked list of allocated data
+typedef struct MEMORY_ARENA_CHUNK 
 {
-    bool IsInitialized;
+    size_t CurrentSize;
+    size_t TotalSize;
+    MEMORY_ARENA_CHUNK *NextChunk;
+    char Data[sizeof(char)];
+} MEMORY_ARENA_CHUNK;
 
-    u64 PermanentDataSize;
-    void *PermanentData;
-
-    u64 TemporaryDataSize;
-    void *TemporaryData;
-} POLAR_MEMORY_GLOBAL;
-
-typedef struct POLAR_MEMORY_ARENA
+//Arena to access all allocated chunks as a list
+typedef struct MEMORY_ARENA 
 {
-    size_t Size;
-    u8 *BaseAddress;
-    size_t UsedSpace;
+    MEMORY_ARENA_CHUNK *FirstInList;
+    size_t CurrentSize;
+    size_t TotalSize;
+    size_t ChunkCount;
+    size_t UnalignedDataSize;
+} MEMORY_ARENA;
 
-    i32 TemporaryArenaCount;
-} POLAR_MEMORY_ARENA;
+//Protoypes
+//Chunks
+MEMORY_ARENA_CHUNK *memory_arena_ChunkCreate(size_t Size);                  //Create an aligned chunk at a given size by calling system alloctor (VirtualAlloc / mmap)
+void memory_arena_ChunkDestroy(MEMORY_ARENA_CHUNK *Chunk);                  //Free any created chunk
 
-typedef struct POLAR_MEMORY_TRANSIENT
+//Arena
+MEMORY_ARENA *memory_arena_Create(size_t Size);                             //Allocate space for the arena and create the first chunk in the linked list
+void memory_arena_Destroy(MEMORY_ARENA *Arena);                             //Free arena and all linked chunks
+void memory_arena_Reset(MEMORY_ARENA *Arena);                               //Call memset on every chunk in the arena
+void *memory_arena_Push(MEMORY_ARENA *Arena, void *Type, size_t Size);      //Push any data onto the arena by assigning it a specific address from the chunks and return that address
+void memory_arena_Pull(MEMORY_ARENA *Arena);                                //Free any chunks that are currently empty
+void memory_arena_Print(MEMORY_ARENA *Arena, const char *Name);             //Print the contents of a given arena
+
+
+/*                  */
+/*  Buffer code  	*/
+/*                  */
+
+#define RINGBUFFER_DEFAULT_BLOCK_COUNT 3
+
+//Structs
+typedef struct POLAR_RINGBUFFER
 {
-    bool IsInitialized;
-    POLAR_MEMORY_ARENA TransientArena;    
-} POLAR_MEMORY_TRANSIENT;
+    u64 Samples;
+    u64 ReadAddress;
+    u64 WriteAddress;
+    u64 TotalBlocks;
+    u64 CurrentBlocks;
+    f32 *Data;
+} POLAR_RINGBUFFER;
 
-typedef struct POLAR_MEMORY_TEMPORARY
+//Prototypes
+POLAR_RINGBUFFER *polar_ringbuffer_Create(MEMORY_ARENA *Arena, u32 Samples, u32 Blocks);        //Allocate buffer that is segemented into blocks of samples, default is 3
+void polar_ringbuffer_Destroy(MEMORY_ARENA *Arena, POLAR_RINGBUFFER *Buffer);                   //Free buffer
+
+//Writing
+f32 *polar_ringbuffer_WriteData(POLAR_RINGBUFFER *Buffer);                                      //Return the address of the next available block to write to
+bool polar_ringbuffer_WriteCheck(POLAR_RINGBUFFER *Buffer);                                     //Check that there is space to write another block of samples
+void polar_ringbuffer_WriteFinish(POLAR_RINGBUFFER *Buffer);                                    //Change the address to point to the next block
+
+//Reading
+f32 *polar_ringbuffer_ReadData(POLAR_RINGBUFFER *Buffer);                                       //Read from the next available block
+bool polar_ringbuffer_ReadCheck(POLAR_RINGBUFFER *Buffer);                                      //Check that there are any written blocks to read from
+void polar_ringbuffer_ReadFinish(POLAR_RINGBUFFER *Buffer);                                     //Change the address to point to the next block
+
+
+/*                  */
+/*  DSP code        */
+/*                  */
+
+//Defines
+#define PI32 3.14159265359f
+#define TWO_PI32 (2.0 * PI32)
+
+#define WV_SINE         0x094f023c
+#define WV_SQUARE       0x0ee802de
+#define WV_SAWDOWN      0x11e50330
+#define WV_SAWUP        0x0bf6029d
+#define WV_TRIANGLE     0x153e0363
+
+//Structs
+//Wave oscillator
+typedef struct POLAR_OSCILLATOR
 {
-    POLAR_MEMORY_ARENA *TemporaryArena;
-    size_t UsedSpace;
-} POLAR_MEMORY_TEMPORARY;
+    u32 Waveform;                                   //Waveform assignment
+    f32 (*Tick) (POLAR_OSCILLATOR *Oscillator);     //Function pointer to the different waveform ticks
+    f32 TwoPiOverSampleRate;                        //2 * Pi / Sample rate is a constant variable
+    f32 PhaseCurrent;
+    f32 PhaseIncrement;                             //Store calculated phase increment
+    f32 FrequencyCurrent;
+    f32 FrequencyTarget;
+    f32 FrequencyDelta;
+} POLAR_OSCILLATOR;
 
 
 //Prototypes
-void polar_memory_ArenaInitialise(POLAR_MEMORY_ARENA *Arena, size_t Size, void *BaseAddress);   //Initialise zero with a base address
-POLAR_MEMORY_TEMPORARY polar_memory_TemporaryArenaCreate(POLAR_MEMORY_ARENA *Parent);           //Create temporary arena from a given parent
-void polar_memory_TemporaryArenaDestroy(POLAR_MEMORY_TEMPORARY TemporaryMemory);                //Remove arena from temporary memory space
-size_t polar_memory_AlignmentOffsetGet(POLAR_MEMORY_ARENA *Arena, size_t Alignment);            //Find the offset size when pushing data onto an arena
-void *polar_PushSize(POLAR_MEMORY_ARENA *Arena, size_t SizeInitial, size_t Alignment = 4);      //From a given type (and size), push to the arena with a byte alignment
+POLAR_OSCILLATOR *polar_dsp_OscillatorCreate(MEMORY_ARENA *Arena, u32 SampleRate, u32 WaveformSelect, f32 InitialFrequency);        //Create oscillator object
+void polar_dsp_OscillatorInit(POLAR_OSCILLATOR *Oscillator, u32 SampleRate, u32 WaveformSelect, f32 InitialFrequency);              //Initialise elements of oscillator (can be used to reset)
+f32 polar_dsp_PhaseWrap(f32 &Phase);                                                                                                //Wrap phase 2*Pi as precaution against sin(x) function on different compilers failing to wrap large scale values internally
+f32 polar_dsp_TickSine(POLAR_OSCILLATOR *Oscillator);                                                                               //Calculate sine wave samples
+f32 polar_dsp_TickSquare(POLAR_OSCILLATOR *Oscillator);                                                                             //Calculate square wave samples
+f32 polar_dsp_TickSawDown(POLAR_OSCILLATOR *Oscillator);                                                                            //Calculate downward square wave samples
+f32 polar_dsp_TickSawUp(POLAR_OSCILLATOR *Oscillator);                                                                              //Calculate upward square wave samples
+f32 polar_dsp_TickTriangle(POLAR_OSCILLATOR *Oscillator);    
 
 /*                  */
-/*  General code  	*/
+/*  File code  	    */
 /*                  */
 
-//Structs
-typedef struct POLAR_INPUT_STATE
+typedef struct POLAR_FILE
 {
-    i32 HalfTransitionCount;
-    bool EndedDown;
-} POLAR_INPUT_STATE;
+    u32 Channels;
+    u32 SampleRate;
+    u64 FrameCount;
+    u64 ReadIndex;
+    f32 *Samples;
+} POLAR_FILE;
 
-typedef struct POLAR_INPUT_CONTROLLER
-{
-    bool IsConnected;
-
-    union State
-    {
-        POLAR_INPUT_STATE Buttons[14];
-        
-		struct Press
-        {
-            POLAR_INPUT_STATE MoveUp;
-            POLAR_INPUT_STATE MoveDown;
-            POLAR_INPUT_STATE MoveLeft;
-            POLAR_INPUT_STATE MoveRight;
-            
-            POLAR_INPUT_STATE ActionUp;
-            POLAR_INPUT_STATE ActionDown;
-            POLAR_INPUT_STATE ActionLeft;
-            POLAR_INPUT_STATE ActionRight;
-            
-            POLAR_INPUT_STATE LeftShoulder;
-            POLAR_INPUT_STATE LeftTrigger;
-            POLAR_INPUT_STATE RightShoulder;
-            POLAR_INPUT_STATE RightTrigger;
-
-        	POLAR_INPUT_STATE Back;
-        	POLAR_INPUT_STATE Start;
-            
-            POLAR_INPUT_STATE Terminator;
-        } Press;
-    } State;
-
-} POLAR_INPUT_CONTROLLER;
-
-
-typedef struct POLAR_INPUT
-{
-    POLAR_INPUT_STATE MouseButtons[5];
-    i32 MouseX;
-	i32 MouseY;
-	i32 MouseZ;
- 
-    POLAR_INPUT_CONTROLLER Controllers[5];
-} POLAR_INPUT;
-
-
-//Byte buffer passed to the sound card
-typedef struct POLAR_BUFFER
-{
-	u32 FramePadding;
-	u32 FramesAvailable;
-	f32 *SampleBuffer;
-	void *DeviceBuffer;
-} POLAR_BUFFER;
-
-struct POLAR_ENGINE_STATE
-{
-    f32 MasterAmplitude;
-    POLAR_MEMORY_ARENA Arena;
-    POLAR_OBJECT *FirstInList;
-    POLAR_OBJECT *FirstInFreeList;   
-    bool IsInitialised;
-};
+/*                  */
+/*  Engine code  	*/
+/*                  */
 
 typedef struct POLAR_ENGINE         //Struct to hold platform specific audio API important engine properties
 {
-	POLAR_BUFFER Buffer;       	    //Float and device buffers for rendering
 	u32 BufferFrames;			    //Frame count for output buffer
 	u16 Channels;                   //Engine current channels
+    f32 *OutputChannelPositions;
 	u32 SampleRate;                 //Engine current sampling rate
+    bool Resample;
 	u16 BitRate;                    //Engine current bitrate
-
-    POLAR_ENGINE_STATE *State;
 } POLAR_ENGINE;
 
 
 //Prototypes
 //String handling
-void polar_StringConcatenate(size_t StringALength, const char *StringA, size_t StringBLength, const char *StringB, char *StringC);
 i32 polar_StringLengthGet(const char *String);
-
-//Input handling
-POLAR_INPUT_CONTROLLER *ControllerGet(POLAR_INPUT *Input, u32 ControllerIndex);
-
-
-//TODO: Move these functions to a .cpp file
-//Iterate through strings A & B and push to string C
-void polar_StringConcatenate(size_t StringALength, const char *StringA, size_t StringBLength, const char *StringB, char *StringC)
-{
-    for(u32 Index = 0; Index < StringALength; ++Index)
-    {
-        *StringC++ = *StringA++;
-    }
-
-    for(u32 Index = 0; Index < StringBLength; ++Index)
-    {
-        *StringC++ = *StringB++;
-    }
-
-    *StringC++ = 0;
-}
-
-
 i32 polar_StringLengthGet(const char *String)
 {
     i32 Count = 0;
@@ -258,94 +203,176 @@ i32 polar_StringLengthGet(const char *String)
     return Count;
 }
 
-POLAR_INPUT_CONTROLLER *ControllerGet(POLAR_INPUT *Input, u32 ControllerIndex)
-{
-    Assert(ControllerIndex < ArrayCount(Input->Controllers));
-    
-    POLAR_INPUT_CONTROLLER *Result = &Input->Controllers[ControllerIndex];
-    return Result;
-}
+
+
+
+// typedef struct BREAKPOINT_FORMAT 
+// {
+//     u64 CurrentPoints;
+//     u64 ReadIndex;
+//     f64 Time[MAX_BREAKPOINTS];
+//     f64 Amplitude[MAX_BREAKPOINTS];
+//     f64 Frequency[MAX_BREAKPOINTS];
+// } BREAKPOINT_FORMAT;
+
+// typedef struct BREAKPOINT_STREAM
+// {
+//     BREAKPOINT_FORMAT *Points;
+//     BREAKPOINT_FORMAT LeftPoint, RightPoint;
+//     uint64 NumPoints;
+//     float64 CurrentPosition, Increment, Width, Height;
+//     uint64 CounterLeft, CounterRight;
+//     int32 MorePoints;
+// } BREAKPOINT_STREAM;
 
 
 /*                  */
-/*  File code       */
-/*                  */
-
-//Defines
-//64 bit max size
-//TODO: Check on x86 builds
-#define WAV_FILE_MAX_SIZE  ((u64)0xFFFFFFFFFFFFFFFF)
-
-typedef struct POLAR_WAV_HEADER //WAV file specification "http://www-mmsp.ece.mcgill.ca/Documents/AudioFormats/WAVE/WAVE.html"
-{
-	u16 AudioFormat;		    //1 for WAVE_FORMAT_PCM, 3 for WAVE_FORMAT_IEEE_FLOAT
-	u16 NumChannels;		    //2
-	u32 SampleRate;			    //192000
-	u32 ByteRate;			    //SampleRate * NumChannels * BitsPerSample/8
-	u16 BlockAlign;			    //NumChannels * BitsPerSample/8
-	u16 BitsPerSample;		    //32
-	u64 DataChunkDataSize;	    //Overall size of the "data" chunk
-	u64 DataChunkDataStart;	    //Starting byte of the data chunk
-} POLAR_WAV_HEADER;
-
-typedef struct POLAR_WAV
-{
-	FILE *WAVFile;              //Handle to a file
-	const char *Path;			//Path to a file
-	POLAR_WAV_HEADER WAVHeader; //Struct to store WAV header properties
-    //TODO: Support i16/i32 data
-	f32 *Data;                  //Floating point sample buffer
-	u64 TotalSampleCount;       //Total samples in a file when read
-} POLAR_WAV;
-
-//Protypes
-//File writing
-POLAR_WAV *polar_render_WAVWriteCreate(const char *FilePath, POLAR_ENGINE *Engine);
-void polar_render_WAVWriteDestroy(POLAR_WAV *File);
-internal bool polar_render_WAVWriteHeader(POLAR_WAV *File, POLAR_ENGINE *Engine);
-internal size_t polar_render_WAVWriteRaw(POLAR_WAV *File, size_t BytesToWrite, const void *FileData);
-internal u64 polar_render_WAVWriteFloat(POLAR_WAV *File, u64 SamplesToWrite, const void *FileData);
-internal u32 polar_render_RIFFChunkRound(u64 RIFFChunkSize);
-internal u32 polar_render_DataChunkRound(u64 DataChunkSize);
-
-
-/*                  */
-/*  Rendering code  */
+/*  Envelope code  	*/
 /*                  */
 
 //Defines
-#define STEREO 2
-#define MONO 1
+#define MAX_BREAKPOINT_LINE_LENGTH 64
+
+//Structs
+typedef struct POLAR_ENVELOPE_POINT
+{
+    f64 Time;
+    f64 Value;
+} POLAR_ENVELOPE_POINT;
+
+typedef struct POLAR_ENVELOPE 
+{
+    u32 Assignment;
+    u32 CurrentPoints;
+    u32 Index;
+    POLAR_ENVELOPE_POINT Points[MAX_BREAKPOINTS];
+} POLAR_ENVELOPE;
+
+
+
+/*                  */
+/*  Sources code  	*/
+/*                  */
+
+//Structs
+//Union to select between source types
+typedef struct POLAR_SOURCE_TYPE
+{
+    u32 Flag;
+    union
+    {
+        POLAR_OSCILLATOR *Oscillator;
+        POLAR_FILE *File;
+    };
+} POLAR_SOURCE_TYPE;
+
+typedef enum POLAR_SOURCE_PLAY_STATE
+{
+    Stopped,
+    Stopping,
+    Playing
+} POLAR_SOURCE_PLAY_STATE;
+
+//Current state of the source
+typedef struct POLAR_SOURCE_STATE
+{
+    f64 AmplitudeCurrent;
+    f64 AmplitudeDelta;
+    f64 AmplitudeTarget;
+    f32 *PanPositions;
+    u32 CurrentEnvelopes;
+    POLAR_ENVELOPE Envelope[MAX_ENVELOPES];
+} POLAR_SOURCE_STATE;
+
+//Source is a struct of arrays that is accessed by it's unique ID
+typedef struct POLAR_SOURCE
+{
+    u8 CurrentSources;
+    u64 UID[MAX_SOURCES];
+    POLAR_SOURCE_TYPE Type[MAX_SOURCES];
+    POLAR_SOURCE_PLAY_STATE PlayState[MAX_SOURCES];
+    POLAR_SOURCE_STATE States[MAX_SOURCES];
+    u32 FX[MAX_SOURCES];
+    u8 Channels[MAX_SOURCES];
+    u32 SampleRate[MAX_SOURCES];
+    u64 SampleCount[MAX_SOURCES];
+    u32 BufferSize[MAX_SOURCES];
+    f32 *Buffer[MAX_SOURCES];
+} POLAR_SOURCE;
+
+/*                  */
+/*  Mixer code      */
+/*                  */
+
+//Struct
+//Container to hold a static amount of sources
+typedef struct POLAR_CONTAINER
+{
+    u8 CurrentContainers;
+    u64 UID[MAX_CONTAINERS];
+    f64 Amplitude[MAX_CONTAINERS];
+    u32 FX[MAX_CONTAINERS];
+    POLAR_SOURCE Sources[MAX_CONTAINERS];
+} POLAR_CONTAINER;
+
+//Linked list of submixes with their own containers
+typedef struct POLAR_SUBMIX
+{
+    u64 UID;
+    f64 Amplitude;
+    u32 FX;
+    POLAR_CONTAINER Containers;
+    u32 ChildSubmixCount;
+    POLAR_SUBMIX *ChildSubmix;
+    POLAR_SUBMIX *NextSubmix;
+} POLAR_SUBMIX;
+
+//Global mixer that holds all submixes and their child containers
+typedef struct POLAR_MIXER
+{
+    f64 Amplitude;
+    u32 SubmixCount;
+    POLAR_SUBMIX *FirstInList;
+} POLAR_MIXER;
 
 //Prototypes
-//Bit conversion functions
-//32bit floats to signed integers
-internal i32 polar_render_FloatToInt32(f32 Input);
-internal i16 polar_render_FloatToInt16(f32 Input);
-internal i8 polar_render_FloatToInt8(f32 Input);
+//Mixer
+POLAR_MIXER *polar_mixer_Create(MEMORY_ARENA *Arena, f64 Amplitude);            //Create mixing object to hold singly linked list of submixes
+void polar_mixer_Destroy(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer);              //Free the mixer
 
-//Signed integers to 32bit floats
-internal f32 polar_render_Int32ToFloat(i32 Input);
-internal f32 polar_render_Int16ToFloat(i16 Input);
-internal f32 polar_render_Int8ToFloat(i8 Input);
+//Submixing
+void polar_mixer_SubmixCreate(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, const char ParentUID[MAX_STRING_LENGTH], const char ChildUID[MAX_STRING_LENGTH], f64 Amplitude);     //Create a submix that is either assigned to any free space in the list or is the child of another submix
+void polar_mixer_SubmixDestroy(POLAR_MIXER *Mixer, const char UID[MAX_STRING_LENGTH]);                                                                                      //Remove submix from the list
 
-//Update
-internal POLAR_OBJECT *polar_update_ObjectPlay(POLAR_ENGINE *Engine, POLAR_OBJECT *InputSound, u32 Duration, u16 Channels);     //Mark a given object to be played
+//Containers
+void polar_mixer_ContainerCreate(POLAR_MIXER *Mixer, const char SubmixUID[MAX_STRING_LENGTH], const char ContainerUID[MAX_STRING_LENGTH], f64 Amplitude);                   //Create a container to hold any audio sources as a single group, then assign it to a submix
+void polar_mixer_ContainerDestroy(POLAR_MIXER *Mixer, const char ContainerUID[MAX_STRING_LENGTH]);                                                                          //Remove container from the array
 
-//Rendering
-internal f32 polar_render_PanPositionGet(u16 Position, f32 Amplitude, f32 PanFactor);                               //Calculate stereo pan position
-void polar_render_ObjectRender(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, POLAR_OBJECT *Object);       //Render input object to a float buffer
-internal void polar_render_BufferFill(u16 ChannelCount, u32 FramesToWrite, f32 *SampleBuffer, void *DeviceBuffer, f32 *MixChannel01, f32 *FileSamples);
+//Sources
+POLAR_SOURCE *polar_source_Retrieval(POLAR_MIXER *Mixer, const char UID[MAX_STRING_LENGTH], u32 &SourceIndex);                                                              //Find a specific source and return it's struct with a given index
+void polar_source_Create(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE Engine, const char ContainerUID[MAX_STRING_LENGTH], const char SourceUID[MAX_STRING_LENGTH], u32 Channels, u32 Type, ...);
+void polar_source_CreateFromFile(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE Engine, const char *FileName);                                                       //Read CSV text file to create any sources
+void polar_source_Update(POLAR_SOURCE *Sources, u32 &SourceIndex);                                                                                                          //Internal update function used by polar_source_UpdatePlaying
+void polar_source_UpdatePlaying(POLAR_MIXER *Mixer);                                                                                                                        //Update every playing source's current state
+void polar_source_UpdateAmplitude(POLAR_MIXER *Mixer, const char *SourceUID, f32 UpdatePeriod, f32 NewAmplitude);                                                           //Change source amplitude with a fade over time in seconds
+void polar_source_Play(POLAR_MIXER *Mixer, const char *SourceUID, f32 Duration, f32 *PanPositions, u32 FX, u32 EnvelopeType, ...);                                          //Mark a source for playback
+
+/*                  */
+/*  Render code     */
+/*                  */
+
+//Prototypes
+
+void polar_render_Source(u32 &SampleRate, u64 &SampleCount, f64 &Amplitude, f64 &AmplitudeTarget, f64 &AmplitudeDelta, u32 Samples, POLAR_SOURCE_TYPE &Type, u32 &FX, f32 *Buffer);     //Fills a source's buffer and applies any FX
+void polar_render_SumStereo(POLAR_ENGINE PolarEngine, u8 &Channels, f32 *PanPositions, f64 &Amplitude, f32 *Buffer, f32 *SourceOutput);                                                 //Sums source to stereo output buffer
+void polar_render_Container(POLAR_ENGINE PolarEngine, POLAR_SOURCE &ContainerSources, f64 ContainerAmplitude, f32 *ContainerOutput);                                                    //Render every source in a container and mix as a single buffer
+void polar_render_Submix(POLAR_ENGINE PolarEngine, POLAR_SUBMIX *Submix, f32 *SubmixOutput);                                                                                            //Render every container in a submix
+void polar_render_Callback(POLAR_ENGINE PolarEngine, POLAR_MIXER *Mixer, f32 *MasterOutput);                                                                                            //Loop through each submix and render their containers/sources  
 
 
 //Function pointers
-//Callback function for updating objects via keyboard inputs
-#define POLAR_UPDATE_CALLBACK(FunctionName) void FunctionName(POLAR_ENGINE *Engine, POLAR_MEMORY_GLOBAL *Memory, POLAR_INPUT *Input, POLAR_OBJECT *Objects)
-typedef POLAR_UPDATE_CALLBACK(polar_render_Update);
-
-//Callback function for rendering current objects
-#define POLAR_RENDER_CALLBACK(FunctionName) void FunctionName(POLAR_ENGINE *Engine, POLAR_WAV *File, POLAR_MEMORY_GLOBAL *Memory)
-typedef POLAR_RENDER_CALLBACK(polar_render_Render);
+void (*Summing)(POLAR_ENGINE, u8 &, f32 *, f64 &, f32 *, f32 *);        //Pointer to summing function that is dependant on the output channel configuration
+void (*Callback)(POLAR_ENGINE, POLAR_MIXER *, f32 *);                   //Audio callback function called by the Windows/Linux audio API
 
 
 

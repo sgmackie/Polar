@@ -3,26 +3,13 @@
 
 #Build files
 misc/
-project/build
+build/
 *.exe
 *.lnk
 
-#Ctime
-ctime/
-
-#Audio data
+#Assets
 *.wav
 data/
 
-#Profiling
-profile/
-OPA/
-
-#WIP files
-OLD/
-Examples/
-*.pdf
-external/
-test/
-test2/
-minial/
+#Misc
+TODO.txt

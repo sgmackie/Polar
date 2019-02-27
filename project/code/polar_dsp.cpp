@@ -1,71 +1,60 @@
 #ifndef polar_dsp_cpp
 #define polar_dsp_cpp
 
-
 //Allocation and initialisation functions in one
-POLAR_OSCILLATOR *polar_wave_OscillatorCreate(u32 SampleRate, WAVEFORM WaveformSelect, f64 InitialFrequency)
+POLAR_OSCILLATOR *polar_dsp_OscillatorCreate(MEMORY_ARENA *Arena, u32 SampleRate, u32 WaveformSelect, f32 InitialFrequency)
 {
-    //TODO: Look into creating own allocator
-    POLAR_OSCILLATOR *Oscillator = (POLAR_OSCILLATOR *) malloc(sizeof *Oscillator);
+    POLAR_OSCILLATOR *Result = 0;
+    Result = (POLAR_OSCILLATOR *) memory_arena_Push(Arena, Result, (sizeof (POLAR_OSCILLATOR)));
 
-    if(!Oscillator)
+    if(!Result)
     {
-        return nullptr;
+        return 0;
     }
 
     if(SampleRate != 0 || WaveformSelect != 0 || InitialFrequency != 0)
     {
-        polar_wave_OscillatorInit(Oscillator, SampleRate, WaveformSelect, InitialFrequency);
+        polar_dsp_OscillatorInit(Result, SampleRate, WaveformSelect, InitialFrequency);
     }
 
-    return Oscillator;
-}
-
-//Free oscillator struct
-void polar_wave_OscillatorDestroy(POLAR_OSCILLATOR *Oscillator)
-{
-    if(Oscillator)
-    {
-        free(Oscillator);
-        Oscillator = nullptr;
-    }
+    return Result;
 }
 
 //Initialise elements of oscillator (can be used to reset)
-void polar_wave_OscillatorInit(POLAR_OSCILLATOR *Oscillator, u32 SampleRate, WAVEFORM WaveformSelect, f64 InitialFrequency)
+void polar_dsp_OscillatorInit(POLAR_OSCILLATOR *Oscillator, u32 SampleRate, u32 WaveformSelect, f32 InitialFrequency)
 {   
     Oscillator->Waveform = WaveformSelect;
 
     switch(Oscillator->Waveform)
     {
-        case SINE:
+        case WV_SINE:
         {
-            Oscillator->Tick = polar_wave_TickSine;
+            Oscillator->Tick = polar_dsp_TickSine;
             break;
         }
-        case SQUARE:
+        case WV_SQUARE:
         {
-            Oscillator->Tick = polar_wave_TickSquare;
+            Oscillator->Tick = polar_dsp_TickSquare;
             break;
         }
-        case SAWDOWN:
+        case WV_SAWDOWN:
         {
-            Oscillator->Tick = polar_wave_TickSawDown;
+            Oscillator->Tick = polar_dsp_TickSawDown;
             break;
         }
-        case SAWUP:
+        case WV_SAWUP:
         {
-            Oscillator->Tick = polar_wave_TickSawUp;
+            Oscillator->Tick = polar_dsp_TickSawUp;
             break;
         }
-        case TRIANGLE:
+        case WV_TRIANGLE:
         {
-            Oscillator->Tick = polar_wave_TickTriangle;
+            Oscillator->Tick = polar_dsp_TickTriangle;
             break;
         }
         default:
         {
-            Oscillator->Tick = polar_wave_TickSine;
+            Oscillator->Tick = polar_dsp_TickSine;
         }
     }
 
@@ -85,8 +74,8 @@ void polar_wave_OscillatorInit(POLAR_OSCILLATOR *Oscillator, u32 SampleRate, WAV
     Oscillator->PhaseIncrement = 0;
 }
 
-//Wrap phase 2*Pi as precaution against sin(x) function on different compilers failing to wrap large scale values internally
-f64 polar_wave_PhaseWrap(f64 &Phase)
+//Wrap phase 2*PI32 as precaution against sin(x) function on different compilers failing to wrap large scale values internally
+f32 polar_dsp_PhaseWrap(f32 &Phase)
 {    
     if(Phase >= TWO_PI32)
     {
@@ -102,27 +91,28 @@ f64 polar_wave_PhaseWrap(f64 &Phase)
 }
 
 
-
 //Calculate sine wave samples
-f64 polar_wave_TickSine(POLAR_OSCILLATOR *Oscillator)
+f32 polar_dsp_TickSine(POLAR_OSCILLATOR *Oscillator)
 {
-    f64 SineValue;
+    f32 SineValue;
 
-    //TODO: Replace crt sin function?
-    SineValue = (f64) sin(Oscillator->PhaseCurrent); //Input in radians
-    
+#if CUDA
+    SineValue = (f32) MiniMax(Oscillator->PhaseCurrent);
+#else
+    SineValue = (f32) sin(Oscillator->PhaseCurrent);
+#endif
     Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->FrequencyCurrent; //Load atomic value, multiply to get the phase increment
     Oscillator->PhaseCurrent += Oscillator->PhaseIncrement; //Increase phase by the calculated cycle increment
     
-    polar_wave_PhaseWrap(Oscillator->PhaseCurrent);
+    polar_dsp_PhaseWrap(Oscillator->PhaseCurrent);
 
     return SineValue;
 }
 
 //Calculate square wave samples
-f64 polar_wave_TickSquare(POLAR_OSCILLATOR *Oscillator)
+f32 polar_dsp_TickSquare(POLAR_OSCILLATOR *Oscillator)
 {
-    f64 SquareValue;
+    f32 SquareValue;
     
     Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->FrequencyCurrent;
     
@@ -137,45 +127,45 @@ f64 polar_wave_TickSquare(POLAR_OSCILLATOR *Oscillator)
     }
     
     Oscillator->PhaseCurrent += Oscillator->PhaseIncrement;
-    polar_wave_PhaseWrap(Oscillator->PhaseCurrent);
+    polar_dsp_PhaseWrap(Oscillator->PhaseCurrent);
 
     return SquareValue;
 }
 
 //Calculate downward square wave samples
-f64 polar_wave_TickSawDown(POLAR_OSCILLATOR *Oscillator)
+f32 polar_dsp_TickSawDown(POLAR_OSCILLATOR *Oscillator)
 {
-    f64 SawDownValue;
+    f32 SawDownValue;
     
     SawDownValue = ((-1.0) * (Oscillator->PhaseCurrent * (1.0 / TWO_PI32)));
 
     Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->FrequencyCurrent;
     Oscillator->PhaseCurrent += Oscillator->PhaseIncrement;
     
-    polar_wave_PhaseWrap(Oscillator->PhaseCurrent);
+    polar_dsp_PhaseWrap(Oscillator->PhaseCurrent);
     
     return SawDownValue;
 }
 
 //Calculate upward square wave samples
-f64 polar_wave_TickSawUp(POLAR_OSCILLATOR *Oscillator)
+f32 polar_dsp_TickSawUp(POLAR_OSCILLATOR *Oscillator)
 {
-    f64 SawUpValue;
+    f32 SawUpValue;
     
     SawUpValue = ((2.0 * (Oscillator->PhaseCurrent * (1.0 / TWO_PI32))) - 1.0);
 
     Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->FrequencyCurrent;
     Oscillator->PhaseCurrent += Oscillator->PhaseIncrement;
     
-    polar_wave_PhaseWrap(Oscillator->PhaseCurrent);
+    polar_dsp_PhaseWrap(Oscillator->PhaseCurrent);
     
     return SawUpValue;
 }
 
 //Calculate triangle wave samples
-f64 polar_wave_TickTriangle(POLAR_OSCILLATOR *Oscillator)
+f32 polar_dsp_TickTriangle(POLAR_OSCILLATOR *Oscillator)
 {
-    f64 TriangleValue;
+    f32 TriangleValue;
     
     TriangleValue = ((2.0 * (Oscillator->PhaseCurrent * (1.0 / TWO_PI32))) - 1.0);
 
@@ -189,7 +179,7 @@ f64 polar_wave_TickTriangle(POLAR_OSCILLATOR *Oscillator)
     Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->FrequencyCurrent;
     Oscillator->PhaseCurrent += Oscillator->PhaseIncrement;
     
-    polar_wave_PhaseWrap(Oscillator->PhaseCurrent);
+    polar_dsp_PhaseWrap(Oscillator->PhaseCurrent);
     
     return TriangleValue;
 }
