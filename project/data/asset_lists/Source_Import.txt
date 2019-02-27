@@ -1,0 +1,4 @@
+CO_ChordContainer SO_SineChord_Segment_A 1 SO_OSCILLATOR 233.08
+CO_ChordContainer SO_SineChord_Segment_B 1 SO_OSCILLATOR 277.18
+CO_ChordContainer SO_SineChord_Segment_C 1 SO_OSCILLATOR 349.23
+CO_ChordContainer SO_SineChord_Segment_D 1 SO_OSCILLATOR 393.33

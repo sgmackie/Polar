@@ -9,7 +9,7 @@ build/
 
 #Assets
 *.wav
-data/
+audio/
 
 #Misc
 TODO.txt

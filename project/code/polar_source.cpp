@@ -115,7 +115,13 @@ void polar_source_Create(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE E
 
             Sources->Type[j].File = (POLAR_FILE *) memory_arena_Push(Arena, Sources->Type[j].File, (sizeof (POLAR_FILE)));
             Sources->Type[j].File->Samples = drwav_open_file_and_read_pcm_frames_f32(FilePath, &Sources->Type[j].File->Channels, &Sources->Type[j].File->SampleRate, &Sources->Type[j].File->FrameCount);  
-                                
+
+            if(!Sources->Type[j].File->Samples)
+            {
+                printf("Polar\tERROR: Cannot open file %s\n", FilePath);
+                return;
+            }
+
             if(Sources->Type[j].File->SampleRate != Engine.SampleRate)
             {
                 f32 *ResampleBuffer = 0;
@@ -374,7 +380,11 @@ void polar_source_Play(POLAR_MIXER *Mixer, const char *SourceUID, f32 Duration, 
 {
     u32 i = 0;
     POLAR_SOURCE *Sources = polar_source_Retrieval(Mixer, SourceUID, i);
-    Assert(Sources);
+    if(!Sources)
+    {
+        printf("Polar\tERROR: Cannot play source %s\n", SourceUID);
+        return;
+    }
 
     if(Sources->Type[i].Flag == SO_FILE)
     {

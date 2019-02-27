@@ -190,13 +190,13 @@ int main()
         if(i == 100)
         {
             f32 StackPositions[MAX_CHANNELS] = {0.0};
-            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_A", 6, StackPositions, FX_DRY, EN_BREAKPOINT, "../../data/breakpoints/breaks.txt");
-            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_C", 6, StackPositions, FX_DRY, EN_BREAKPOINT, "breaks.txt");
-            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_D", 6, StackPositions, FX_DRY, EN_BREAKPOINT, "breaks.txt");
 
+            polar_source_Play(MasterOutput, "SO_SineChord_Segment_A", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
             polar_source_Play(MasterOutput, "SO_SineChord_Segment_B", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
+            polar_source_Play(MasterOutput, "SO_SineChord_Segment_C", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
+            polar_source_Play(MasterOutput, "SO_SineChord_Segment_D", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
 
-            // polar_source_Play(MasterOutput, "SO_Whiterun", 8, StackPositions, FX_DRY, EN_ADSR);
+            polar_source_Play(MasterOutput, "SO_Whiterun", 8, StackPositions, FX_DRY, EN_ADSR);
         }
 
         win32_WASAPI_Callback(WASAPI, Engine, MasterOutput, CallbackBuffer);
