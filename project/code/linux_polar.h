@@ -51,4 +51,8 @@ typedef struct ALSA_DATA
 } ALSA_DATA;
 
 
+ALSA_DATA *linux_ALSA_Create(MEMORY_ARENA *Arena, i32 &FramesAvailable, u32 UserSampleRate, u16 UserChannels, u32 UserFrames);
+void linux_ALSA_Destroy(MEMORY_ARENA *Arena, ALSA_DATA *ALSA);
+void linux_ALSA_Callback(ALSA_DATA *ALSA, POLAR_ENGINE PolarEngine, POLAR_MIXER *Mixer, POLAR_RINGBUFFER *CallbackBuffer);
+
 #endif

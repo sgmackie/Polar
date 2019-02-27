@@ -47,7 +47,7 @@ size_t RoundToAlignmentBoundary(size_t Alignment, size_t Size)
 
 u64 math_HashGenerate(const char String[MAX_STRING_LENGTH])
 {
-    u32 InputLength = polar_StringLengthGet(String);
+    u32 InputLength = StringLength(String);
     
     if(InputLength > MAX_STRING_LENGTH)
     {
@@ -62,7 +62,7 @@ u64 math_HashGenerate(const char String[MAX_STRING_LENGTH])
 }
 
 
-f32 math_DecibelToLinear(f32 X)
+f64 math_DecibelToLinear(f64 X)
 {
     return (pow(10, (X / 20)));
 }

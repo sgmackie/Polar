@@ -1,20 +1,20 @@
 #ifndef polar_render_cpp
 #define polar_render_cpp
 
-void polar_render_Source(u32 &SampleRate, u64 &SampleCount, f64 &Amplitude, f64 &AmplitudeTarget, f64 &AmplitudeDelta, u32 Samples, POLAR_SOURCE_TYPE &Type, u32 &FX, f32 *Buffer)
+void polar_render_Source(u32 &SampleRate, u64 &SampleCount, POLAR_SOURCE_STATE &State, u32 Samples, POLAR_SOURCE_TYPE &Type, u32 &FX, f32 *Buffer)
 {
     while(SampleCount != 0 && Type.Flag != SO_NONE)
     {
         f64 SecondsPerSample = (1.0f / (f64) SampleRate);
 
-        f64 CurrentAmp = (Amplitude);
-        f64 AmpDelta = (SecondsPerSample * AmplitudeDelta);
+        f64 CurrentAmp = (State.AmplitudeCurrent);
+        f64 AmpDelta = (SecondsPerSample * State.AmplitudeDelta);
 
         bool AmpEnded;
 
         if(AmpDelta != 0.0f)
         {
-            f64 NewDeltaVolume = (AmplitudeTarget - CurrentAmp);
+            f64 NewDeltaVolume = (State.AmplitudeTarget - CurrentAmp);
     
             u32 VolumeSampleCount = (u32)((NewDeltaVolume / AmpDelta + 0.5f));
             if(Samples > VolumeSampleCount)
@@ -54,11 +54,41 @@ void polar_render_Source(u32 &SampleRate, u64 &SampleCount, f64 &Amplitude, f64 
 
             case SO_OSCILLATOR:
             {
+                f64 CurrentFreq = (Type.Oscillator->FrequencyCurrent);
+                f64 FreqDelta = (SecondsPerSample * Type.Oscillator->FrequencyDelta);
+
+                bool FreqEnded = false;
+
+                if(FreqDelta != 0.0f)
+                {
+                    f64 NewDeltaFreq = (Type.Oscillator->FrequencyTarget - CurrentFreq);
+
+                    u32 FreqSampleCount = (u32)((NewDeltaFreq / FreqDelta + 0.5f));
+                    if(Samples > FreqSampleCount)
+                    {
+                        Samples = FreqSampleCount;
+                        FreqEnded = true;
+                    }
+
+                    if(FreqDelta == 0)
+                    {
+                        FreqEnded = true;
+                    }
+                }
+
                 for(u32 FrameIndex = 0; FrameIndex < Samples; ++FrameIndex)
 	            {
 	            	Buffer[FrameIndex] = (f32) Type.Oscillator->Tick(Type.Oscillator);
 
                     CurrentAmp += AmpDelta;
+                    CurrentFreq += FreqDelta;
+                }
+
+                Type.Oscillator->FrequencyCurrent = CurrentFreq;
+                if(FreqEnded)
+                {
+                    Type.Oscillator->FrequencyCurrent = Type.Oscillator->FrequencyTarget;
+                    Type.Oscillator->FrequencyDelta = 0.0f;
                 }
 
                 break;
@@ -84,11 +114,11 @@ void polar_render_Source(u32 &SampleRate, u64 &SampleCount, f64 &Amplitude, f64 
             }
         }
 
-        Amplitude = CurrentAmp;
+        State.AmplitudeCurrent = CurrentAmp;
         if(AmpEnded)
         {
-            Amplitude = AmplitudeTarget;
-            AmplitudeDelta = 0.0f;
+            State.AmplitudeCurrent = State.AmplitudeTarget;
+            State.AmplitudeDelta = 0.0f;
         }
 
         SampleCount -= Samples;
@@ -130,7 +160,7 @@ void polar_render_Container(POLAR_ENGINE PolarEngine, POLAR_SOURCE &ContainerSou
             case Playing:
             {
                 ContainerSources.BufferSize[i] = (PolarEngine.BufferFrames / PolarEngine.Channels);
-                polar_render_Source(ContainerSources.SampleRate[i], ContainerSources.SampleCount[i], ContainerSources.States[i].AmplitudeCurrent, ContainerSources.States[i].AmplitudeTarget, ContainerSources.States[i].AmplitudeDelta, ContainerSources.BufferSize[i], ContainerSources.Type[i], ContainerSources.FX[i], ContainerSources.Buffer[i]);
+                polar_render_Source(ContainerSources.SampleRate[i], ContainerSources.SampleCount[i], ContainerSources.States[i], ContainerSources.BufferSize[i], ContainerSources.Type[i], ContainerSources.FX[i], ContainerSources.Buffer[i]);
                 Summing(PolarEngine, ContainerSources.Channels[i], ContainerSources.States[i].PanPositions, ContainerSources.States[i].AmplitudeCurrent, ContainerSources.Buffer[i], ContainerOutput);
 
                 break;
@@ -145,7 +175,7 @@ void polar_render_Container(POLAR_ENGINE PolarEngine, POLAR_SOURCE &ContainerSou
             {
                 ContainerSources.BufferSize[i] = (PolarEngine.BufferFrames / PolarEngine.Channels);
                 ContainerSources.States[i].AmplitudeTarget = 0;
-                polar_render_Source(ContainerSources.SampleRate[i], ContainerSources.SampleCount[i], ContainerSources.States[i].AmplitudeCurrent, ContainerSources.States[i].AmplitudeTarget, ContainerSources.States[i].AmplitudeDelta, ContainerSources.BufferSize[i], ContainerSources.Type[i], ContainerSources.FX[i], ContainerSources.Buffer[i]);
+                polar_render_Source(ContainerSources.SampleRate[i], ContainerSources.SampleCount[i], ContainerSources.States[i], ContainerSources.BufferSize[i], ContainerSources.Type[i], ContainerSources.FX[i], ContainerSources.Buffer[i]);
                 Summing(PolarEngine, ContainerSources.Channels[i], ContainerSources.States[i].PanPositions, ContainerSources.States[i].AmplitudeCurrent, ContainerSources.Buffer[i], ContainerOutput);
 
                 break;

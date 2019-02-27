@@ -11,8 +11,10 @@
 #include "polar.h"
 #include "win32_polar.h"
 #include "../external/external_code.h"
-#include "polar.cpp"
 
+global char AssetPath[MAX_STRING_LENGTH] = {"../../data/"};
+
+#include "polar.cpp"
 
 WASAPI_DATA *win32_WASAPI_Create(MEMORY_ARENA *Arena, i32 &FramesAvailable)
 {
@@ -161,14 +163,14 @@ int main()
     //Sine sources
     polar_mixer_SubmixCreate(SourceArena, MasterOutput, 0, "SM_SineChordMix", -1);
     polar_mixer_ContainerCreate(MasterOutput, "SM_SineChordMix", "CO_ChordContainer", -1);
-    polar_source_CreateFromFile(SourceArena, MasterOutput, Engine, "../../data/asset_lists/Source_Import.txt");
+    polar_source_CreateFromFile(SourceArena, MasterOutput, Engine, "asset_lists/Source_Import.txt");
 
     //File sources
     polar_mixer_SubmixCreate(SourceArena, MasterOutput, 0, "SM_FileMix", -1);
     polar_mixer_ContainerCreate(MasterOutput, "SM_FileMix", "CO_FileContainer", -1);
-    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_WPN_Phasor", Stereo, SO_FILE, "../../data/audio/wpn_phasor.wav");
-    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_AMB_Forest_01", Stereo, SO_FILE, "../../data/audio/amb_river.wav");
-    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_Whiterun", Stereo, SO_FILE, "../../data/audio/Whiterun48.wav");
+    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_WPN_Phasor", Stereo, SO_FILE, "audio/wpn_phasor.wav");
+    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_AMB_Forest_01", Stereo, SO_FILE, "audio/amb_river.wav");
+    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_Whiterun", Stereo, SO_FILE, "audio/Whiterun48.wav");
 
     //Silent first loop
     printf("Polar: Pre-roll silence\n");
@@ -192,9 +194,9 @@ int main()
             // polar_source_Play(MasterOutput, "SO_SineChord_Segment_C", 6, StackPositions, FX_DRY, EN_BREAKPOINT, "breaks.txt");
             // polar_source_Play(MasterOutput, "SO_SineChord_Segment_D", 6, StackPositions, FX_DRY, EN_BREAKPOINT, "breaks.txt");
 
-            polar_source_Play(MasterOutput, "SO_SineChord_Segment_B", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "../../data/breakpoints/breaks2.txt");
+            polar_source_Play(MasterOutput, "SO_SineChord_Segment_B", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
 
-            polar_source_Play(MasterOutput, "SO_Whiterun", 8, StackPositions, FX_DRY, EN_NONE, AMP(-4));
+            // polar_source_Play(MasterOutput, "SO_Whiterun", 8, StackPositions, FX_DRY, EN_ADSR);
         }
 
         win32_WASAPI_Callback(WASAPI, Engine, MasterOutput, CallbackBuffer);

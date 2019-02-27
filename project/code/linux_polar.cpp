@@ -11,6 +11,9 @@
 #include "polar.h"
 #include "linux_polar.h"
 #include "../external/external_code.h"
+
+global char AssetPath[MAX_STRING_LENGTH] = {"../../data/"};
+
 #include "polar.cpp"
 
 //ALSA setup
@@ -29,8 +32,8 @@ ALSA_DATA *linux_ALSA_Create(MEMORY_ARENA *Arena, i32 &FramesAvailable, u32 User
     Result->ALSAError = snd_pcm_open(&Result->Device, "default", SND_PCM_STREAM_PLAYBACK, SND_PCM_NONBLOCK | SND_PCM_ASYNC);   
     ERR_TO_RETURN(Result->ALSAError, "Failed to open default audio device", nullptr);
 
-    Result->HardwareParameters = (snd_pcm_hw_params_t *) ArenaPush(Arena, Result->HardwareParameters, (sizeof (Result->HardwareParameters)));
-    Result->SoftwareParameters = (snd_pcm_sw_params_t *) ArenaPush(Arena, Result->SoftwareParameters, (sizeof (Result->SoftwareParameters)));
+    Result->HardwareParameters = (snd_pcm_hw_params_t *) memory_arena_Push(Arena, Result->HardwareParameters, (sizeof (Result->HardwareParameters)));
+    Result->SoftwareParameters = (snd_pcm_sw_params_t *) memory_arena_Push(Arena, Result->SoftwareParameters, (sizeof (Result->SoftwareParameters)));
 
     Result->ALSAError = snd_pcm_hw_params_any(Result->Device, Result->HardwareParameters);
     ERR_TO_RETURN(Result->ALSAError, "Failed to initialise hardware parameters", nullptr);
@@ -169,14 +172,14 @@ int main(int argc, char *argv[])
     //Sine sources
     polar_mixer_SubmixCreate(SourceArena, MasterOutput, 0, "SM_SineChordMix", -1);
     polar_mixer_ContainerCreate(MasterOutput, "SM_SineChordMix", "CO_ChordContainer", -1);
-    polar_source_CreateFromFile(SourceArena, MasterOutput, Engine, "../../data/asset_lists/Source_Import.txt");
+    polar_source_CreateFromFile(SourceArena, MasterOutput, Engine, "asset_lists/Source_Import.txt");
 
     //File sources
     polar_mixer_SubmixCreate(SourceArena, MasterOutput, 0, "SM_FileMix", -1);
     polar_mixer_ContainerCreate(MasterOutput, "SM_FileMix", "CO_FileContainer", -1);
-    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_WPN_Phasor", Stereo, SO_FILE, "../../data/audio/wpn_phasor.wav");
-    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_AMB_Forest_01", Stereo, SO_FILE, "../../data/audio/amb_river.wav");
-    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_Whiterun", Stereo, SO_FILE, "../../data/audio/Whiterun48.wav");
+    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_WPN_Phasor", Stereo, SO_FILE, "audio/wpn_phasor.wav");
+    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_AMB_Forest_01", Stereo, SO_FILE, "audio/amb_river.wav");
+    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_Whiterun", Stereo, SO_FILE, "audio/Whiterun48.wav");
 
     //Silent first loop
     printf("Polar: Pre-roll silence\n");
@@ -199,9 +202,9 @@ int main(int argc, char *argv[])
             // polar_source_Play(MasterOutput, "SO_SineChord_Segment_C", 6, StackPositions, FX_DRY, EN_BREAKPOINT, "breaks.txt");
             // polar_source_Play(MasterOutput, "SO_SineChord_Segment_D", 6, StackPositions, FX_DRY, EN_BREAKPOINT, "breaks.txt");
 
-            polar_source_Play(MasterOutput, "SO_SineChord_Segment_B", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "../../data/breakpoints/breaks2.txt");
+            polar_source_Play(MasterOutput, "SO_SineChord_Segment_B", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
 
-            polar_source_Play(MasterOutput, "SO_Whiterun", 8, StackPositions, FX_DRY, EN_NONE, AMP(-4));
+            polar_source_Play(MasterOutput, "SO_Whiterun", 8, StackPositions, FX_DRY, EN_ADSR);
         }
 
         linux_ALSA_Callback(ALSA, Engine, MasterOutput, CallbackBuffer);

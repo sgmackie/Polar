@@ -109,9 +109,12 @@ void polar_source_Create(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE E
             va_list ArgList;
             va_start(ArgList, Type);
             char *Name = va_arg(ArgList, char *);
+            
+            char FilePath[MAX_STRING_LENGTH];
+            polar_StringConcatenate(StringLength(AssetPath), AssetPath, StringLength(Name), Name, FilePath);
 
             Sources->Type[j].File = (POLAR_FILE *) memory_arena_Push(Arena, Sources->Type[j].File, (sizeof (POLAR_FILE)));
-            Sources->Type[j].File->Samples = drwav_open_file_and_read_pcm_frames_f32(Name, &Sources->Type[j].File->Channels, &Sources->Type[j].File->SampleRate, &Sources->Type[j].File->FrameCount);  
+            Sources->Type[j].File->Samples = drwav_open_file_and_read_pcm_frames_f32(FilePath, &Sources->Type[j].File->Channels, &Sources->Type[j].File->SampleRate, &Sources->Type[j].File->FrameCount);  
                                 
             if(Sources->Type[j].File->SampleRate != Engine.SampleRate)
             {
@@ -180,13 +183,15 @@ void polar_source_Create(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE E
 
 void polar_source_CreateFromFile(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE Engine, const char *FileName)
 {
-    Assert(FileName);
     FILE *File;
 
+    char FilePath[MAX_STRING_LENGTH];
+    polar_StringConcatenate(StringLength(AssetPath), AssetPath, StringLength(FileName), FileName, FilePath);
+
 #if _WIN32    
-    fopen_s(&File, FileName, "r");
+    fopen_s(&File, FilePath, "r");
 #else
-    File = fopen(FileName, "r");
+    File = fopen(FilePath, "r");
 #endif
 
     Assert(File);
@@ -219,7 +224,7 @@ void polar_source_Update(POLAR_SOURCE *Sources, u32 &SourceIndex)
 
     for(u8 EnvelopeIndex = 0; EnvelopeIndex < Sources->States[SourceIndex].CurrentEnvelopes; ++EnvelopeIndex)
     {
-        if(Sources->States[SourceIndex].Envelope[EnvelopeIndex].CurrentPoints > 0)
+        if(Sources->States[SourceIndex].Envelope[EnvelopeIndex].CurrentPoints > 0 && Sources->States[SourceIndex].Envelope[EnvelopeIndex].Index < Sources->States[SourceIndex].Envelope[EnvelopeIndex].CurrentPoints)
         {
             IsEnvelope = true;
 
@@ -236,7 +241,8 @@ void polar_source_Update(POLAR_SOURCE *Sources, u32 &SourceIndex)
                     }
 
                     Sources->States[SourceIndex].AmplitudeTarget = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Value;
-                    UpdatePeriod = (Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Time / 2);
+                    u32 Precision = 2;
+                    UpdatePeriod = (Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Time / Precision);
 
                     if(UpdatePeriod <= 0.0f)
                     {
@@ -249,6 +255,8 @@ void polar_source_Update(POLAR_SOURCE *Sources, u32 &SourceIndex)
                         Sources->States[SourceIndex].AmplitudeDelta = (OneOverFade * (Sources->States[SourceIndex].AmplitudeTarget - Sources->States[SourceIndex].AmplitudeCurrent));
                     }
 
+                    // printf("Index: %u\tPeriod: %f\n", PointIndex, UpdatePeriod);
+
                     break;
                 }
 
@@ -256,14 +264,15 @@ void polar_source_Update(POLAR_SOURCE *Sources, u32 &SourceIndex)
                 {
                     u32 PointIndex = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Index;
 
-                    if(math_Truncate(Sources->Type[SourceIndex].Oscillator->FrequencyCurrent, 1) == math_Truncate(Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Value, 1))
+                    if(round(Sources->Type[SourceIndex].Oscillator->FrequencyCurrent) == round(Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Value))
                     {
                         ++PointIndex;
                         ++Sources->States[SourceIndex].Envelope[EnvelopeIndex].Index;
                     }
 
                     Sources->Type[SourceIndex].Oscillator->FrequencyTarget = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Value;
-                    UpdatePeriod = (Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Time / 2);
+                    u32 Precision = 4;
+                    UpdatePeriod = (Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Time / Precision);
 
                     if(UpdatePeriod <= 0.0f)
                     {
@@ -275,6 +284,8 @@ void polar_source_Update(POLAR_SOURCE *Sources, u32 &SourceIndex)
                         f64 OneOverFade = 1.0f / UpdatePeriod;
                         Sources->Type[SourceIndex].Oscillator->FrequencyDelta = (OneOverFade * (Sources->Type[SourceIndex].Oscillator->FrequencyTarget - Sources->Type[SourceIndex].Oscillator->FrequencyCurrent));
                     }
+
+                    // printf("Frequency:\tCurrent: %f\tTarget: %f\tDelta: %f\n", Sources->Type[SourceIndex].Oscillator->FrequencyCurrent, Sources->Type[SourceIndex].Oscillator->FrequencyTarget, Sources->Type[SourceIndex].Oscillator->FrequencyDelta);
 
                     break;
                 }
@@ -301,7 +312,7 @@ void polar_source_Update(POLAR_SOURCE *Sources, u32 &SourceIndex)
         }
     }
 
-    // printf("Current: %f\tTarget: %f\tDelta: %f\n", Sources->States[SourceIndex].AmplitudeCurrent, Sources->States[SourceIndex].AmplitudeTarget, Sources->States[SourceIndex].AmplitudeDelta);
+    // printf("Amplitude:\tCurrent: %f\tTarget: %f\tDelta: %f\n", Sources->States[SourceIndex].AmplitudeCurrent, Sources->States[SourceIndex].AmplitudeTarget, Sources->States[SourceIndex].AmplitudeDelta);
 }
 
 void polar_source_UpdatePlaying(POLAR_MIXER *Mixer)
@@ -429,15 +440,18 @@ void polar_source_Play(POLAR_MIXER *Mixer, const char *SourceUID, f32 Duration, 
             va_start(ArgList, EnvelopeType);
             char *FileName = va_arg(ArgList, char *);
 
-        FILE *BreakpointFile;
+            FILE *BreakpointFile;
+
+            char FilePath[MAX_STRING_LENGTH];
+            polar_StringConcatenate(StringLength(AssetPath), AssetPath, StringLength(FileName), FileName, FilePath);
 #if _WIN32    
-            fopen_s(&BreakpointFile, FileName, "r");
+            fopen_s(&BreakpointFile, FilePath, "r");
 #else
-            BreakpointFile = fopen(FileName, "r");
+            BreakpointFile = fopen(FilePath, "r");
 #endif
             polar_envelope_BreakpointsFromFile(BreakpointFile, Sources->States[i].Envelope[0], Sources->States[i].Envelope[1]);
             Sources->States[i].CurrentEnvelopes = 2;
-               
+
             va_end(ArgList);
         }
 

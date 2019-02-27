@@ -18,17 +18,25 @@
 
 
 //Hex defines
+//Sources
 #define SO_NONE                 0x09070232
 #define SO_OSCILLATOR           0x1c5903fe
 #define SO_FILE                 0x08d10222
+
+//Effects
 #define FX_DRY                  0x06a701ed
 #define FX_AM                   0x04af018c
 #define FX_ECHO                 0x0898021d
+
+//Envelopes
 #define EN_NONE                 0x089f0223
 #define EN_ADSR                 0x0861021d
 #define EN_BREAKPOINT           0x1b0903e2
 #define EN_AMPLITUDE            0x178a0398
-#define EN_FREQUENCY            0x182603a5
+#define EN_FREQUENCY            0x17ad03a5
+
+//Random
+#define RN_AMPLITUDE            0x182603a5
 #define RN_FREQUENCY            0x184903b2
 #define RN_PAN                  0x06b401df
 
@@ -190,8 +198,8 @@ typedef struct POLAR_ENGINE         //Struct to hold platform specific audio API
 
 //Prototypes
 //String handling
-i32 polar_StringLengthGet(const char *String);
-i32 polar_StringLengthGet(const char *String)
+i32 StringLength(const char *String);
+i32 StringLength(const char *String)
 {
     i32 Count = 0;
 
@@ -203,27 +211,21 @@ i32 polar_StringLengthGet(const char *String)
     return Count;
 }
 
+void polar_StringConcatenate(size_t StringALength, const char *StringA, size_t StringBLength, const char *StringB, char *StringC);
+void polar_StringConcatenate(size_t StringALength, const char *StringA, size_t StringBLength, const char *StringB, char *StringC)
+{
+    for(u32 Index = 0; Index < StringALength; ++Index)
+    {
+        *StringC++ = *StringA++;
+    }
 
+    for(u32 Index = 0; Index < StringBLength; ++Index)
+    {
+        *StringC++ = *StringB++;
+    }
 
-
-// typedef struct BREAKPOINT_FORMAT 
-// {
-//     u64 CurrentPoints;
-//     u64 ReadIndex;
-//     f64 Time[MAX_BREAKPOINTS];
-//     f64 Amplitude[MAX_BREAKPOINTS];
-//     f64 Frequency[MAX_BREAKPOINTS];
-// } BREAKPOINT_FORMAT;
-
-// typedef struct BREAKPOINT_STREAM
-// {
-//     BREAKPOINT_FORMAT *Points;
-//     BREAKPOINT_FORMAT LeftPoint, RightPoint;
-//     uint64 NumPoints;
-//     float64 CurrentPosition, Increment, Width, Height;
-//     uint64 CounterLeft, CounterRight;
-//     int32 MorePoints;
-// } BREAKPOINT_STREAM;
+    *StringC++ = 0;
+}
 
 
 /*                  */
@@ -236,8 +238,8 @@ i32 polar_StringLengthGet(const char *String)
 //Structs
 typedef struct POLAR_ENVELOPE_POINT
 {
-    f64 Time;
-    f64 Value;
+    f32 Time;
+    f32 Value;
 } POLAR_ENVELOPE_POINT;
 
 typedef struct POLAR_ENVELOPE 
@@ -247,7 +249,6 @@ typedef struct POLAR_ENVELOPE
     u32 Index;
     POLAR_ENVELOPE_POINT Points[MAX_BREAKPOINTS];
 } POLAR_ENVELOPE;
-
 
 
 /*                  */
@@ -363,7 +364,7 @@ void polar_source_Play(POLAR_MIXER *Mixer, const char *SourceUID, f32 Duration, 
 
 //Prototypes
 
-void polar_render_Source(u32 &SampleRate, u64 &SampleCount, f64 &Amplitude, f64 &AmplitudeTarget, f64 &AmplitudeDelta, u32 Samples, POLAR_SOURCE_TYPE &Type, u32 &FX, f32 *Buffer);     //Fills a source's buffer and applies any FX
+void polar_render_Source(u32 &SampleRate, u64 &SampleCount, POLAR_SOURCE_STATE &State, u32 Samples, POLAR_SOURCE_TYPE &Type, u32 &FX, f32 *Buffer);     //Fills a source's buffer and applies any FX
 void polar_render_SumStereo(POLAR_ENGINE PolarEngine, u8 &Channels, f32 *PanPositions, f64 &Amplitude, f32 *Buffer, f32 *SourceOutput);                                                 //Sums source to stereo output buffer
 void polar_render_Container(POLAR_ENGINE PolarEngine, POLAR_SOURCE &ContainerSources, f64 ContainerAmplitude, f32 *ContainerOutput);                                                    //Render every source in a container and mix as a single buffer
 void polar_render_Submix(POLAR_ENGINE PolarEngine, POLAR_SUBMIX *Submix, f32 *SubmixOutput);                                                                                            //Render every container in a submix
