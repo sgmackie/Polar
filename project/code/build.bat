@@ -31,7 +31,7 @@ set CommonWarnings=-Wall -Wextra -Werror -Wno-unused-function -Wno-language-exte
 set CompilerOpt=-O0
 
 :: Set win32 libraries
-set Libs=-lUser32.lib -lOle32.lib -lAvrt.lib
+set Libs=-lUser32.lib -lOle32.lib -lAvrt.lib -lWinmm.lib
 
 :: Run Clang compiler
 clang %CompilerFlags% %CommonWarnings% %CompilerOpt% %Libs% %PlatformFiles% -o %Platform%.exe

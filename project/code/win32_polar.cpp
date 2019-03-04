@@ -13,6 +13,7 @@
 #include "../external/external_code.h"
 
 global char AssetPath[MAX_STRING_LENGTH] = {"../../data/"};
+global i64 GlobalPerformanceCounterFrequency;
 
 #include "polar.cpp"
 
@@ -97,7 +98,7 @@ void win32_WASAPI_Callback(WASAPI_DATA *WASAPI, POLAR_ENGINE Engine, POLAR_MIXER
 	    HR_TO_RETURN(WASAPI->HR, "Couldn't get current padding", NONE);
 
 	    Engine.BufferFrames = (WASAPI->OutputBufferFrames - WASAPI->PaddingFrames);
-        
+
         Callback(Engine, Mixer, polar_ringbuffer_WriteData(CallbackBuffer));
         polar_ringbuffer_WriteFinish(CallbackBuffer);
     }
@@ -120,11 +121,38 @@ void win32_WASAPI_Callback(WASAPI_DATA *WASAPI, POLAR_ENGINE Engine, POLAR_MIXER
     }
 }
 
+
+LARGE_INTEGER win32_WallClock()
+{    
+    LARGE_INTEGER Result;
+    QueryPerformanceCounter(&Result);
+    return Result;
+}
+
+f32 win32_SecondsElapsed(LARGE_INTEGER Start, LARGE_INTEGER End)
+{
+    f32 Result = ((f32) (End.QuadPart - Start.QuadPart) / (f32) GlobalPerformanceCounterFrequency);
+    return Result;
+}
+
 int main()
 {
     //Allocate memory
     MEMORY_ARENA *EngineArena = memory_arena_Create(Kilobytes(500));
     MEMORY_ARENA *SourceArena = memory_arena_Create(Megabytes(100));
+
+    //Start timings
+    LARGE_INTEGER PerformanceCounterFrequencyResult;
+    QueryPerformanceFrequency(&PerformanceCounterFrequencyResult);
+    GlobalPerformanceCounterFrequency = PerformanceCounterFrequencyResult.QuadPart;
+
+    //Request 1ms period for timing functions
+    UINT SchedulerPeriodInMS = 1;
+    bool IsSleepGranular = (timeBeginPeriod(SchedulerPeriodInMS) == TIMERR_NOERROR);
+
+    //Define engine update rate
+    f32 EngineUpdateRate = 30;
+    f32 TargetSecondsPerFrame = 1.0f / (f32) EngineUpdateRate;
 
     //Fill out engine properties
     POLAR_ENGINE Engine = {};
@@ -180,7 +208,12 @@ int main()
         win32_WASAPI_Callback(WASAPI, Engine, MasterOutput, CallbackBuffer);
     }
 
+    //Start timings
+    LARGE_INTEGER LastCounter = win32_WallClock();
+    LARGE_INTEGER FlipWallClock = win32_WallClock();
     u64 LastCycleCount = __rdtsc();
+    
+    //Loop
     printf("Polar: Playback\n");
     MasterOutput->Amplitude = DB(-6);
     for(u32 i = 0; i < 2000; ++i)
@@ -191,21 +224,53 @@ int main()
         {
             f32 StackPositions[MAX_CHANNELS] = {0.0};
 
-            polar_source_Play(MasterOutput, "SO_SineChord_Segment_A", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
-            polar_source_Play(MasterOutput, "SO_SineChord_Segment_B", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
-            polar_source_Play(MasterOutput, "SO_SineChord_Segment_C", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
-            polar_source_Play(MasterOutput, "SO_SineChord_Segment_D", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
+            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_A", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
+            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_B", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
+            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_C", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
+            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_D", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
 
-            polar_source_Play(MasterOutput, "SO_Whiterun", 8, StackPositions, FX_DRY, EN_ADSR);
+            polar_source_Play(MasterOutput, "SO_Whiterun", 8, StackPositions, FX_DRY, EN_NONE, AMP(-1));
         }
 
+        //Callback
         win32_WASAPI_Callback(WASAPI, Engine, MasterOutput, CallbackBuffer);
-    
+        printf("WASAPI: Frames written:\t%d\n", WASAPI->FramesWritten);
+
+        //End performance timings
+        FlipWallClock = win32_WallClock();
         u64 EndCycleCount = __rdtsc();
-        // u64 CyclesElapsed = EndCycleCount - LastCycleCount;
         LastCycleCount = EndCycleCount;
 
-        // printf("WASAPI: Frames written:\t%d\tCycles:%llu\n", WASAPI->FramesWritten, CyclesElapsed);
+        //Check rendering work elapsed and sleep if time remaining
+        LARGE_INTEGER WorkCounter = win32_WallClock();
+        f32 WorkSecondsElapsed = win32_SecondsElapsed(LastCounter, WorkCounter);
+        f32 SecondsElapsedForFrame = WorkSecondsElapsed;
+
+        //If the rendering finished under the target seconds, then sleep until the next update
+        if(SecondsElapsedForFrame < TargetSecondsPerFrame)
+        {                        
+            if(IsSleepGranular)
+            {
+                //!Sleep adds another 1ms delay, casuing WASAPI buffer size to misalign (from 480 to 528 samples)
+                // DWORD SleepTimeInMS = (DWORD)(1000.0f * (TargetSecondsPerFrame - SecondsElapsedForFrame));
+            
+                // if(SleepTimeInMS > 0)
+                // {
+                //     Sleep(SleepTimeInMS);
+                // }
+            }
+        }
+
+        else
+        {
+            //!Missed frame rate!
+            f32 Difference = (SecondsElapsedForFrame - TargetSecondsPerFrame);
+            printf("Polar\tERROR: Missed frame rate!\tDifference: %f\t[Current: %f, Target: %f]\n", Difference, SecondsElapsedForFrame, TargetSecondsPerFrame);
+        } 
+
+        //Prepare timers before next loop
+        LARGE_INTEGER EndCounter = win32_WallClock();
+        LastCounter = EndCounter;
     }
 
     polar_mixer_Destroy(EngineArena, MasterOutput);

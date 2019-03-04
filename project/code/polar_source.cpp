@@ -416,6 +416,11 @@ void polar_source_Play(POLAR_MIXER *Mixer, const char *SourceUID, f32 Duration, 
             va_start(ArgList, EnvelopeType);
 
             f64 AmpNew = va_arg(ArgList, f64);
+            if(AmpNew == 0.0f)
+            {
+                AmpNew = 0.8f;
+            }
+
             Sources->States[i].AmplitudeTarget = AmpNew;
 
             va_end(ArgList);
