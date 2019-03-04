@@ -1,6 +1,7 @@
 #ifndef win32_polar_h
 #define win32_polar_h
 
+#define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
 /*                  */
@@ -15,10 +16,10 @@
 #include <avrt.h>
 
 //Reference times as variable
-global const u64 REF_TIMES_PER_SECOND = 10000000;
+global_scope const u64 REF_TIMES_PER_SECOND = 10000000;
 
 //Convert WASAPI HRESULT to printable string
-global const TCHAR *wasapi_HRString(HRESULT Result)
+global_scope const TCHAR *wasapi_HRString(HRESULT Result)
 {
 	switch(Result)
 	{

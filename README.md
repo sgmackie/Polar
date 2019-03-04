@@ -25,3 +25,5 @@ All platforms were built using the current Clang toolset (https://releases.llvm.
     - dr_wav (https://mackron.github.io/)
 - Random number generator:
     - PCG (http://www.pcg-random.org/)
+- Open Sound Control:
+    - oscpkt (http://gruntthepeon.free.fr/oscpkt/)

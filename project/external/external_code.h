@@ -11,4 +11,9 @@
 #define DR_WAV_IMPLEMENTATION
 #include "dr_wav.h"
 
+//OSC messaging
+#define OSCPKT_OSTREAM_OUTPUT
+#include "oscpkt.hh"
+#include "udp.hh"
+
 #endif

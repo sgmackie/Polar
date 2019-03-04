@@ -11,3 +11,6 @@
 #include "polar_mixer.cpp"
 #include "polar_source.cpp"
 #include "polar_render.cpp"
+
+
+#include "polar_OSC.cpp"

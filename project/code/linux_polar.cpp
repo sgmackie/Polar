@@ -12,7 +12,7 @@
 #include "linux_polar.h"
 #include "../external/external_code.h"
 
-global char AssetPath[MAX_STRING_LENGTH] = {"../../data/"};
+global_scope char AssetPath[MAX_STRING_LENGTH] = {"../../data/"};
 
 #include "polar.cpp"
 
@@ -53,6 +53,9 @@ ALSA_DATA *linux_ALSA_Create(MEMORY_ARENA *Arena, i32 &FramesAvailable, u32 User
     Result->ALSAError = snd_pcm_hw_params_set_channels(Result->Device, Result->HardwareParameters, Result->Channels);
     ERR_TO_RETURN(Result->ALSAError, "Failed to set channels", nullptr);
 
+    Result->ALSAError = snd_pcm_hw_params_set_period_size_near(Result->Device, Result->HardwareParameters, (snd_pcm_uframes_t *) &Result->Frames, 0);
+    ERR_TO_RETURN(Result->ALSAError, "Failed to set hardware buffer size", nullptr);
+
     Result->ALSAError = snd_pcm_hw_params(Result->Device, Result->HardwareParameters);
     ERR_TO_RETURN(Result->ALSAError, "Failed to set period", nullptr);
 
@@ -71,7 +74,7 @@ ALSA_DATA *linux_ALSA_Create(MEMORY_ARENA *Arena, i32 &FramesAvailable, u32 User
     Result->ALSAError = snd_pcm_prepare(Result->Device);
     ERR_TO_RETURN(Result->ALSAError, "Failed to start PCM device", nullptr);
 
-    Result->ALSAError = snd_pcm_hw_params_get_period_size_max(Result->HardwareParameters, &Result->PeriodSizeMin, 0);
+    Result->ALSAError = snd_pcm_hw_params_get_period_size_min(Result->HardwareParameters, &Result->PeriodSizeMin, 0);
     ERR_TO_RETURN(Result->ALSAError, "Failed to get minimum period size", nullptr);
 
     Result->ALSAError = snd_pcm_hw_params_get_period_size_max(Result->HardwareParameters, &Result->PeriodSizeMax, 0);
@@ -130,15 +133,34 @@ void linux_ALSA_Callback(ALSA_DATA *ALSA, POLAR_ENGINE PolarEngine, POLAR_MIXER 
     }
 }
 
+timespec linux_WallClock()
+{
+    timespec Result;
+    clock_gettime(CLOCK_MONOTONIC, &Result);
+    
+    return Result;
+}
+
+f32 linux_SecondsElapsed(timespec Start, timespec End)
+{
+    f32 Result = ((f32) (End.tv_sec - Start.tv_sec) + ((f32) (End.tv_nsec - Start.tv_nsec) * 1e-9f));
+    return Result;
+}
+
 int main(int argc, char *argv[])
 {
     //Allocate memory
     MEMORY_ARENA *EngineArena = memory_arena_Create(Kilobytes(500));
     MEMORY_ARENA *SourceArena = memory_arena_Create(Megabytes(100));
 
+    //Define engine update rate
+    f32 EngineUpdateRate = 60;
+    f32 TargetSecondsPerFrame = 1.0f / (f32) EngineUpdateRate;
+
+    //Fill out engine properties
     POLAR_ENGINE Engine = {};
     i32 FramesAvailable = 0;
-    ALSA_DATA *ALSA =      linux_ALSA_Create(EngineArena, FramesAvailable, 48000, 2, 32);
+    ALSA_DATA *ALSA =      linux_ALSA_Create(EngineArena, FramesAvailable, 48000, 2, 512);
     Engine.BufferFrames =  FramesAvailable;
     Engine.Channels =      ALSA->Channels;
     Engine.SampleRate =    ALSA->SampleRate;
@@ -189,6 +211,11 @@ int main(int argc, char *argv[])
         linux_ALSA_Callback(ALSA, Engine, MasterOutput, CallbackBuffer);
     }
 
+    //Start timings
+    timespec LastCounter = linux_WallClock();
+    timespec FlipWallClock = linux_WallClock();
+
+    //Loop
     printf("Polar: Playback\n");
     MasterOutput->Amplitude = DB(-6);
     for(u32 i = 0; i < 2000; ++i)
@@ -198,17 +225,57 @@ int main(int argc, char *argv[])
         if(i == 100)
         {
             f32 StackPositions[MAX_CHANNELS] = {0.0};
-            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_A", 6, StackPositions, FX_DRY, EN_BREAKPOINT, "../../data/breakpoints/breaks.txt");
-            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_C", 6, StackPositions, FX_DRY, EN_BREAKPOINT, "breaks.txt");
-            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_D", 6, StackPositions, FX_DRY, EN_BREAKPOINT, "breaks.txt");
 
-            polar_source_Play(MasterOutput, "SO_SineChord_Segment_B", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
+            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_A", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
+            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_B", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
+            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_C", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
+            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_D", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
 
-            polar_source_Play(MasterOutput, "SO_Whiterun", 8, StackPositions, FX_DRY, EN_ADSR);
+            polar_source_Play(MasterOutput, "SO_Whiterun", 8, StackPositions, FX_DRY, EN_NONE, AMP(-1));
         }
 
+        //Callback
         linux_ALSA_Callback(ALSA, Engine, MasterOutput, CallbackBuffer);
-        // printf("ALSA: Frames written:\t%ld\n", ALSA->FramesWritten);
+        printf("ALSA: Frames written:\t%ld\n", ALSA->FramesWritten);
+
+        //End performance timings
+        FlipWallClock = linux_WallClock();
+
+        //Check rendering work elapsed and sleep if time remaining
+        timespec WorkCounter = linux_WallClock();
+        f32 WorkSecondsElapsed = linux_SecondsElapsed(LastCounter, WorkCounter);
+        f32 SecondsElapsedForFrame = WorkSecondsElapsed;
+
+        //If the rendering finished under the target seconds, then sleep until the next update
+        if(SecondsElapsedForFrame < TargetSecondsPerFrame)
+        {
+            //!Sleep causes buffer underruns, sleeping for too long? Actually measure latency to compensate for this
+            f32 SleepTimeInMS = (1000.0f * (TargetSecondsPerFrame - SecondsElapsedForFrame));
+            
+            f32 ALSALatency = 6.0f; //!Arbitrary value
+            SleepTimeInMS -= ALSALatency;
+            u64 SleepTimeInNS = (u32) SleepTimeInMS * 1000000;
+            
+            timespec SleepTimer = {};
+            SleepTimer.tv_nsec = SleepTimeInNS;
+
+            if(SleepTimeInMS > 0)
+            {
+                printf("Polar: Sleeping for %fms\n", (f32) SleepTimeInMS);
+                nanosleep(&SleepTimer, 0);
+            }
+        }
+
+        else
+        {
+            //!Missed frame rate!
+            f32 Difference = (SecondsElapsedForFrame - TargetSecondsPerFrame);
+            printf("Polar\tERROR: Missed frame rate!\tDifference: %f\t[Current: %f, Target: %f]\n", Difference, SecondsElapsedForFrame, TargetSecondsPerFrame);
+        } 
+
+        //Prepare timers before next loop
+        timespec EndCounter = linux_WallClock();
+        LastCounter = EndCounter;
     }
 
     polar_mixer_Destroy(EngineArena, MasterOutput);

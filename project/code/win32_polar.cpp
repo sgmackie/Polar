@@ -9,11 +9,11 @@
 #define DEFAULT_SAMPLERATE 48000
 
 #include "polar.h"
-#include "win32_polar.h"
 #include "../external/external_code.h"
+#include "win32_polar.h"
 
-global char AssetPath[MAX_STRING_LENGTH] = {"../../data/"};
-global i64 GlobalPerformanceCounterFrequency;
+global_scope char AssetPath[MAX_STRING_LENGTH] = {"../../data/"};
+global_scope i64 GlobalPerformanceCounterFrequency;
 
 #include "polar.cpp"
 
@@ -151,7 +151,7 @@ int main()
     bool IsSleepGranular = (timeBeginPeriod(SchedulerPeriodInMS) == TIMERR_NOERROR);
 
     //Define engine update rate
-    f32 EngineUpdateRate = 30;
+    f32 EngineUpdateRate = 60;
     f32 TargetSecondsPerFrame = 1.0f / (f32) EngineUpdateRate;
 
     //Fill out engine properties
@@ -200,6 +200,9 @@ int main()
     polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_AMB_Forest_01", Stereo, SO_FILE, "audio/amb_river.wav");
     polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_Whiterun", Stereo, SO_FILE, "audio/Whiterun48.wav");
 
+    //OSC setup
+    UdpSocket OSCSocket = polar_OSC_StartServer(4795);
+
     //Silent first loop
     printf("Polar: Pre-roll silence\n");
     MasterOutput->Amplitude = DB(-99);
@@ -218,6 +221,9 @@ int main()
     MasterOutput->Amplitude = DB(-6);
     for(u32 i = 0; i < 2000; ++i)
     {
+        //!liblo is a vanilla C OSC library that uses malloc - switch to that and change allocations for arena
+        polar_OSC_UpdateMessages(OSCSocket, 1);
+
         polar_source_UpdatePlaying(MasterOutput);
 
         if(i == 100)

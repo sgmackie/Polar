@@ -60,7 +60,7 @@
 //Defines
 //Define maximum alignemt Size fron integral types
 typedef f64 max_align_type;
-global size_t MaxAlignment = alignof(max_align_type);
+global_scope size_t MaxAlignment = alignof(max_align_type);
 #define ARENA_DEFAULT_CHUNK_SIZE 2048
 
 //Structs
