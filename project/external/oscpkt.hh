@@ -217,7 +217,7 @@ typedef enum { OK_NO_ERROR=0,
 */
 class Message {
   TimeTag time_tag;
-  std::string address;
+  public: std::string address;
   std::string type_tags;
   std::vector<std::pair<size_t, size_t> > arguments; // array of pairs (pos,size), pos being an index into the 'storage' array.
   Storage storage; // the arguments data is stored here

@@ -40,6 +40,10 @@
 #define RN_FREQUENCY            0x184903b2
 #define RN_PAN                  0x06b401df
 
+//OSC messages
+#define PLAY                    11120484276852016966U
+#define AMPLITUDE               11780667860953447562U
+
 //General Defines
 #define Mono    1
 #define Stereo  2
@@ -51,7 +55,6 @@
 #define AMP_MIN(X) DB(X)
 #define AMP_MAX(X) DB(X)
 #define AMP(X) DB(X)
-
 
 /*                  */
 /*  Memory code  	*/

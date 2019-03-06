@@ -358,7 +358,10 @@ void polar_source_UpdateAmplitude(POLAR_MIXER *Mixer, const char *SourceUID, f32
 {
     u32 j = 0;
     POLAR_SOURCE *Sources = polar_source_Retrieval(Mixer, SourceUID, j);
-    Assert(Sources);
+    if(!Sources)
+    {
+        return;
+    }
 
     if(UpdatePeriod <= 0.0f)
     {
@@ -416,11 +419,6 @@ void polar_source_Play(POLAR_MIXER *Mixer, const char *SourceUID, f32 Duration, 
             va_start(ArgList, EnvelopeType);
 
             f64 AmpNew = va_arg(ArgList, f64);
-            if(AmpNew == 0.0f)
-            {
-                AmpNew = 0.8f;
-            }
-
             Sources->States[i].AmplitudeTarget = AmpNew;
 
             va_end(ArgList);

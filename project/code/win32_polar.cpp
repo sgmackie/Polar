@@ -221,8 +221,8 @@ int main()
     MasterOutput->Amplitude = DB(-6);
     for(u32 i = 0; i < 2000; ++i)
     {
-        //!liblo is a vanilla C OSC library that uses malloc - switch to that and change allocations for arena
-        polar_OSC_UpdateMessages(OSCSocket, 1);
+        //!Uses std::vector for message allocation: replace with arena to be realtime safe
+        polar_OSC_UpdateMessages(MasterOutput, OSCSocket, 1);
 
         polar_source_UpdatePlaying(MasterOutput);
 
@@ -235,12 +235,13 @@ int main()
             // polar_source_Play(MasterOutput, "SO_SineChord_Segment_C", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
             // polar_source_Play(MasterOutput, "SO_SineChord_Segment_D", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
 
+            polar_source_Play(MasterOutput, "SO_SineChord_Segment_D", 8, StackPositions, FX_DRY, EN_NONE, AMP(-1));
             polar_source_Play(MasterOutput, "SO_Whiterun", 8, StackPositions, FX_DRY, EN_NONE, AMP(-1));
         }
 
         //Callback
         win32_WASAPI_Callback(WASAPI, Engine, MasterOutput, CallbackBuffer);
-        printf("WASAPI: Frames written:\t%d\n", WASAPI->FramesWritten);
+        // printf("WASAPI: Frames written:\t%d\n", WASAPI->FramesWritten);
 
         //End performance timings
         FlipWallClock = win32_WallClock();

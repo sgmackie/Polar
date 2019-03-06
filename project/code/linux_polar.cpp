@@ -1,5 +1,5 @@
 //Perfomance defines (will change stack allocation sizes for things like max sources per container)
-#define MAX_STRING_LENGTH 64
+#define MAX_STRING_LENGTH 128
 #define MAX_CHANNELS 4
 #define MAX_CONTAINERS 4
 #define MAX_SOURCES 128
