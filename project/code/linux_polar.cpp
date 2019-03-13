@@ -9,8 +9,8 @@
 #define DEFAULT_SAMPLERATE 48000
 
 #include "polar.h"
-#include "linux_polar.h"
 #include "../external/external_code.h"
+#include "linux_polar.h"
 
 global_scope char AssetPath[MAX_STRING_LENGTH] = {"../../data/"};
 
@@ -115,7 +115,7 @@ void linux_ALSA_Callback(ALSA_DATA *ALSA, POLAR_ENGINE PolarEngine, POLAR_MIXER 
 
     if(polar_ringbuffer_ReadCheck(CallbackBuffer))
     {
-        ALSA->FramesWritten = snd_pcm_writei(ALSA->Device, polar_ringbuffer_ReadData(CallbackBuffer), (PolarEngine.BufferFrames / PolarEngine.Channels));
+        ALSA->FramesWritten = snd_pcm_writei(ALSA->Device, polar_ringbuffer_ReadData(CallbackBuffer), (PolarEngine.BufferSize / PolarEngine.Channels));
         if(ALSA->FramesWritten < 0)
         {
             ALSA->FramesWritten = snd_pcm_recover(ALSA->Device, ALSA->FramesWritten, 0);
@@ -124,9 +124,9 @@ void linux_ALSA_Callback(ALSA_DATA *ALSA, POLAR_ENGINE PolarEngine, POLAR_MIXER 
         {
             ERR_TO_RETURN(ALSA->FramesWritten, "ALSA: Failed to write any output frames! snd_pcm_writei()", NONE);
         }
-        if(ALSA->FramesWritten > 0 && ALSA->FramesWritten < (PolarEngine.BufferFrames / PolarEngine.Channels))
+        if(ALSA->FramesWritten > 0 && ALSA->FramesWritten < (PolarEngine.BufferSize / PolarEngine.Channels))
         {
-            printf("ALSA: Short write!\tExpected %i, wrote %li\n", (PolarEngine.BufferFrames / PolarEngine.Channels), ALSA->FramesWritten);
+            printf("ALSA: Short write!\tExpected %i, wrote %li\n", (PolarEngine.BufferSize / PolarEngine.Channels), ALSA->FramesWritten);
         }
 
         polar_ringbuffer_ReadFinish(CallbackBuffer);
@@ -161,7 +161,7 @@ int main(int argc, char *argv[])
     POLAR_ENGINE Engine = {};
     i32 FramesAvailable = 0;
     ALSA_DATA *ALSA =      linux_ALSA_Create(EngineArena, FramesAvailable, 48000, 2, 512);
-    Engine.BufferFrames =  FramesAvailable;
+    Engine.BufferSize =  FramesAvailable;
     Engine.Channels =      ALSA->Channels;
     Engine.SampleRate =    ALSA->SampleRate;
 
@@ -186,7 +186,7 @@ int main(int argc, char *argv[])
     pcg32_srandom(time(NULL) ^ (intptr_t) &printf, (intptr_t) &Rounds);
 
     //Create ringbuffer with a specified block count (default is 3)
-    POLAR_RINGBUFFER *CallbackBuffer = polar_ringbuffer_Create(EngineArena, Engine.BufferFrames, 3);
+    POLAR_RINGBUFFER *CallbackBuffer = polar_ringbuffer_Create(EngineArena, Engine.BufferSize, 3);
 
     //Create mixer object that holds all submixes and their containers
     POLAR_MIXER *MasterOutput = polar_mixer_Create(SourceArena, -1);
@@ -202,6 +202,9 @@ int main(int argc, char *argv[])
     polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_WPN_Phasor", Stereo, SO_FILE, "audio/wpn_phasor.wav");
     polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_AMB_Forest_01", Stereo, SO_FILE, "audio/amb_river.wav");
     polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_Whiterun", Stereo, SO_FILE, "audio/Whiterun48.wav");
+
+    //OSC setup
+    UdpSocket OSCSocket = polar_OSC_StartServer(4795);
 
     //Silent first loop
     printf("Polar: Pre-roll silence\n");
@@ -220,23 +223,26 @@ int main(int argc, char *argv[])
     MasterOutput->Amplitude = DB(-6);
     for(u32 i = 0; i < 2000; ++i)
     {
+        //!Uses std::vector for message allocation: replace with arena to be realtime safe
+        polar_OSC_UpdateMessages(MasterOutput, OSCSocket, 1);
+
         polar_source_UpdatePlaying(MasterOutput);
 
         if(i == 100)
         {
             f32 StackPositions[MAX_CHANNELS] = {0.0};
 
-            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_A", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
+            polar_source_Play(MasterOutput, "SO_SineChord_Segment_A", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
             // polar_source_Play(MasterOutput, "SO_SineChord_Segment_B", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
             // polar_source_Play(MasterOutput, "SO_SineChord_Segment_C", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
             // polar_source_Play(MasterOutput, "SO_SineChord_Segment_D", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
 
-            polar_source_Play(MasterOutput, "SO_Whiterun", 8, StackPositions, FX_DRY, EN_NONE, AMP(-1));
+            // polar_source_Play(MasterOutput, "SO_Whiterun", 8, StackPositions, FX_DRY, EN_NONE, AMP(-1));
         }
 
         //Callback
         linux_ALSA_Callback(ALSA, Engine, MasterOutput, CallbackBuffer);
-        printf("ALSA: Frames written:\t%ld\n", ALSA->FramesWritten);
+        // printf("ALSA: Frames written:\t%ld\n", ALSA->FramesWritten);
 
         //End performance timings
         FlipWallClock = linux_WallClock();
@@ -261,7 +267,7 @@ int main(int argc, char *argv[])
 
             if(SleepTimeInMS > 0)
             {
-                printf("Polar: Sleeping for %fms\n", (f32) SleepTimeInMS);
+                // printf("Polar: Sleeping for %fms\n", (f32) SleepTimeInMS);
                 nanosleep(&SleepTimer, 0);
             }
         }

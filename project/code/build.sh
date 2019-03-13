@@ -24,7 +24,7 @@ pushd ${BuildDir} > /dev/null
 PlatformFiles="${CurDir}/${Platform}.cpp"
 
 # Set Clang compiler flags (https://clang.llvm.org/docs/genindex.html)
-CompilerFlags="-g -pedantic -std=c++14 -DCUDA=1"
+CompilerFlags="-g -pedantic -std=c++11 -DCUDA=1 -DOSC_LOG=1"
 
 # Set warning labels:
 CommonWarnings="-Wall -Werror -Wno-unused-function -Wno-vla-extension"
@@ -36,7 +36,7 @@ CompilerOpt="-O0"
 Libs="-lm -lasound"
 
 # Run Clang compiler
-clang ${CompilerFlags} ${CompilerWarnings} ${CompilerOpt} ${Libs} ${PlatformFiles} -o ${Platform}
+clang++ ${CompilerFlags} ${CompilerWarnings} ${CompilerOpt} ${Libs} ${PlatformFiles} -o ${Platform}
 
 # Exit
 popd > /dev/null

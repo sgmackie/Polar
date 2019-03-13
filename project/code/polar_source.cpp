@@ -90,17 +90,19 @@ void polar_source_Create(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE E
     Sources->UID[j] = SourceHash;
     Sources->PlayState[j] = Stopped;
     Sources->Channels[j] = Channels;
-    Sources->States[j].AmplitudeCurrent = 0;
-    Sources->States[j].AmplitudeTarget = 0;
-    Sources->States[j].AmplitudeDelta = 0;
+
     Sources->States[j].CurrentEnvelopes = 0;
-                    
+
+    Sources->States[j].AmplitudeCurrent = 0;
+    Sources->States[j].AmplitudePrevious = Sources->States[j].AmplitudeCurrent;
+
     Sources->SampleRate[j] = Engine.SampleRate;
-    Sources->BufferSize[j] = (Engine.BufferFrames / Engine.Channels);
+    Sources->BufferSize[j] = Engine.BufferSize;
     Sources->SampleCount[j] = 0;
     Sources->States[j].PanPositions = (f32 *) memory_arena_Push(Arena, Sources->States[j].PanPositions, Sources->Channels[j]);
     Sources->Buffer[j] = (f32 *) memory_arena_Push(Arena, Sources->Buffer[j], Sources->BufferSize[j]);
 
+    bool SourceCreated = false;
     Sources->Type[j].Flag = Type;
     switch(Sources->Type[j].Flag)
     {
@@ -119,7 +121,7 @@ void polar_source_Create(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE E
             if(!Sources->Type[j].File->Samples)
             {
                 printf("Polar\tERROR: Cannot open file %s\n", FilePath);
-                return;
+                break;
             }
 
             if(Sources->Type[j].File->SampleRate != Engine.SampleRate)
@@ -157,6 +159,7 @@ void polar_source_Create(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE E
             }
 
             va_end(ArgList);
+            SourceCreated = true;
             break;
         }
 
@@ -169,6 +172,7 @@ void polar_source_Create(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE E
             Sources->Type[j].Oscillator = polar_dsp_OscillatorCreate(Arena, Engine.SampleRate, Wave, Frequency);
                                 
             va_end(ArgList);
+            SourceCreated = true;
             break;
         }
 
@@ -180,10 +184,15 @@ void polar_source_Create(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE E
         }
     }
 
-    Sources->FX[j] = FX_DRY;
+    if(SourceCreated)
+    {
+        Sources->FX[j] = FX_DRY;
+        Sources->CurrentSources += 1;
 
-    Sources->CurrentSources += 1;
-                        
+        return;
+    }
+
+    printf("Polar\tERROR: Failed to add source %s to container %s\n", SourceUID, ContainerUID);
     return;
 }
 
@@ -223,11 +232,12 @@ void polar_source_CreateFromFile(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_
     }
 }
 
-void polar_source_Update(POLAR_SOURCE *Sources, u32 &SourceIndex)
+void polar_source_Update(POLAR_MIXER *Mixer, POLAR_SOURCE *Sources, u32 &SourceIndex, f64 GlobalTime, f32 NoiseFloor)
 {
     f64 UpdatePeriod = 0.1f;
     bool IsEnvelope = false;
 
+    //Update envelopes if they exist
     for(u8 EnvelopeIndex = 0; EnvelopeIndex < Sources->States[SourceIndex].CurrentEnvelopes; ++EnvelopeIndex)
     {
         if(Sources->States[SourceIndex].Envelope[EnvelopeIndex].CurrentPoints > 0 && Sources->States[SourceIndex].Envelope[EnvelopeIndex].Index < Sources->States[SourceIndex].Envelope[EnvelopeIndex].CurrentPoints)
@@ -238,28 +248,7 @@ void polar_source_Update(POLAR_SOURCE *Sources, u32 &SourceIndex)
             {
                 case EN_AMPLITUDE:
                 {
-                    u32 PointIndex = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Index;
 
-                    if(math_Truncate(Sources->States[SourceIndex].AmplitudeCurrent, 1) == math_Truncate(Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Value, 1))
-                    {
-                        ++PointIndex;
-                        ++Sources->States[SourceIndex].Envelope[EnvelopeIndex].Index;
-                    }
-
-                    Sources->States[SourceIndex].AmplitudeTarget = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Value;
-                    u32 Precision = 2;
-                    UpdatePeriod = (Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Time / Precision);
-
-                    if(UpdatePeriod <= 0.0f)
-                    {
-                        Sources->States[SourceIndex].AmplitudeCurrent = Sources->States[SourceIndex].AmplitudeTarget;
-                    }
-
-                    else
-                    {
-                        f64 OneOverFade = 1.0f / UpdatePeriod;
-                        Sources->States[SourceIndex].AmplitudeDelta = (OneOverFade * (Sources->States[SourceIndex].AmplitudeTarget - Sources->States[SourceIndex].AmplitudeCurrent));
-                    }
 
                     // printf("Index: %u\tPeriod: %f\n", PointIndex, UpdatePeriod);
 
@@ -304,24 +293,42 @@ void polar_source_Update(POLAR_SOURCE *Sources, u32 &SourceIndex)
         }
     }
 
+    //Update fades
     if(IsEnvelope == false)
     {
-        if(UpdatePeriod <= 0.0f)
-        {
-            Sources->States[SourceIndex].AmplitudeCurrent = Sources->States[SourceIndex].AmplitudeTarget;
-        }
+        GlobalTime = polar_WallTime();
+        f32 TimePassed = GlobalTime - Sources->States[SourceIndex].FadeStartTime;
+        f32 FadeCompletion = TimePassed / Sources->States[SourceIndex].FadeDuration;
+        Sources->States[SourceIndex].AmplitudeCurrent = ((Sources->States[SourceIndex].FadeEndAmplitude - Sources->States[SourceIndex].FadeStartAmplitude) * FadeCompletion) + Sources->States[SourceIndex].FadeStartAmplitude;
 
-        else
+        if(FadeCompletion >= 1.0f)
         {
-            f64 OneOverFade = 1.0f / UpdatePeriod;
-            Sources->States[SourceIndex].AmplitudeDelta = (OneOverFade * (Sources->States[SourceIndex].AmplitudeTarget - Sources->States[SourceIndex].AmplitudeCurrent));
+            Sources->States[SourceIndex].AmplitudeCurrent = Sources->States[SourceIndex].FadeEndAmplitude;
+            Sources->States[SourceIndex].IsFading = false;
+            Sources->States[SourceIndex].FadeDuration = 0.0f;
         }
     }
 
-    // printf("Amplitude:\tCurrent: %f\tTarget: %f\tDelta: %f\n", Sources->States[SourceIndex].AmplitudeCurrent, Sources->States[SourceIndex].AmplitudeTarget, Sources->States[SourceIndex].AmplitudeDelta);
+    //Update distance attenuation
+    if(Sources->States[SourceIndex].IsDistanceAttenuated)
+    {
+        f32 Attenuation = Sources->States[SourceIndex].AmplitudeCurrent;
+        f32 Distance = polar_listener_DistanceFromListener(Mixer->Listener, Sources->States[SourceIndex], NoiseFloor);
+        
+        if(Distance != 0)
+        {
+            Attenuation = Sources->States[SourceIndex].AmplitudeCurrent - Distance;
+        }
+
+        Sources->States[SourceIndex].AmplitudeCurrent = Attenuation;
+        
+        // printf("Amplitude:\tCurrent: %f\tPrev: %f\tDistance: %f\n", Sources->States[SourceIndex].AmplitudeCurrent, Sources->States[SourceIndex].AmplitudePrevious, Attenuation);
+    }
+
+    // printf("Amplitude:\tCurrent: %f\tPrev: %f\n", Sources->States[SourceIndex].AmplitudeCurrent, Sources->States[SourceIndex].AmplitudePrevious);
 }
 
-void polar_source_UpdatePlaying(POLAR_MIXER *Mixer)
+void polar_source_UpdatePlaying(POLAR_MIXER *Mixer, f64 GlobalTime, f32 NoiseFloor)
 {
     for(POLAR_SUBMIX *SubmixIndex = Mixer->FirstInList; SubmixIndex; SubmixIndex = SubmixIndex->NextSubmix)
     {
@@ -332,7 +339,7 @@ void polar_source_UpdatePlaying(POLAR_MIXER *Mixer)
                 if(SubmixIndex->Containers.Sources[i].PlayState[j] == Playing)
                 {
                     POLAR_SOURCE *Sources = &SubmixIndex->Containers.Sources[i];
-                    polar_source_Update(Sources, j);
+                    polar_source_Update(Mixer, Sources, j, GlobalTime, NoiseFloor);
                 }
             }
         }
@@ -346,7 +353,7 @@ void polar_source_UpdatePlaying(POLAR_MIXER *Mixer)
                     if(ChildSubmixIndex->Containers.Sources[i].PlayState[j] == Playing)
                     {
                         POLAR_SOURCE *Sources = &ChildSubmixIndex->Containers.Sources[i];
-                        polar_source_Update(Sources, j);
+                        polar_source_Update(Mixer, Sources, j, GlobalTime, NoiseFloor);
                     }
                 }
             }
@@ -354,32 +361,8 @@ void polar_source_UpdatePlaying(POLAR_MIXER *Mixer)
     }
 }
 
-void polar_source_UpdateAmplitude(POLAR_MIXER *Mixer, const char *SourceUID, f32 UpdatePeriod, f32 NewAmplitude)
-{
-    u32 j = 0;
-    POLAR_SOURCE *Sources = polar_source_Retrieval(Mixer, SourceUID, j);
-    if(!Sources)
-    {
-        return;
-    }
 
-    if(UpdatePeriod <= 0.0f)
-    {
-        Sources->States[j].AmplitudeCurrent = Sources->States[j].AmplitudeTarget;
-    }
-
-    else
-    {
-        f32 OneOverFade = 1.0f / UpdatePeriod;
-        Sources->States[j].AmplitudeTarget = NewAmplitude;
-        Sources->States[j].AmplitudeDelta = OneOverFade * (Sources->States[j].AmplitudeTarget - Sources->States[j].AmplitudeCurrent);
-    }   
-   
-    return; 
-}
-
-
-void polar_source_Play(POLAR_MIXER *Mixer, const char *SourceUID, f32 Duration, f32 *PanPositions, u32 FX, u32 EnvelopeType, ...)
+void polar_source_Play(POLAR_MIXER *Mixer, const char *SourceUID, f64 GlobalTime, f32 Duration, f32 *PanPositions, u32 FX, u32 EnvelopeType, ...)
 {
     u32 i = 0;
     POLAR_SOURCE *Sources = polar_source_Retrieval(Mixer, SourceUID, i);
@@ -419,7 +402,20 @@ void polar_source_Play(POLAR_MIXER *Mixer, const char *SourceUID, f32 Duration, 
             va_start(ArgList, EnvelopeType);
 
             f64 AmpNew = va_arg(ArgList, f64);
-            Sources->States[i].AmplitudeTarget = AmpNew;
+
+            Sources->States[i].AmplitudeCurrent = AmpNew;
+            Sources->States[i].AmplitudePrevious = Sources->States[i].AmplitudeCurrent;
+
+            Sources->States[i].MinDistance = 1.0f;
+            Sources->States[i].MaxDistance = 100.0f;
+            Sources->States[i].Rolloff = 1.0f;
+            Sources->States[i].RolloffDirty = true; //!Must be set true if min/max or rolloff are changed!
+            Sources->States[i].IsDistanceAttenuated = true;
+
+            
+            //!Source won't play unless this is called - check how amplotude is first updated/automatic fading
+            polar_source_Fade(Mixer, SourceUID, GlobalTime, AmpNew, 0.001);
+
 
             va_end(ArgList);
             break;
@@ -470,7 +466,8 @@ void polar_source_Play(POLAR_MIXER *Mixer, const char *SourceUID, f32 Duration, 
 
         default:
         {
-            Sources->States[i].AmplitudeTarget = DEFAULT_AMPLITUDE;
+            Sources->States[i].AmplitudeCurrent = DEFAULT_AMPLITUDE;
+            Sources->States[i].AmplitudePrevious = Sources->States[i].AmplitudeCurrent;
 
             break;
         }
@@ -486,5 +483,27 @@ void polar_source_Play(POLAR_MIXER *Mixer, const char *SourceUID, f32 Duration, 
 
     return;
 }
+
+//!Add some kind of check for IsFading when a new fade event comes in - overwrite with the new fade? pause?
+void polar_source_Fade(POLAR_MIXER *Mixer, const char *SourceUID, f64 GlobalTime, f32 NewAmplitude, f32 Duration)
+{
+    u32 i = 0;
+    POLAR_SOURCE *Sources = polar_source_Retrieval(Mixer, SourceUID, i);
+    if(!Sources)
+    {
+        printf("Polar\tERROR: Cannot fade source %s\n", SourceUID);
+        return;
+    }
+
+    Sources->States[i].FadeStartAmplitude = Sources->States[i].AmplitudeCurrent;
+    Sources->States[i].FadeEndAmplitude = NewAmplitude;
+    Sources->States[i].FadeDuration = MAX(Duration, 0.0f);
+    Sources->States[i].FadeStartTime = GlobalTime;
+    Sources->States[i].IsFading = true;
+
+    return; 
+}
+
+
 
 #endif

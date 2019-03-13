@@ -41,8 +41,15 @@
 #define RN_PAN                  0x06b401df
 
 //OSC messages
+//Source types
+#define LN_                     9201655152285363179U
+#define SO_                     8744316438972908U
+
+//Events
 #define PLAY                    11120484276852016966U
-#define AMPLITUDE               11780667860953447562U
+#define FADE                    7677966677680727406U
+#define VECTOR                  12143376858605269818U
+#define MATRIX                  16755126490873392952U
 
 //General Defines
 #define Mono    1
@@ -55,6 +62,25 @@
 #define AMP_MIN(X) DB(X)
 #define AMP_MAX(X) DB(X)
 #define AMP(X) DB(X)
+
+
+typedef struct VECTOR4D
+{
+    f32 X;
+    f32 Y;
+    f32 Z;
+    f32 W;
+} VECTOR4D;
+
+typedef struct MATRIX_4x4
+{
+    f32 A1, A2, A3, A4;
+    f32 B1, B2, B3, B4;
+    f32 C1, C2, C3, C4;
+    f32 D1, D2, D3, D4;
+} MATRIX_4x4;
+
+
 
 /*                  */
 /*  Memory code  	*/
@@ -107,6 +133,12 @@ void memory_arena_Print(MEMORY_ARENA *Arena, const char *Name);             //Pr
 #define RINGBUFFER_DEFAULT_BLOCK_COUNT 3
 
 //Structs
+typedef struct POLAR_BUFFER
+{
+    u32 SampleCount;
+    f32 *Data;
+} POLAR_BUFFER;
+
 typedef struct POLAR_RINGBUFFER
 {
     u64 Samples;
@@ -114,7 +146,7 @@ typedef struct POLAR_RINGBUFFER
     u64 WriteAddress;
     u64 TotalBlocks;
     u64 CurrentBlocks;
-    f32 *Data;
+    i16 *Data;
 } POLAR_RINGBUFFER;
 
 //Prototypes
@@ -122,12 +154,12 @@ POLAR_RINGBUFFER *polar_ringbuffer_Create(MEMORY_ARENA *Arena, u32 Samples, u32 
 void polar_ringbuffer_Destroy(MEMORY_ARENA *Arena, POLAR_RINGBUFFER *Buffer);                   //Free buffer
 
 //Writing
-f32 *polar_ringbuffer_WriteData(POLAR_RINGBUFFER *Buffer);                                      //Return the address of the next available block to write to
+i16 *polar_ringbuffer_WriteData(POLAR_RINGBUFFER *Buffer);                                      //Return the address of the next available block to write to
 bool polar_ringbuffer_WriteCheck(POLAR_RINGBUFFER *Buffer);                                     //Check that there is space to write another block of samples
 void polar_ringbuffer_WriteFinish(POLAR_RINGBUFFER *Buffer);                                    //Change the address to point to the next block
 
 //Reading
-f32 *polar_ringbuffer_ReadData(POLAR_RINGBUFFER *Buffer);                                       //Read from the next available block
+i16 *polar_ringbuffer_ReadData(POLAR_RINGBUFFER *Buffer);                                       //Read from the next available block
 bool polar_ringbuffer_ReadCheck(POLAR_RINGBUFFER *Buffer);                                      //Check that there are any written blocks to read from
 void polar_ringbuffer_ReadFinish(POLAR_RINGBUFFER *Buffer);                                     //Change the address to point to the next block
 
@@ -190,12 +222,14 @@ typedef struct POLAR_FILE
 
 typedef struct POLAR_ENGINE         //Struct to hold platform specific audio API important engine properties
 {
-	u32 BufferFrames;			    //Frame count for output buffer
+	u32 BufferSize;			    //Frame count for output buffer
+    u32 LatencySamples;
 	u16 Channels;                   //Engine current channels
     f32 *OutputChannelPositions;
 	u32 SampleRate;                 //Engine current sampling rate
-    bool Resample;
-	u16 BitRate;                    //Engine current bitrate
+    u32 BytesPerSample;
+    f32 UpdateRate;
+    f32 NoiseFloor;                 //Attenuation noise floor
 } POLAR_ENGINE;
 
 
@@ -245,7 +279,7 @@ typedef struct POLAR_ENVELOPE_POINT
     f32 Value;
 } POLAR_ENVELOPE_POINT;
 
-typedef struct POLAR_ENVELOPE 
+typedef struct POLAR_ENVELOPE
 {
     u32 Assignment;
     u32 CurrentPoints;
@@ -280,10 +314,25 @@ typedef enum POLAR_SOURCE_PLAY_STATE
 //Current state of the source
 typedef struct POLAR_SOURCE_STATE
 {
-    f64 AmplitudeCurrent;
-    f64 AmplitudeDelta;
-    f64 AmplitudeTarget;
+
     f32 *PanPositions;
+    
+    f32 AmplitudeCurrent;
+    f32 AmplitudePrevious;
+    f32 FadeStartAmplitude;
+    f32 FadeEndAmplitude;
+    f32 FadeDuration;
+    f32 FadeStartTime;
+    bool IsFading;
+    
+    VECTOR4D Position;
+    f32 MinDistance;
+    f32 MaxDistance;
+    f32 Rolloff;
+    f32 RolloffFactor;
+    bool RolloffDirty;
+    bool IsDistanceAttenuated;
+
     u32 CurrentEnvelopes;
     POLAR_ENVELOPE Envelope[MAX_ENVELOPES];
 } POLAR_SOURCE_STATE;
@@ -303,6 +352,17 @@ typedef struct POLAR_SOURCE
     u32 BufferSize[MAX_SOURCES];
     f32 *Buffer[MAX_SOURCES];
 } POLAR_SOURCE;
+
+/*                  */
+/*  Listener code   */
+/*                  */
+
+typedef struct POLAR_LISTENER
+{
+    u64 UID;
+    VECTOR4D Position;
+} POLAR_LISTENER;
+
 
 /*                  */
 /*  Mixer code      */
@@ -335,6 +395,7 @@ typedef struct POLAR_SUBMIX
 typedef struct POLAR_MIXER
 {
     f64 Amplitude;
+    POLAR_LISTENER *Listener;
     u32 SubmixCount;
     POLAR_SUBMIX *FirstInList;
 } POLAR_MIXER;
@@ -356,10 +417,10 @@ void polar_mixer_ContainerDestroy(POLAR_MIXER *Mixer, const char ContainerUID[MA
 POLAR_SOURCE *polar_source_Retrieval(POLAR_MIXER *Mixer, const char UID[MAX_STRING_LENGTH], u32 &SourceIndex);                                                              //Find a specific source and return it's struct with a given index
 void polar_source_Create(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE Engine, const char ContainerUID[MAX_STRING_LENGTH], const char SourceUID[MAX_STRING_LENGTH], u32 Channels, u32 Type, ...);
 void polar_source_CreateFromFile(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE Engine, const char *FileName);                                                       //Read CSV text file to create any sources
-void polar_source_Update(POLAR_SOURCE *Sources, u32 &SourceIndex);                                                                                                          //Internal update function used by polar_source_UpdatePlaying
-void polar_source_UpdatePlaying(POLAR_MIXER *Mixer);                                                                                                                        //Update every playing source's current state
-void polar_source_UpdateAmplitude(POLAR_MIXER *Mixer, const char *SourceUID, f32 UpdatePeriod, f32 NewAmplitude);                                                           //Change source amplitude with a fade over time in seconds
-void polar_source_Play(POLAR_MIXER *Mixer, const char *SourceUID, f32 Duration, f32 *PanPositions, u32 FX, u32 EnvelopeType, ...);                                          //Mark a source for playback
+void polar_source_Update(POLAR_MIXER *Mixer, POLAR_SOURCE *Sources, u32 &SourceIndex, f64 GlobalTime, f32 NoiseFloor);                                                                                                          //Internal update function used by polar_source_UpdatePlaying
+void polar_source_UpdatePlaying(POLAR_MIXER *Mixer, f64 GlobalTime, f32 NoiseFloor);                                                                                                                        //Update every playing source's current state
+void polar_source_Play(POLAR_MIXER *Mixer, const char *SourceUID, f64 GlobalTime, f32 Duration, f32 *PanPositions, u32 FX, u32 EnvelopeType, ...);                                          //Mark a source for playback
+void polar_source_Fade(POLAR_MIXER *Mixer, const char *SourceUID, f64 GlobalTime, f32 NewAmplitude, f32 Duration);                                                           //Change source amplitude with a fade over time in seconds
 
 /*                  */
 /*  Render code     */
@@ -367,16 +428,16 @@ void polar_source_Play(POLAR_MIXER *Mixer, const char *SourceUID, f32 Duration, 
 
 //Prototypes
 
-void polar_render_Source(u32 &SampleRate, u64 &SampleCount, POLAR_SOURCE_STATE &State, u32 Samples, POLAR_SOURCE_TYPE &Type, u32 &FX, f32 *Buffer);     //Fills a source's buffer and applies any FX
+void polar_render_Source(u32 &SampleRate, u64 &SampleCount, u32 Samples, POLAR_SOURCE_TYPE &Type, u32 &FX, f32 *Buffer);     //Fills a source's buffer and applies any FX
 void polar_render_SumStereo(POLAR_ENGINE PolarEngine, u8 &Channels, f32 *PanPositions, f64 &Amplitude, f32 *Buffer, f32 *SourceOutput);                                                 //Sums source to stereo output buffer
 void polar_render_Container(POLAR_ENGINE PolarEngine, POLAR_SOURCE &ContainerSources, f64 ContainerAmplitude, f32 *ContainerOutput);                                                    //Render every source in a container and mix as a single buffer
 void polar_render_Submix(POLAR_ENGINE PolarEngine, POLAR_SUBMIX *Submix, f32 *SubmixOutput);                                                                                            //Render every container in a submix
-void polar_render_Callback(POLAR_ENGINE PolarEngine, POLAR_MIXER *Mixer, f32 *MasterOutput);                                                                                            //Loop through each submix and render their containers/sources  
+void polar_render_Callback(POLAR_ENGINE PolarEngine, POLAR_MIXER *Mixer, f32 *MixBuffer, i16 *MasterOutput);                                                                                  //Loop through each submix and render their containers/sources  
 
 
 //Function pointers
-void (*Summing)(POLAR_ENGINE, u8 &, f32 *, f64 &, f32 *, f32 *);        //Pointer to summing function that is dependant on the output channel configuration
-void (*Callback)(POLAR_ENGINE, POLAR_MIXER *, f32 *);                   //Audio callback function called by the Windows/Linux audio API
+void (*Summing)(POLAR_ENGINE, u8 &, f32 *, f32 &, f32 &, f32 *, f32 *);        //Pointer to summing function that is dependant on the output channel configuration
+void (*Callback)(POLAR_ENGINE, POLAR_MIXER *, f32 *, i16 *);                   //Audio callback function called by the Windows/Linux audio API
 
 
 

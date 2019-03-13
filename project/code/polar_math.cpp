@@ -1,6 +1,8 @@
 #ifndef polar_math_cpp
 #define polar_math_cpp
 
+#define MAX(A, B) (((A) > (B)) ? (A) : (B))
+
 //Assertions
 void PowerOfTwoCheck(size_t Value) 
 {
@@ -22,6 +24,47 @@ size_t ReturnMin(size_t A, size_t B)
 {
     return A < B ? A : B;
 }
+
+f32 Int16ToFloat(i16 Input)
+{
+    f32 Result = 0;
+    i16 Integer = Input;
+    Result = ((f32) Integer) / (f32) 32768;
+    if(Result > 1)
+    {
+        Result = 1;
+    }
+
+    if(Result < -1)
+    {
+        Result = -1;
+    }
+
+    return Result;
+}
+
+i16 FloatToInt16(f32 Input)
+{
+    i16 Result = 0;
+    f32 Float = Input;
+    Float = Float * 32768;
+
+    if(Float > 32767)
+    {
+        Float = 32767;
+    }
+    
+    if(Float < -32768) 
+    {
+        Float = -32768;
+    }
+
+    Result = (int16) Float;
+
+	return Result;
+}
+
+
 
 f32 math_RandomFloat32(f32 Min, f32 Max) 
 {    

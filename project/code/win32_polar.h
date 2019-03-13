@@ -96,7 +96,7 @@ typedef struct WASAPI_DATA
 
 	i32 FramesWritten;
 
-    WAVEFORMATEX *DeviceWaveFormat;
+    WAVEFORMATEXTENSIBLE *DeviceWaveFormat;
 	u32 PaddingFrames;
 	u32 OutputBufferFrames;
 
@@ -110,7 +110,7 @@ typedef struct WASAPI_DATA
 
 WASAPI_DATA *win32_WASAPI_Create(MEMORY_ARENA *Arena, i32 &FramesAvailable);
 void win32_WASAPI_Destroy(MEMORY_ARENA *Arena, WASAPI_DATA *WASAPI);
-void win32_WASAPI_Callback(WASAPI_DATA *WASAPI, POLAR_ENGINE Engine, POLAR_MIXER *Mixer, POLAR_RINGBUFFER *CallbackBuffer);
+// void win32_WASAPI_Callback(WASAPI_DATA *WASAPI, POLAR_ENGINE Engine, POLAR_MIXER *Mixer, POLAR_RINGBUFFER *CallbackBuffer);
 
 
 #endif

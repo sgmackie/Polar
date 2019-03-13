@@ -32,6 +32,7 @@ POLAR_MIXER *polar_mixer_Create(MEMORY_ARENA *Arena, f64 Amplitude)
         Result->SubmixCount = 0;
         Result->FirstInList = 0;
         Result->Amplitude = DB(Amplitude);
+        Result->Listener = (POLAR_LISTENER *) memory_arena_Push(Arena, Result->Listener, (sizeof (POLAR_LISTENER)));
 
         return Result;
     }

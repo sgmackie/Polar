@@ -1,12 +1,15 @@
-//Perfomance defines (will change stack allocation sizes for things like max sources per container)
+#define MonitorRefreshHz 60
 #define MAX_STRING_LENGTH 64
 #define MAX_CHANNELS 4
 #define MAX_CONTAINERS 4
 #define MAX_SOURCES 128
 #define MAX_BREAKPOINTS 64
 #define MAX_ENVELOPES 4
-#define DEFAULT_AMPLITUDE 0.8
+
 #define DEFAULT_SAMPLERATE 48000
+#define DEFAULT_CHANNELS 2
+#define DEFAULT_LATENCY_FRAMES 2
+#define DEFAULT_AMPLITUDE 0.8
 
 #include "polar.h"
 #include "../external/external_code.h"
@@ -17,12 +20,12 @@ global_scope i64 GlobalPerformanceCounterFrequency;
 
 #include "polar.cpp"
 
-WASAPI_DATA *win32_WASAPI_Create(MEMORY_ARENA *Arena, i32 &FramesAvailable)
+WASAPI_DATA *win32_WASAPI_Create(MEMORY_ARENA *Arena, u32 SampleRate, u32 BufferSize)
 {
     WASAPI_DATA *Result = 0;
     Result = (WASAPI_DATA *) memory_arena_Push(Arena, Result, (sizeof (WASAPI_DATA)));
 
-	Result->HR = CoInitializeEx(0, COINIT_MULTITHREADED);
+    Result->HR = CoInitializeEx(0, COINIT_SPEED_OVER_MEMORY);
 	HR_TO_RETURN(Result->HR, "Failed to initialise COM", nullptr);
 
     Result->RenderEvent = CreateEvent(0, 0, 0, 0);
@@ -40,26 +43,44 @@ WASAPI_DATA *win32_WASAPI_Create(MEMORY_ARENA *Arena, i32 &FramesAvailable)
 	Result->HR = Result->AudioDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**) &Result->AudioClient);
 	HR_TO_RETURN(Result->HR, "Failed to activate audio endpoint", nullptr);
 
-	Result->HR = Result->AudioClient->GetDevicePeriod(&Result->DevicePeriod, &Result->DevicePeriodMin);
-	HR_TO_RETURN(Result->HR, "Failed to get device period for callback buffer", nullptr);
+    WAVEFORMATEXTENSIBLE *MixFormat;
+	Result->HR = Result->AudioClient->GetMixFormat((WAVEFORMATEX **) &MixFormat);
+	HR_TO_RETURN(Result->HR, "Failed to activate audio endpoint", nullptr);
 
-    Result->HR = Result->AudioClient->GetMixFormat(&Result->DeviceWaveFormat);
-    HR_TO_RETURN(Result->HR, "Failed to get default wave format for audio client", nullptr);
+    //Create output format
+    Result->DeviceWaveFormat = (WAVEFORMATEXTENSIBLE *) memory_arena_Push(Arena, Result->DeviceWaveFormat, (sizeof (Result->DeviceWaveFormat)));
+    Result->DeviceWaveFormat->Format.cbSize = sizeof(WAVEFORMATEXTENSIBLE);
+    Result->DeviceWaveFormat->Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+    Result->DeviceWaveFormat->Format.wBitsPerSample = 16;
+    Result->DeviceWaveFormat->Format.nChannels = 2;
+    Result->DeviceWaveFormat->Format.nSamplesPerSec = (DWORD) SampleRate;
+    Result->DeviceWaveFormat->Format.nBlockAlign = (WORD) (Result->DeviceWaveFormat->Format.nChannels * Result->DeviceWaveFormat->Format.wBitsPerSample / 8);
+    Result->DeviceWaveFormat->Format.nAvgBytesPerSec = Result->DeviceWaveFormat->Format.nSamplesPerSec * Result->DeviceWaveFormat->Format.nBlockAlign;
+    Result->DeviceWaveFormat->Samples.wValidBitsPerSample = 16;
+    Result->DeviceWaveFormat->dwChannelMask = KSAUDIO_SPEAKER_STEREO;
+    Result->DeviceWaveFormat->SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
 
-	Result->HR = Result->AudioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, Result->DevicePeriodMin, 0, Result->DeviceWaveFormat, NULL);
+    //If the current device sample rate doesn't equal the output, than set WASAPI to autoconvert
+    DWORD Flags = 0;
+    if(MixFormat->Format.nSamplesPerSec != Result->DeviceWaveFormat->Format.nSamplesPerSec)
+    {
+        printf("WASAPI: Sample rate does not equal the requested rate, resampling\t Result: %lu\t Requested: %lu\n", MixFormat->Format.nSamplesPerSec, Result->DeviceWaveFormat->Format.nSamplesPerSec);
+        Flags = AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
+    }
+
+    //Free reference formati
+    CoTaskMemFree(MixFormat);
+
+    //Buffer size in 100 nano second units
+    REFERENCE_TIME BufferDuration = 10000000ULL * BufferSize / Result->DeviceWaveFormat->Format.nSamplesPerSec;
+	Result->HR = Result->AudioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, Flags, BufferDuration, 0, &Result->DeviceWaveFormat->Format, NULL);
     HR_TO_RETURN(Result->HR, "Failed to initialise audio client", nullptr);
 
-	Result->HR = Result->AudioClient->SetEventHandle(Result->RenderEvent);
-	HR_TO_RETURN(Result->HR, "Failed to set rendering event", nullptr);
+	Result->HR = Result->AudioClient->GetService(__uuidof(IAudioRenderClient), (void**) &Result->AudioRenderClient);
+	HR_TO_RETURN(Result->HR, "Failed to assign client to render client", nullptr);
 
     Result->HR = Result->AudioClient->GetBufferSize(&Result->OutputBufferFrames);
 	HR_TO_RETURN(Result->HR, "Failed to get maximum read buffer size for audio client", nullptr);
-
-    Result->HR = Result->AudioClient->GetCurrentPadding(&Result->PaddingFrames);
-	HR_TO_RETURN(Result->HR, "Failed to get buffer padding size", nullptr);
-
-	Result->HR = Result->AudioClient->GetService(__uuidof(IAudioRenderClient), (void**) &Result->AudioRenderClient);
-	HR_TO_RETURN(Result->HR, "Failed to assign client to render client", nullptr);	
 
 	Result->HR = Result->AudioClient->Reset();
 	HR_TO_RETURN(Result->HR, "Failed to reset audio client before playback", nullptr);
@@ -67,10 +88,14 @@ WASAPI_DATA *win32_WASAPI_Create(MEMORY_ARENA *Arena, i32 &FramesAvailable)
 	Result->HR = Result->AudioClient->Start();
 	HR_TO_RETURN(Result->HR, "Failed to start audio client", nullptr);
 
-    FramesAvailable = ((Result->OutputBufferFrames - Result->PaddingFrames) * Result->DeviceWaveFormat->nChannels);
+    if(Result->OutputBufferFrames != BufferSize)
+    {
+        printf("WASAPI: WASAPI buffer size does not equal requested size!\t Result: %u\t Requested: %u\n", Result->OutputBufferFrames, BufferSize);
+    }
 
     return Result;
 }
+
 
 void win32_WASAPI_Destroy(MEMORY_ARENA *Arena, WASAPI_DATA *WASAPI)
 {
@@ -79,8 +104,6 @@ void win32_WASAPI_Destroy(MEMORY_ARENA *Arena, WASAPI_DATA *WASAPI)
 	WASAPI->AudioClient->Stop();
 	WASAPI->AudioClient->Release();
 	WASAPI->AudioDevice->Release();
-	CloseHandle(WASAPI->RenderEvent);
-	WASAPI->RenderEvent = 0;
 
 	CoUninitialize();
 
@@ -88,36 +111,18 @@ void win32_WASAPI_Destroy(MEMORY_ARENA *Arena, WASAPI_DATA *WASAPI)
     memory_arena_Pull(Arena);
 }
 
-void win32_WASAPI_Callback(WASAPI_DATA *WASAPI, POLAR_ENGINE Engine, POLAR_MIXER *Mixer, POLAR_RINGBUFFER *CallbackBuffer)
+
+void win32_WASAPI_Callback(WASAPI_DATA *WASAPI, u32 SampleCount, u32 Channels, i16 *OutputBuffer)
 {
-    WaitForSingleObject(WASAPI->RenderEvent, INFINITE);
-
-    if(polar_ringbuffer_WriteCheck(CallbackBuffer))
+    BYTE* BYTEBuffer;
+    
+    if(SUCCEEDED(WASAPI->AudioRenderClient->GetBuffer((UINT32) SampleCount, &BYTEBuffer)))
     {
-	    WASAPI->HR = WASAPI->AudioClient->GetCurrentPadding(&WASAPI->PaddingFrames);
-	    HR_TO_RETURN(WASAPI->HR, "Couldn't get current padding", NONE);
+        //memcopy the output buffer * output channels into BYTEs for WASAPI to read
+        size_t CopySize = ((sizeof(* OutputBuffer) * SampleCount) * Channels);
+        memcpy(BYTEBuffer, OutputBuffer, CopySize);
 
-	    Engine.BufferFrames = (WASAPI->OutputBufferFrames - WASAPI->PaddingFrames);
-
-        Callback(Engine, Mixer, polar_ringbuffer_WriteData(CallbackBuffer));
-        polar_ringbuffer_WriteFinish(CallbackBuffer);
-    }
-
-    if(polar_ringbuffer_ReadCheck(CallbackBuffer))
-    {
-        BYTE *BYTEBuffer = 0;
-
-        WASAPI->HR = WASAPI->AudioRenderClient->GetBuffer((Engine.BufferFrames / Engine.Channels), &BYTEBuffer);
-	    HR_TO_RETURN(WASAPI->HR, "Couldn't get WASAPI buffer", NONE);
-
-        memcpy(BYTEBuffer, polar_ringbuffer_ReadData(CallbackBuffer), ((sizeof (* polar_ringbuffer_ReadData(CallbackBuffer))) * (Engine.BufferFrames)));
-
-        WASAPI->HR = WASAPI->AudioRenderClient->ReleaseBuffer((Engine.BufferFrames / Engine.Channels), 0);
-        HR_TO_RETURN(WASAPI->HR, "Couldn't release WASAPI buffer", NONE);
-
-        WASAPI->FramesWritten = (Engine.BufferFrames / Engine.Channels);
-
-        polar_ringbuffer_ReadFinish(CallbackBuffer);
+        WASAPI->AudioRenderClient->ReleaseBuffer((UINT32) SampleCount, 0);
     }
 }
 
@@ -129,6 +134,7 @@ LARGE_INTEGER win32_WallClock()
     return Result;
 }
 
+
 f32 win32_SecondsElapsed(LARGE_INTEGER Start, LARGE_INTEGER End)
 {
     f32 Result = ((f32) (End.QuadPart - Start.QuadPart) / (f32) GlobalPerformanceCounterFrequency);
@@ -138,7 +144,7 @@ f32 win32_SecondsElapsed(LARGE_INTEGER Start, LARGE_INTEGER End)
 int main()
 {
     //Allocate memory
-    MEMORY_ARENA *EngineArena = memory_arena_Create(Kilobytes(500));
+    MEMORY_ARENA *EngineArena = memory_arena_Create(Kilobytes(100));
     MEMORY_ARENA *SourceArena = memory_arena_Create(Megabytes(100));
 
     //Start timings
@@ -151,136 +157,181 @@ int main()
     bool IsSleepGranular = (timeBeginPeriod(SchedulerPeriodInMS) == TIMERR_NOERROR);
 
     //Define engine update rate
-    f32 EngineUpdateRate = 60;
-    f32 TargetSecondsPerFrame = 1.0f / (f32) EngineUpdateRate;
-
-    //Fill out engine properties
     POLAR_ENGINE Engine = {};
-    i32 FramesAvailable = 0;
-    WASAPI_DATA *WASAPI = win32_WASAPI_Create(EngineArena, FramesAvailable);
-    Engine.BufferFrames = FramesAvailable;
-    Engine.Channels = WASAPI->DeviceWaveFormat->nChannels;
-    Engine.SampleRate = WASAPI->DeviceWaveFormat->nSamplesPerSec;
-
-    //Define the callback and channel summing functions
-    Callback = &polar_render_Callback;
-    switch(Engine.Channels)
-    {
-        case 2:
-        {
-            Summing = &polar_render_SumStereo;
-            break;
-        }
-        default:
-        {
-            Summing = &polar_render_SumStereo;
-            break;
-        }
-    }
+    Engine.UpdateRate = MonitorRefreshHz / 2;
+    f32 TargetSecondsPerFrame = 1.0f / (f32) Engine.UpdateRate;
 
     //PCG Random Setup
     i32 Rounds = 5;
     pcg32_srandom(time(NULL) ^ (intptr_t) &printf, (intptr_t) &Rounds);
 
+    //Start WASAPI
+    WASAPI_DATA *WASAPI = win32_WASAPI_Create(EngineArena, DEFAULT_SAMPLERATE, DEFAULT_SAMPLERATE);
+    
+    //Fill out engine properties
+    Engine.NoiseFloor = AMP(-50);
+    Engine.SampleRate = WASAPI->DeviceWaveFormat->Format.nSamplesPerSec;
+    Engine.Channels = WASAPI->DeviceWaveFormat->Format.nChannels;
+    Engine.BytesPerSample = sizeof(i16) * Engine.Channels;
+    Engine.BufferSize = WASAPI->OutputBufferFrames;
+    Engine.LatencySamples = DEFAULT_LATENCY_FRAMES * (Engine.SampleRate / Engine.UpdateRate);
+
+    //Buffer size:
+    //The max buffer size is 1 second worth of samples
+    //LatencySamples determines how many samples to render at a given frame delay (default is 2)
+    //The sample count to write for each callback is the LatencySamples - any padding from the audio device
+
     //Create ringbuffer with a specified block count (default is 3)
-    POLAR_RINGBUFFER *CallbackBuffer = polar_ringbuffer_Create(EngineArena, Engine.BufferFrames, 3);
-
-    //Create mixer object that holds all submixes and their containers
-    POLAR_MIXER *MasterOutput = polar_mixer_Create(SourceArena, -1);
+    POLAR_RINGBUFFER *CallbackBuffer = polar_ringbuffer_Create(EngineArena, Engine.BufferSize, DEFAULT_LATENCY_FRAMES);
     
-    //Sine sources
-    polar_mixer_SubmixCreate(SourceArena, MasterOutput, 0, "SM_SineChordMix", -1);
-    polar_mixer_ContainerCreate(MasterOutput, "SM_SineChordMix", "CO_ChordContainer", -1);
-    polar_source_CreateFromFile(SourceArena, MasterOutput, Engine, "asset_lists/Source_Import.txt");
+    //Create a temporary mixing buffer 
+    POLAR_BUFFER *MixBuffer = 0;
+    MixBuffer = (POLAR_BUFFER *) memory_arena_Push(EngineArena, MixBuffer, (sizeof(POLAR_BUFFER)));
+    MixBuffer->SampleCount = Engine.BufferSize;
+    MixBuffer->Data = (f32 *) memory_arena_Push(EngineArena, MixBuffer, MixBuffer->SampleCount);
 
-    //File sources
-    polar_mixer_SubmixCreate(SourceArena, MasterOutput, 0, "SM_FileMix", -1);
-    polar_mixer_ContainerCreate(MasterOutput, "SM_FileMix", "CO_FileContainer", -1);
-    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_WPN_Phasor", Stereo, SO_FILE, "audio/wpn_phasor.wav");
-    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_AMB_Forest_01", Stereo, SO_FILE, "audio/amb_river.wav");
-    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_Whiterun", Stereo, SO_FILE, "audio/Whiterun48.wav");
-
-    //OSC setup
-    UdpSocket OSCSocket = polar_OSC_StartServer(4795);
-
-    //Silent first loop
-    printf("Polar: Pre-roll silence\n");
-    MasterOutput->Amplitude = DB(-99);
-    for(u32 i = 0; i < 60; ++i)
+    if(WASAPI && CallbackBuffer && MixBuffer)
     {
-        win32_WASAPI_Callback(WASAPI, Engine, MasterOutput, CallbackBuffer);
-    }
+        //OSC setup
+        UdpSocket OSCSocket = polar_OSC_StartServer(4795);
 
-    //Start timings
-    LARGE_INTEGER LastCounter = win32_WallClock();
-    LARGE_INTEGER FlipWallClock = win32_WallClock();
-    u64 LastCycleCount = __rdtsc();
-    
-    //Loop
-    printf("Polar: Playback\n");
-    MasterOutput->Amplitude = DB(-6);
-    for(u32 i = 0; i < 2000; ++i)
-    {
-        //!Uses std::vector for message allocation: replace with arena to be realtime safe
-        polar_OSC_UpdateMessages(MasterOutput, OSCSocket, 1);
+        //Create mixer object that holds all submixes and their containers
+        POLAR_MIXER *MasterOutput = polar_mixer_Create(SourceArena, -1);
 
-        polar_source_UpdatePlaying(MasterOutput);
-
-        if(i == 100)
-        {
-            f32 StackPositions[MAX_CHANNELS] = {0.0};
-
-            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_A", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
-            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_B", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
-            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_C", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
-            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_D", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
-
-            polar_source_Play(MasterOutput, "SO_SineChord_Segment_D", 8, StackPositions, FX_DRY, EN_NONE, AMP(-1));
-            polar_source_Play(MasterOutput, "SO_Whiterun", 8, StackPositions, FX_DRY, EN_NONE, AMP(-1));
-        }
-
-        //Callback
-        win32_WASAPI_Callback(WASAPI, Engine, MasterOutput, CallbackBuffer);
-        // printf("WASAPI: Frames written:\t%d\n", WASAPI->FramesWritten);
-
-        //End performance timings
-        FlipWallClock = win32_WallClock();
-        u64 EndCycleCount = __rdtsc();
-        LastCycleCount = EndCycleCount;
-
-        //Check rendering work elapsed and sleep if time remaining
-        LARGE_INTEGER WorkCounter = win32_WallClock();
-        f32 WorkSecondsElapsed = win32_SecondsElapsed(LastCounter, WorkCounter);
-        f32 SecondsElapsedForFrame = WorkSecondsElapsed;
-
-        //If the rendering finished under the target seconds, then sleep until the next update
-        if(SecondsElapsedForFrame < TargetSecondsPerFrame)
-        {                        
-            if(IsSleepGranular)
-            {
-                //!Sleep adds another 1ms delay, casuing WASAPI buffer size to misalign (from 480 to 528 samples)
-                // DWORD SleepTimeInMS = (DWORD)(1000.0f * (TargetSecondsPerFrame - SecondsElapsedForFrame));
+        //Assign a listener to the mixer
+        polar_listener_Create(MasterOutput, "LN_Player");
             
-                // if(SleepTimeInMS > 0)
-                // {
-                //     Sleep(SleepTimeInMS);
-                // }
-            }
-        }
+        //File sources
+        polar_mixer_SubmixCreate(SourceArena, MasterOutput, 0, "SM_FileMix", -1);
+        polar_mixer_ContainerCreate(MasterOutput, "SM_FileMix", "CO_FileContainer", -1);
+        polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_Whiterun", Stereo, SO_FILE, "audio/Whiterun48.wav");
+        polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_Orbifold", Stereo, SO_FILE, "audio/LGOrbifold48.wav");
 
-        else
+        //Start timings
+        LARGE_INTEGER LastCounter = win32_WallClock();
+        LARGE_INTEGER FlipWallClock = win32_WallClock();
+        u64 LastCycleCount = __rdtsc();
+
+
+        i64 i = 0;
+
+        //Loop
+        f64 GlobalTime = 0;
+        bool GlobalRunning = true;
+        MasterOutput->Amplitude = DB(-1);
+        printf("Polar: Playback\n");
+        while(GlobalRunning)
         {
-            //!Missed frame rate!
-            f32 Difference = (SecondsElapsedForFrame - TargetSecondsPerFrame);
-            printf("Polar\tERROR: Missed frame rate!\tDifference: %f\t[Current: %f, Target: %f]\n", Difference, SecondsElapsedForFrame, TargetSecondsPerFrame);
-        } 
+            ++i;
+            //Update
+            //Get current time for update functions
+            GlobalTime = polar_WallTime();
+            
+            //Get OSC messages from Unreal
+            //!Uses std::vector for message allocation: replace with arena to be realtime safe
+            polar_OSC_UpdateMessages(MasterOutput, GlobalTime, OSCSocket, 1);
 
-        //Prepare timers before next loop
-        LARGE_INTEGER EndCounter = win32_WallClock();
-        LastCounter = EndCounter;
+            //Update the amplitudes, durations etc of all playing sources
+            polar_source_UpdatePlaying(MasterOutput, GlobalTime, Engine.NoiseFloor);
+            
+            if(i == 10)
+            {
+                f32 StackPositions[MAX_CHANNELS] = {0.0};
+                polar_source_Play(MasterOutput, "SO_Orbifold", GlobalTime, 0, StackPositions, FX_DRY, EN_NONE, AMP(-12));
+            }
+
+            //Render
+            //Write data
+            if(polar_ringbuffer_WriteCheck(CallbackBuffer))
+            {
+                i32 SamplesToWrite = 0;
+                i32 MaxSampleCount = 0;
+
+                //Get current padding of the audio device and determine samples to write for this callback
+                if(SUCCEEDED(WASAPI->AudioClient->GetCurrentPadding(&WASAPI->PaddingFrames)))
+                {
+                    MaxSampleCount = (i32) (Engine.BufferSize - WASAPI->PaddingFrames);
+                    SamplesToWrite = (i32) (Engine.LatencySamples - WASAPI->PaddingFrames);
+                    
+                    if(SamplesToWrite < 0)
+                    {
+                        UINT32 DeviceSampleCount = 0;
+                        if(SUCCEEDED(WASAPI->AudioClient->GetBufferSize(&DeviceSampleCount)))
+                        {
+                            SamplesToWrite = DeviceSampleCount;
+                            printf("WASAPI: Failed to set SamplesToWrite!\n");
+                        }
+                    }
+
+                    Assert(SamplesToWrite <= MaxSampleCount);
+                    MixBuffer->SampleCount = SamplesToWrite;
+                }
+
+                //Render sources
+                polar_render_Callback(&Engine, MasterOutput, MixBuffer, polar_ringbuffer_WriteData(CallbackBuffer));
+
+                //Update ringbuffer addresses
+                polar_ringbuffer_WriteFinish(CallbackBuffer);
+            }
+
+            //Read data
+            if(polar_ringbuffer_ReadCheck(CallbackBuffer))
+            {
+                //Fill WASAPI BYTE buffer
+                win32_WASAPI_Callback(WASAPI, MixBuffer->SampleCount, Engine.Channels, polar_ringbuffer_ReadData(CallbackBuffer));
+                // printf("Polar: Samples written: %u\n", MixBuffer->SampleCount);
+
+                //Update ringbuffer addresses
+                polar_ringbuffer_ReadFinish(CallbackBuffer);
+            }
+
+            //End performance timings
+            FlipWallClock = win32_WallClock();
+            u64 EndCycleCount = __rdtsc();
+            LastCycleCount = EndCycleCount;
+
+            //Check rendering work elapsed and sleep if time remaining
+            LARGE_INTEGER WorkCounter = win32_WallClock();
+            f32 WorkSecondsElapsed = win32_SecondsElapsed(LastCounter, WorkCounter);
+            f32 SecondsElapsedForFrame = WorkSecondsElapsed;
+
+            //If the rendering finished under the target seconds, then sleep until the next update
+            if(SecondsElapsedForFrame < TargetSecondsPerFrame)
+            {                        
+                if(IsSleepGranular)
+                {
+                    DWORD SleepTimeInMS = (DWORD)(1000.0f * (TargetSecondsPerFrame - SecondsElapsedForFrame));
+
+                    if(SleepTimeInMS > 0)
+                    {
+                        Sleep(SleepTimeInMS);
+                        // printf("Sleep\n");
+                    }
+                }
+
+                f32 TestSecondsElapsedForFrame = win32_SecondsElapsed(LastCounter, win32_WallClock());
+                while(SecondsElapsedForFrame < TargetSecondsPerFrame)
+                {                            
+                    SecondsElapsedForFrame = win32_SecondsElapsed(LastCounter, win32_WallClock());
+                }
+            }
+
+            else
+            {
+                //!Missed frame rate!
+                f32 Difference = (SecondsElapsedForFrame - TargetSecondsPerFrame);
+                printf("Polar\tERROR: Missed frame rate!\tDifference: %f\t[Current: %f, Target: %f]\n", Difference, SecondsElapsedForFrame, TargetSecondsPerFrame);
+            } 
+
+            //Prepare timers before next loop
+            LARGE_INTEGER EndCounter = win32_WallClock();
+            LastCounter = EndCounter;
+        }
     }
 
-    polar_mixer_Destroy(EngineArena, MasterOutput);
+    else
+    {
+    }
 
     polar_ringbuffer_Destroy(EngineArena, CallbackBuffer);
     win32_WASAPI_Destroy(EngineArena, WASAPI);

@@ -22,10 +22,10 @@ set ObjDir=.\obj\
 if not exist %ObjDir% mkdir %ObjDir%
 
 :: Set compiler flags:
-set CompilerFlags=-g -gcodeview -pedantic -std=c++14 -DCUDA=1
+set CompilerFlags=-g -gcodeview -pedantic -std=c++14 -DCUDA=1 -DOSC_LOG=1
 
 :: Set warning labels:
-set CommonWarnings=-Wall -Wextra -Werror -Wno-unused-function -Wno-language-extension-token -Wno-vla-extension -Wno-deprecated-declarations -Wno-sign-compare
+set CommonWarnings=-Wall -Wextra -Werror -Wno-unused-function -Wno-language-extension-token -Wno-vla-extension -Wno-deprecated-declarations -Wno-sign-compare -Wno-unused-variable
 
 :: Set Compiler optimsation level
 set CompilerOpt=-O0

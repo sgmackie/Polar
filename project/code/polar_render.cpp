@@ -1,33 +1,11 @@
 #ifndef polar_render_cpp
 #define polar_render_cpp
 
-void polar_render_Source(u32 &SampleRate, u64 &SampleCount, POLAR_SOURCE_STATE &State, u32 Samples, POLAR_SOURCE_TYPE &Type, u32 &FX, f32 *Buffer)
+void polar_render_Source(u32 &SampleRate, u64 &SampleCount, u32 SamplesToWrite, POLAR_SOURCE_TYPE &Type, u32 &FX, f32 *Buffer)
 {
     while(SampleCount != 0 && Type.Flag != SO_NONE)
     {
         f64 SecondsPerSample = (1.0f / (f64) SampleRate);
-
-        f64 CurrentAmp = (State.AmplitudeCurrent);
-        f64 AmpDelta = (SecondsPerSample * State.AmplitudeDelta);
-
-        bool AmpEnded;
-
-        if(AmpDelta != 0.0f)
-        {
-            f64 NewDeltaVolume = (State.AmplitudeTarget - CurrentAmp);
-    
-            u32 VolumeSampleCount = (u32)((NewDeltaVolume / AmpDelta + 0.5f));
-            if(Samples > VolumeSampleCount)
-            {
-                Samples = VolumeSampleCount;
-                AmpEnded = true;
-            }
-
-            if(AmpDelta == 0)
-            {
-                AmpEnded = true;
-            }
-        }
 
         switch(Type.Flag)
         {
@@ -36,17 +14,15 @@ void polar_render_Source(u32 &SampleRate, u64 &SampleCount, POLAR_SOURCE_STATE &
                 u64 Position = 0;
                 u64 SamplesRemaining = (Type.File->FrameCount - Type.File->ReadIndex);
 
-                if(SamplesRemaining < Samples)
+                if(SamplesRemaining < SamplesToWrite)
                 {
-                    Samples = SamplesRemaining;
+                    SamplesToWrite = SamplesRemaining;
                 }
 
-                for(u32 FrameIndex = 0; FrameIndex < Samples; ++FrameIndex)
+                for(u32 FrameIndex = 0; FrameIndex < SamplesToWrite; ++FrameIndex)
 	            {
                     Position = (Type.File->ReadIndex += Type.File->Channels);
 	            	Buffer[FrameIndex] = Type.File->Samples[Position];
-
-                    CurrentAmp += AmpDelta;
                 }
 
                 break;
@@ -64,9 +40,9 @@ void polar_render_Source(u32 &SampleRate, u64 &SampleCount, POLAR_SOURCE_STATE &
                     f64 NewDeltaFreq = (Type.Oscillator->FrequencyTarget - CurrentFreq);
 
                     u32 FreqSampleCount = (u32)((NewDeltaFreq / FreqDelta + 0.5f));
-                    if(Samples > FreqSampleCount)
+                    if(SamplesToWrite > FreqSampleCount)
                     {
-                        Samples = FreqSampleCount;
+                        SamplesToWrite = FreqSampleCount;
                         FreqEnded = true;
                     }
 
@@ -76,11 +52,10 @@ void polar_render_Source(u32 &SampleRate, u64 &SampleCount, POLAR_SOURCE_STATE &
                     }
                 }
 
-                for(u32 FrameIndex = 0; FrameIndex < Samples; ++FrameIndex)
+                for(u32 FrameIndex = 0; FrameIndex < SamplesToWrite; ++FrameIndex)
 	            {
 	            	Buffer[FrameIndex] = (f32) Type.Oscillator->Tick(Type.Oscillator);
 
-                    CurrentAmp += AmpDelta;
                     CurrentFreq += FreqDelta;
                 }
 
@@ -105,43 +80,50 @@ void polar_render_Source(u32 &SampleRate, u64 &SampleCount, POLAR_SOURCE_STATE &
         {
             if(FX & FX_AM)
             {
-                EffectAM(Samples, SampleRate, Buffer, 100);
+                EffectAM(SamplesToWrite, SampleRate, Buffer, 100);
             }
 
             if(FX & FX_ECHO)
             {
-                EffectEcho(Samples, SampleRate, Buffer, 3);
+                EffectEcho(SamplesToWrite, SampleRate, Buffer, 3);
             }
         }
 
-        State.AmplitudeCurrent = CurrentAmp;
-        if(AmpEnded)
-        {
-            State.AmplitudeCurrent = State.AmplitudeTarget;
-            State.AmplitudeDelta = 0.0f;
-        }
 
-        SampleCount -= Samples;
+        SampleCount -= SamplesToWrite;
         return;  
     }
 }
 
-void polar_render_SumStereo(POLAR_ENGINE PolarEngine, u8 &Channels, f32 *PanPositions, f64 &Amplitude, f32 *Buffer, f32 *SourceOutput)
-{
-    for(u32 FrameIndex = 0; FrameIndex < PolarEngine.BufferFrames; ++FrameIndex)
-    {
-        for(u32 ChannelIndex = 0; ChannelIndex < Channels; ++ChannelIndex)
-        {
-            f32 LeftPhase = 0.25f * PI32 * (PanPositions[ChannelIndex] + 1.0f);
-            f32 RightPhase = 0.5f * PI32 * (0.5f * (PanPositions[ChannelIndex] + 1.0f) + 1.0);
 
-            SourceOutput[FrameIndex * PolarEngine.Channels] += ((sinf(LeftPhase) * Buffer[FrameIndex]) * Amplitude);
-            SourceOutput[FrameIndex * PolarEngine.Channels + 1] += ((sinf(RightPhase) * Buffer[FrameIndex]) * Amplitude);
+void polar_render_MixSources(f32 &AmplitudeCurrent, f32 &AmplitudePrevious, f32 *Buffer, POLAR_BUFFER *MixBuffer)
+{
+    f32 TargetAmplitude = AmplitudeCurrent;
+
+    if(fabsf(AmplitudePrevious - TargetAmplitude) < 0.1e-5)
+    {
+        for(u32 FrameIndex = 0; FrameIndex < MixBuffer->SampleCount; ++FrameIndex)
+        {
+            MixBuffer->Data[FrameIndex] += ((Buffer[FrameIndex]) * TargetAmplitude);
         }
+    }
+
+    else
+    {
+        f32 Current = AmplitudePrevious;
+        f32 Step = (TargetAmplitude - Current) * 1.0f / MixBuffer->SampleCount;
+
+        for(u32 FrameIndex = 0; FrameIndex < MixBuffer->SampleCount; ++FrameIndex)
+        {
+            Current += Step;
+            MixBuffer->Data[FrameIndex] += ((Buffer[FrameIndex]) * TargetAmplitude);
+        }
+
+        AmplitudePrevious = TargetAmplitude;
     }
 }
 
-void polar_render_Container(POLAR_ENGINE PolarEngine, POLAR_SOURCE &ContainerSources, f64 ContainerAmplitude, f32 *ContainerOutput)
+void polar_render_Container(POLAR_SOURCE &ContainerSources, f64 ContainerAmplitude, POLAR_BUFFER *MixBuffer)
 {
     for(u8 i = 0; i <= ContainerSources.CurrentSources; ++i)
     {
@@ -150,19 +132,12 @@ void polar_render_Container(POLAR_ENGINE PolarEngine, POLAR_SOURCE &ContainerSou
             ContainerSources.PlayState[i] = Stopped;
         }
 
-        if(ContainerSources.SampleCount[i] == ContainerSources.BufferSize[i])
-        {
-            ContainerSources.PlayState[i] = Stopping;
-        }
-
         switch(ContainerSources.PlayState[i])
         {
             case Playing:
             {
-                ContainerSources.BufferSize[i] = (PolarEngine.BufferFrames / PolarEngine.Channels);
-                polar_render_Source(ContainerSources.SampleRate[i], ContainerSources.SampleCount[i], ContainerSources.States[i], ContainerSources.BufferSize[i], ContainerSources.Type[i], ContainerSources.FX[i], ContainerSources.Buffer[i]);
-                Summing(PolarEngine, ContainerSources.Channels[i], ContainerSources.States[i].PanPositions, ContainerSources.States[i].AmplitudeCurrent, ContainerSources.Buffer[i], ContainerOutput);
-
+                polar_render_Source(ContainerSources.SampleRate[i], ContainerSources.SampleCount[i], MixBuffer->SampleCount, ContainerSources.Type[i], ContainerSources.FX[i], ContainerSources.Buffer[i]);
+                polar_render_MixSources(ContainerSources.States[i].AmplitudeCurrent, ContainerSources.States[i].AmplitudePrevious, ContainerSources.Buffer[i], MixBuffer);
                 break;
             }
 
@@ -173,11 +148,6 @@ void polar_render_Container(POLAR_ENGINE PolarEngine, POLAR_SOURCE &ContainerSou
 
             case Stopping:
             {
-                ContainerSources.BufferSize[i] = (PolarEngine.BufferFrames / PolarEngine.Channels);
-                ContainerSources.States[i].AmplitudeTarget = 0;
-                polar_render_Source(ContainerSources.SampleRate[i], ContainerSources.SampleCount[i], ContainerSources.States[i], ContainerSources.BufferSize[i], ContainerSources.Type[i], ContainerSources.FX[i], ContainerSources.Buffer[i]);
-                Summing(PolarEngine, ContainerSources.Channels[i], ContainerSources.States[i].PanPositions, ContainerSources.States[i].AmplitudeCurrent, ContainerSources.Buffer[i], ContainerOutput);
-
                 break;
             }
 
@@ -188,43 +158,69 @@ void polar_render_Container(POLAR_ENGINE PolarEngine, POLAR_SOURCE &ContainerSou
         }
     }
 
-    for(u32 FrameIndex = 0; FrameIndex < PolarEngine.BufferFrames; ++FrameIndex)
+    for(u32 FrameIndex = 0; FrameIndex < MixBuffer->SampleCount; ++FrameIndex)
     {
-        ContainerOutput[FrameIndex] *= ContainerAmplitude;	
+        MixBuffer->Data[FrameIndex] *= ContainerAmplitude;	
     }
 }
 
-
-
-void polar_render_Submix(POLAR_ENGINE PolarEngine, POLAR_SUBMIX *Submix, f32 *SubmixOutput)
+void polar_render_Submix(POLAR_SUBMIX *Submix, POLAR_BUFFER *MixBuffer)
 {
     for(u8 i = 0; i < Submix->Containers.CurrentContainers; ++i)
     {
-        polar_render_Container(PolarEngine, Submix->Containers.Sources[i], Submix->Containers.Amplitude[i], SubmixOutput);
+        polar_render_Container(Submix->Containers.Sources[i], Submix->Containers.Amplitude[i], MixBuffer);
     }
 
-    for(u32 FrameIndex = 0; FrameIndex < PolarEngine.BufferFrames; ++FrameIndex)
+    for(u32 FrameIndex = 0; FrameIndex < MixBuffer->SampleCount; ++FrameIndex)
     {
-        SubmixOutput[FrameIndex] *= Submix->Amplitude;	
+        MixBuffer->Data[FrameIndex] *= Submix->Amplitude;	
     }
 }
 
-void polar_render_Callback(POLAR_ENGINE PolarEngine, POLAR_MIXER *Mixer, f32 *MasterOutput)
+
+void polar_render_ConvertToInt16(POLAR_ENGINE *Engine, POLAR_BUFFER *MixBuffer, i16 *OutputBuffer)
 {
+    i16 *ConvertedSamples = OutputBuffer;
+    
+    for(u32 SampleIndex = 0; SampleIndex < MixBuffer->SampleCount; ++SampleIndex)
+    {
+        f32 FloatSample = MixBuffer->Data[SampleIndex];
+        i16 IntSample = FloatToInt16(FloatSample);
+
+        for(u8 ChannelIndex = 0; ChannelIndex < Engine->Channels; ++ChannelIndex)
+        {
+            *ConvertedSamples++ = IntSample;
+        }
+    }
+}
+
+void polar_render_Callback(POLAR_ENGINE *Engine, POLAR_MIXER *Mixer, POLAR_BUFFER *MixBuffer, i16 *OutputBuffer)
+{
+    //Clear mixer
+    for(u32 FrameIndex = 0; FrameIndex < (MixBuffer->SampleCount * Engine->Channels); ++FrameIndex)
+	{
+        MixBuffer->Data[FrameIndex] = 0.0f;
+    }
+
+    //Render submixes
     for(POLAR_SUBMIX *SubmixIndex = Mixer->FirstInList; SubmixIndex; SubmixIndex = SubmixIndex->NextSubmix)
     {
         for(POLAR_SUBMIX *ChildSubmixIndex = SubmixIndex->ChildSubmix; ChildSubmixIndex; ChildSubmixIndex = ChildSubmixIndex->ChildSubmix)
         {
-            polar_render_Submix(PolarEngine, ChildSubmixIndex, MasterOutput);
+            polar_render_Submix(ChildSubmixIndex, MixBuffer);
         }
 
-        polar_render_Submix(PolarEngine, SubmixIndex, MasterOutput);
+        polar_render_Submix(SubmixIndex, MixBuffer);
     }
 
-    for(u32 FrameIndex = 0; FrameIndex < PolarEngine.BufferFrames; ++FrameIndex)
-    {
-        MasterOutput[FrameIndex] *= Mixer->Amplitude;	
+    //Mix to master amplitude
+    for(u32 FrameIndex = 0; FrameIndex < MixBuffer->SampleCount; ++FrameIndex)
+	{
+        MixBuffer->Data[FrameIndex] *= Mixer->Amplitude;
     }
+
+    //Convert to int16 samples
+    polar_render_ConvertToInt16(Engine, MixBuffer, OutputBuffer);;
 }
 
 #endif
