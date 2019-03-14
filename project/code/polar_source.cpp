@@ -232,6 +232,9 @@ void polar_source_CreateFromFile(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_
     }
 }
 
+#define ZERO 1e-10
+#define isBetween(A, B, C) ( ((A-B) > -ZERO) && ((A-C) < ZERO) )
+
 void polar_source_Update(POLAR_MIXER *Mixer, POLAR_SOURCE *Sources, u32 &SourceIndex, f64 GlobalTime, f32 NoiseFloor)
 {
     f64 UpdatePeriod = 0.1f;
@@ -248,39 +251,71 @@ void polar_source_Update(POLAR_MIXER *Mixer, POLAR_SOURCE *Sources, u32 &SourceI
             {
                 case EN_AMPLITUDE:
                 {
-
-
-                    // printf("Index: %u\tPeriod: %f\n", PointIndex, UpdatePeriod);
-
-                    break;
-                }
-
-                case EN_FREQUENCY:
-                {
                     u32 PointIndex = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Index;
+                    f32 Current = Sources->States[SourceIndex].AmplitudeCurrent;
 
-                    if(round(Sources->Type[SourceIndex].Oscillator->FrequencyCurrent) == round(Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Value))
+                    if(PointIndex == 0)
                     {
+                        f64 Amplitude = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Value;
+                        f64 Duration = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex + 1].Time - Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Time;
+                        
+                        Sources->States[SourceIndex].FadeStartAmplitude = Sources->States[SourceIndex].AmplitudeCurrent;
+                        Sources->States[SourceIndex].FadeEndAmplitude = Amplitude;
+                        Sources->States[SourceIndex].FadeDuration = MAX(Duration, 0.0f);
+                        Sources->States[SourceIndex].FadeStartTime = GlobalTime;
+                        Sources->States[SourceIndex].IsFading = true;
+
                         ++PointIndex;
                         ++Sources->States[SourceIndex].Envelope[EnvelopeIndex].Index;
                     }
 
-                    Sources->Type[SourceIndex].Oscillator->FrequencyTarget = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Value;
-                    u32 Precision = 4;
-                    UpdatePeriod = (Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Time / Precision);
-
-                    if(UpdatePeriod <= 0.0f)
+                    else
                     {
-                        Sources->Type[SourceIndex].Oscillator->FrequencyCurrent = Sources->Type[SourceIndex].Oscillator->FrequencyTarget;
+                        if(Current != Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex + 1].Value)
+                        {
+                            f64 Amplitude = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Value;
+                            f64 Duration = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex + 1].Time - Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Time;
+                        
+                            Sources->States[SourceIndex].FadeStartAmplitude = Sources->States[SourceIndex].AmplitudeCurrent;
+                            Sources->States[SourceIndex].FadeEndAmplitude = Amplitude;
+                            Sources->States[SourceIndex].FadeDuration = MAX(Duration, 0.0f);
+                            Sources->States[SourceIndex].FadeStartTime = GlobalTime;
+                            Sources->States[SourceIndex].IsFading = true;
+
+                            ++PointIndex;
+                            ++Sources->States[SourceIndex].Envelope[EnvelopeIndex].Index;
+                        }
+                    }
+
+                    break;
+                }
+
+                //!Create a per-sample parameter struct to use for frequency ramping!
+                case EN_FREQUENCY:
+                {
+                    u32 PointIndex = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Index;
+                    f32 Current = Sources->Type[SourceIndex].Oscillator->FrequencyCurrent;
+
+                    if(PointIndex == 0)
+                    {
+                        f64 Frequency = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Value;
+                        Sources->Type[SourceIndex].Oscillator->FrequencyCurrent = Frequency;
+
+                        ++PointIndex;
+                        ++Sources->States[SourceIndex].Envelope[EnvelopeIndex].Index;
                     }
 
                     else
                     {
-                        f64 OneOverFade = 1.0f / UpdatePeriod;
-                        Sources->Type[SourceIndex].Oscillator->FrequencyDelta = (OneOverFade * (Sources->Type[SourceIndex].Oscillator->FrequencyTarget - Sources->Type[SourceIndex].Oscillator->FrequencyCurrent));
-                    }
+                        if(Current != Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex + 1].Value)
+                        {
+                            f64 Frequency = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Value;
+                            Sources->Type[SourceIndex].Oscillator->FrequencyCurrent = Frequency;
 
-                    // printf("Frequency:\tCurrent: %f\tTarget: %f\tDelta: %f\n", Sources->Type[SourceIndex].Oscillator->FrequencyCurrent, Sources->Type[SourceIndex].Oscillator->FrequencyTarget, Sources->Type[SourceIndex].Oscillator->FrequencyDelta);
+                            ++PointIndex;
+                            ++Sources->States[SourceIndex].Envelope[EnvelopeIndex].Index;
+                        }
+                    }
 
                     break;
                 }
@@ -294,19 +329,16 @@ void polar_source_Update(POLAR_MIXER *Mixer, POLAR_SOURCE *Sources, u32 &SourceI
     }
 
     //Update fades
-    if(IsEnvelope == false)
-    {
-        GlobalTime = polar_WallTime();
-        f32 TimePassed = GlobalTime - Sources->States[SourceIndex].FadeStartTime;
-        f32 FadeCompletion = TimePassed / Sources->States[SourceIndex].FadeDuration;
-        Sources->States[SourceIndex].AmplitudeCurrent = ((Sources->States[SourceIndex].FadeEndAmplitude - Sources->States[SourceIndex].FadeStartAmplitude) * FadeCompletion) + Sources->States[SourceIndex].FadeStartAmplitude;
+    GlobalTime = polar_WallTime();
+    f32 TimePassed = GlobalTime - Sources->States[SourceIndex].FadeStartTime;
+    f32 FadeCompletion = TimePassed / Sources->States[SourceIndex].FadeDuration;
+    Sources->States[SourceIndex].AmplitudeCurrent = ((Sources->States[SourceIndex].FadeEndAmplitude - Sources->States[SourceIndex].FadeStartAmplitude) * FadeCompletion) + Sources->States[SourceIndex].FadeStartAmplitude;
 
-        if(FadeCompletion >= 1.0f)
-        {
-            Sources->States[SourceIndex].AmplitudeCurrent = Sources->States[SourceIndex].FadeEndAmplitude;
-            Sources->States[SourceIndex].IsFading = false;
-            Sources->States[SourceIndex].FadeDuration = 0.0f;
-        }
+    if(FadeCompletion >= 1.0f)
+    {
+        Sources->States[SourceIndex].AmplitudeCurrent = Sources->States[SourceIndex].FadeEndAmplitude;
+        Sources->States[SourceIndex].IsFading = false;
+        Sources->States[SourceIndex].FadeDuration = 0.0f;
     }
 
     //Update distance attenuation
@@ -391,9 +423,6 @@ void polar_source_Play(POLAR_MIXER *Mixer, const char *SourceUID, f64 GlobalTime
         Sources->SampleCount[i] = ((Sources->SampleRate[i] * Sources->Channels[i])  * Duration);
     }
 
-    Sources->FX[i] = FX;
-    Sources->PlayState[i] = Playing;
-
     switch(EnvelopeType)
     {
         case EN_NONE:
@@ -413,7 +442,7 @@ void polar_source_Play(POLAR_MIXER *Mixer, const char *SourceUID, f64 GlobalTime
             Sources->States[i].IsDistanceAttenuated = true;
 
             
-            //!Source won't play unless this is called - check how amplotude is first updated/automatic fading
+            //!Source won't play unless this is called - check how amplitude is first updated/automatic fading
             polar_source_Fade(Mixer, SourceUID, GlobalTime, AmpNew, 0.001);
 
 
@@ -461,7 +490,11 @@ void polar_source_Play(POLAR_MIXER *Mixer, const char *SourceUID, f64 GlobalTime
             polar_envelope_BreakpointsFromFile(BreakpointFile, Sources->States[i].Envelope[0], Sources->States[i].Envelope[1]);
             Sources->States[i].CurrentEnvelopes = 2;
 
+            Sources->States[i].AmplitudeCurrent = 0;
+            Sources->States[i].AmplitudePrevious = Sources->States[i].AmplitudeCurrent;
+
             va_end(ArgList);
+            break;
         }
 
         default:

@@ -2,8 +2,8 @@
 #define MAX_STRING_LENGTH 64
 #define MAX_CHANNELS 4
 #define MAX_CONTAINERS 4
-#define MAX_SOURCES 128
-#define MAX_BREAKPOINTS 64
+#define MAX_SOURCES 32
+#define MAX_BREAKPOINTS 1024
 #define MAX_ENVELOPES 4
 
 #define DEFAULT_SAMPLERATE 48000
@@ -200,7 +200,24 @@ int main()
 
         //Assign a listener to the mixer
         polar_listener_Create(MasterOutput, "LN_Player");
-            
+
+        //Sine sources
+        polar_mixer_SubmixCreate(SourceArena, MasterOutput, 0, "SM_Trumpet", -1);
+        polar_mixer_ContainerCreate(MasterOutput, "SM_Trumpet", "CO_Trumpet14", -1);
+        polar_source_Create(SourceArena, MasterOutput, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_01", Mono, SO_OSCILLATOR, WV_SINE, 704.00);
+        polar_source_Create(SourceArena, MasterOutput, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_02", Mono, SO_OSCILLATOR, WV_SINE, 704.00);
+        polar_source_Create(SourceArena, MasterOutput, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_03", Mono, SO_OSCILLATOR, WV_SINE, 704.00);
+        polar_source_Create(SourceArena, MasterOutput, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_04", Mono, SO_OSCILLATOR, WV_SINE, 704.00);
+        polar_source_Create(SourceArena, MasterOutput, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_05", Mono, SO_OSCILLATOR, WV_SINE, 704.00);
+        polar_source_Create(SourceArena, MasterOutput, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_06", Mono, SO_OSCILLATOR, WV_SINE, 704.00);
+        polar_source_Create(SourceArena, MasterOutput, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_07", Mono, SO_OSCILLATOR, WV_SINE, 704.00);
+        polar_source_Create(SourceArena, MasterOutput, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_08", Mono, SO_OSCILLATOR, WV_SINE, 704.00);
+        polar_source_Create(SourceArena, MasterOutput, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_09", Mono, SO_OSCILLATOR, WV_SINE, 704.00);
+        polar_source_Create(SourceArena, MasterOutput, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_10", Mono, SO_OSCILLATOR, WV_SINE, 704.00);
+        polar_source_Create(SourceArena, MasterOutput, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_11", Mono, SO_OSCILLATOR, WV_SINE, 704.00);
+        polar_source_Create(SourceArena, MasterOutput, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_12", Mono, SO_OSCILLATOR, WV_SINE, 704.00);
+        polar_source_Create(SourceArena, MasterOutput, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_13", Mono, SO_OSCILLATOR, WV_SINE, 704.00);
+
         //File sources
         polar_mixer_SubmixCreate(SourceArena, MasterOutput, 0, "SM_FileMix", -1);
         polar_mixer_ContainerCreate(MasterOutput, "SM_FileMix", "CO_FileContainer", -1);
@@ -237,7 +254,21 @@ int main()
             if(i == 10)
             {
                 f32 StackPositions[MAX_CHANNELS] = {0.0};
-                polar_source_Play(MasterOutput, "SO_Orbifold", GlobalTime, 0, StackPositions, FX_DRY, EN_NONE, AMP(-12));
+                // polar_source_Play(MasterOutput, "SO_Orbifold", GlobalTime, 0, StackPositions, FX_DRY, EN_NONE, AMP(-12));
+
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_01", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial1.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_02", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial2.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_03", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial3.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_04", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial4.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_05", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial5.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_06", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial6.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_07", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial7.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_08", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial8.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_09", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial9.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_10", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial10.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_11", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial11.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_12", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial12.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_13", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial13.txt");
             }
 
             //Render
