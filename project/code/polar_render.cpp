@@ -5,8 +5,6 @@ void polar_render_Source(u32 &SampleRate, u64 &SampleCount, u32 SamplesToWrite, 
 {
     while(SampleCount != 0 && Type.Flag != SO_NONE)
     {
-        f64 SecondsPerSample = (1.0f / (f64) SampleRate);
-
         switch(Type.Flag)
         {
             case SO_FILE:
@@ -30,40 +28,28 @@ void polar_render_Source(u32 &SampleRate, u64 &SampleCount, u32 SamplesToWrite, 
 
             case SO_OSCILLATOR:
             {
-                f64 CurrentFreq = (Type.Oscillator->FrequencyCurrent);
-                f64 FreqDelta = (SecondsPerSample * Type.Oscillator->FrequencyDelta);
+                f32 TargetFrequency = Type.Oscillator->Frequency.Current;
 
-                bool FreqEnded = false;
-
-                if(FreqDelta != 0.0f)
+                if(fabsf(Type.Oscillator->Frequency.Previous - TargetFrequency) < 0.1e-5)
                 {
-                    f64 NewDeltaFreq = (Type.Oscillator->FrequencyTarget - CurrentFreq);
-
-                    u32 FreqSampleCount = (u32)((NewDeltaFreq / FreqDelta + 0.5f));
-                    if(SamplesToWrite > FreqSampleCount)
-                    {
-                        SamplesToWrite = FreqSampleCount;
-                        FreqEnded = true;
-                    }
-
-                    if(FreqDelta == 0)
-                    {
-                        FreqEnded = true;
+                    for(u32 FrameIndex = 0; FrameIndex < SamplesToWrite; ++FrameIndex)
+	                {
+	                	Buffer[FrameIndex] = (f32) Type.Oscillator->Tick(Type.Oscillator);
                     }
                 }
 
-                for(u32 FrameIndex = 0; FrameIndex < SamplesToWrite; ++FrameIndex)
-	            {
-	            	Buffer[FrameIndex] = (f32) Type.Oscillator->Tick(Type.Oscillator);
-
-                    CurrentFreq += FreqDelta;
-                }
-
-                Type.Oscillator->FrequencyCurrent = CurrentFreq;
-                if(FreqEnded)
+                else
                 {
-                    Type.Oscillator->FrequencyCurrent = Type.Oscillator->FrequencyTarget;
-                    Type.Oscillator->FrequencyDelta = 0.0f;
+                    f32 Current = Type.Oscillator->Frequency.Previous;
+                    f32 Step = (TargetFrequency - Current) * 1.0f / SamplesToWrite;
+
+                    for(u32 FrameIndex = 0; FrameIndex < SamplesToWrite; ++FrameIndex)
+                    {
+                        Current += Step;
+                        Buffer[FrameIndex] = (f32) Type.Oscillator->Tick(Type.Oscillator);
+                    }
+
+                    Type.Oscillator->Frequency.Previous = TargetFrequency;
                 }
 
                 break;
@@ -89,11 +75,12 @@ void polar_render_Source(u32 &SampleRate, u64 &SampleCount, u32 SamplesToWrite, 
             }
         }
 
-
         SampleCount -= SamplesToWrite;
+        
         return;  
     }
 }
+
 
 
 void polar_render_MixSources(f32 &AmplitudeCurrent, f32 &AmplitudePrevious, f32 *Buffer, POLAR_BUFFER *MixBuffer)
@@ -123,6 +110,7 @@ void polar_render_MixSources(f32 &AmplitudeCurrent, f32 &AmplitudePrevious, f32 
     }
 }
 
+
 void polar_render_Container(POLAR_SOURCE &ContainerSources, f64 ContainerAmplitude, POLAR_BUFFER *MixBuffer)
 {
     for(u8 i = 0; i <= ContainerSources.CurrentSources; ++i)
@@ -132,12 +120,17 @@ void polar_render_Container(POLAR_SOURCE &ContainerSources, f64 ContainerAmplitu
             ContainerSources.PlayState[i] = Stopped;
         }
 
+        if(ContainerSources.SampleCount[i] <= MixBuffer->SampleCount)
+        {
+            ContainerSources.PlayState[i] = Stopping;
+        }
+
         switch(ContainerSources.PlayState[i])
         {
             case Playing:
             {
                 polar_render_Source(ContainerSources.SampleRate[i], ContainerSources.SampleCount[i], MixBuffer->SampleCount, ContainerSources.Type[i], ContainerSources.FX[i], ContainerSources.Buffer[i]);
-                polar_render_MixSources(ContainerSources.States[i].AmplitudeCurrent, ContainerSources.States[i].AmplitudePrevious, ContainerSources.Buffer[i], MixBuffer);
+                polar_render_MixSources(ContainerSources.States[i].Amplitude.Current, ContainerSources.States[i].Amplitude.Previous, ContainerSources.Buffer[i], MixBuffer);
                 break;
             }
 
@@ -148,6 +141,8 @@ void polar_render_Container(POLAR_SOURCE &ContainerSources, f64 ContainerAmplitu
 
             case Stopping:
             {
+                ContainerSources.States[i].Amplitude.Current = 0.0f;
+                
                 break;
             }
 

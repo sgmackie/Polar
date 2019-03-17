@@ -25,6 +25,38 @@ size_t ReturnMin(size_t A, size_t B)
     return A < B ? A : B;
 }
 
+//https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
+u32 UpperPowerOf2(u32 A)
+{
+    A--;
+
+    A |= A >> 1;
+    A |= A >> 2;
+    A |= A >> 4;
+    A |= A >> 8;
+    A |= A >> 16;
+    
+    A++;
+    
+    return A;
+}
+
+u64 UpperPowerOf2U64(u64 A)
+{
+    A--;
+
+    A |= A >> 1;
+    A |= A >> 2;
+    A |= A >> 4;
+    A |= A >> 8;
+    A |= A >> 16;
+    A |= A >> 32;
+    
+    A++;
+    
+    return A;
+}
+
 f32 Int16ToFloat(i16 Input)
 {
     f32 Result = 0;

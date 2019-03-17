@@ -1,9 +1,11 @@
-#define MonitorRefreshHz 60
+//! Frequency not updating properly, gets worse at lower frame rates, need to check interpolation
+#define MonitorRefreshHz 120
+
 #define MAX_STRING_LENGTH 64
 #define MAX_CHANNELS 4
 #define MAX_CONTAINERS 4
-#define MAX_SOURCES 128
-#define MAX_BREAKPOINTS 64
+#define MAX_SOURCES 32
+#define MAX_BREAKPOINTS 1024
 #define MAX_ENVELOPES 4
 
 #define DEFAULT_SAMPLERATE 48000
@@ -134,7 +136,6 @@ LARGE_INTEGER win32_WallClock()
     return Result;
 }
 
-
 f32 win32_SecondsElapsed(LARGE_INTEGER Start, LARGE_INTEGER End)
 {
     f32 Result = ((f32) (End.QuadPart - Start.QuadPart) / (f32) GlobalPerformanceCounterFrequency);
@@ -196,16 +197,33 @@ int main()
         UdpSocket OSCSocket = polar_OSC_StartServer(4795);
 
         //Create mixer object that holds all submixes and their containers
-        POLAR_MIXER *MasterOutput = polar_mixer_Create(SourceArena, -1);
+        POLAR_MIXER *Master = polar_mixer_Create(SourceArena, -1);
 
         //Assign a listener to the mixer
-        polar_listener_Create(MasterOutput, "LN_Player");
-            
+        polar_listener_Create(Master, "LN_Player");
+
+        //Sine sources
+        polar_mixer_SubmixCreate(SourceArena, Master, 0, "SM_Trumpet", -1);
+        polar_mixer_ContainerCreate(Master, "SM_Trumpet", "CO_Trumpet14", -1);
+        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_01"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_02"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_03"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_04"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_05"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_06"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_07"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_08"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_09"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_10"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_11"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_12"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_13"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+
         //File sources
-        polar_mixer_SubmixCreate(SourceArena, MasterOutput, 0, "SM_FileMix", -1);
-        polar_mixer_ContainerCreate(MasterOutput, "SM_FileMix", "CO_FileContainer", -1);
-        polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_Whiterun", Stereo, SO_FILE, "audio/Whiterun48.wav");
-        polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_Orbifold", Stereo, SO_FILE, "audio/LGOrbifold48.wav");
+        polar_mixer_SubmixCreate(SourceArena, Master, 0, "SM_FileMix", -1);
+        polar_mixer_ContainerCreate(Master, "SM_FileMix", "CO_FileContainer", -1);
+        polar_source_Create(SourceArena, Master, Engine, Hash("CO_FileContainer"), Hash("SO_Whiterun"), Stereo, SO_FILE, "audio/Whiterun48.wav");
+        polar_source_Create(SourceArena, Master, Engine, Hash("CO_FileContainer"), Hash("SO_Orbifold"), Stereo, SO_FILE, "audio/LGOrbifold48.wav");
 
         //Start timings
         LARGE_INTEGER LastCounter = win32_WallClock();
@@ -218,7 +236,7 @@ int main()
         //Loop
         f64 GlobalTime = 0;
         bool GlobalRunning = true;
-        MasterOutput->Amplitude = DB(-1);
+        Master->Amplitude = DB(-1);
         printf("Polar: Playback\n");
         while(GlobalRunning)
         {
@@ -229,15 +247,31 @@ int main()
             
             //Get OSC messages from Unreal
             //!Uses std::vector for message allocation: replace with arena to be realtime safe
-            polar_OSC_UpdateMessages(MasterOutput, GlobalTime, OSCSocket, 1);
+            polar_OSC_UpdateMessages(Master, GlobalTime, OSCSocket, 5);
 
             //Update the amplitudes, durations etc of all playing sources
-            polar_source_UpdatePlaying(MasterOutput, GlobalTime, Engine.NoiseFloor);
+            polar_source_UpdatePlaying(Master, GlobalTime, Engine.NoiseFloor);
             
             if(i == 10)
             {
                 f32 StackPositions[MAX_CHANNELS] = {0.0};
-                polar_source_Play(MasterOutput, "SO_Orbifold", GlobalTime, 0, StackPositions, FX_DRY, EN_NONE, AMP(-12));
+                polar_container_Play(Master, Hash("CO_FileContainer"), GlobalTime, 3, StackPositions, FX_DRY, EN_NONE, AMP(-1));
+                polar_source_Fade(Master, Hash("SO_Orbifold"), GlobalTime, AMP(-65), 2);
+
+                //! Frequency not updating properly, gets worse at lower frame rates, need to check interpolation
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_01"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial1.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_02"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial2.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_03"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial3.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_04"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial4.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_05"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial5.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_06"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial6.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_07"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial7.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_08"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial8.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_09"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial9.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_10"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial10.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_11"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial11.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_12"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial12.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_13"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial13.txt");
             }
 
             //Render
@@ -253,6 +287,10 @@ int main()
                     MaxSampleCount = (i32) (Engine.BufferSize - WASAPI->PaddingFrames);
                     SamplesToWrite = (i32) (Engine.LatencySamples - WASAPI->PaddingFrames);
                     
+                    //Round the samples to write to the next power of 2
+                    MaxSampleCount = UpperPowerOf2(MaxSampleCount);
+                    SamplesToWrite = UpperPowerOf2(SamplesToWrite);
+
                     if(SamplesToWrite < 0)
                     {
                         UINT32 DeviceSampleCount = 0;
@@ -268,7 +306,7 @@ int main()
                 }
 
                 //Render sources
-                polar_render_Callback(&Engine, MasterOutput, MixBuffer, polar_ringbuffer_WriteData(CallbackBuffer));
+                polar_render_Callback(&Engine, Master, MixBuffer, polar_ringbuffer_WriteData(CallbackBuffer));
 
                 //Update ringbuffer addresses
                 polar_ringbuffer_WriteFinish(CallbackBuffer);

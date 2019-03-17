@@ -11,7 +11,7 @@ void polar_envelope_BreakpointsFromFile(FILE *File, POLAR_ENVELOPE &Amplitude, P
 
     while(fgets(BreakpointLine, MAX_BREAKPOINT_LINE_LENGTH, File))
     {
-        FileError = sscanf(BreakpointLine, "%f, %f, %f", &Amplitude.Points[Index].Time, &Frequency.Points[Index].Value, &Amplitude.Points[Index].Value);
+        FileError = sscanf(BreakpointLine, "%f %f %f", &Amplitude.Points[Index].Time, &Frequency.Points[Index].Value, &Amplitude.Points[Index].Value);
         
         if(FileError != 3)
         {

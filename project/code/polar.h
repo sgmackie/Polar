@@ -64,6 +64,10 @@
 #define AMP(X) DB(X)
 
 
+/*                  */
+/*  Math code  	    */
+/*                  */
+
 typedef struct VECTOR4D
 {
     f32 X;
@@ -165,6 +169,42 @@ void polar_ringbuffer_ReadFinish(POLAR_RINGBUFFER *Buffer);                     
 
 
 /*                  */
+/*  Envelope code  	*/
+/*                  */
+
+//Defines
+#define MAX_BREAKPOINT_LINE_LENGTH 64
+
+//Structs
+typedef struct POLAR_ENVELOPE_POINT
+{
+    f32 Time;
+    f32 Value;
+} POLAR_ENVELOPE_POINT;
+
+typedef struct POLAR_ENVELOPE
+{
+    u32 Assignment;
+    u32 CurrentPoints;
+    u32 Index;
+    POLAR_ENVELOPE_POINT Points[MAX_BREAKPOINTS];
+} POLAR_ENVELOPE;
+
+
+typedef struct POLAR_PER_SAMPLE_STATE
+{
+    f32 Current;
+    f32 Previous;
+    f32 StartValue;
+    f32 EndValue;
+    f32 StartTime;
+    f32 Duration;
+    bool IsFading;
+} POLAR_PER_SAMPLE_STATE;
+
+
+
+/*                  */
 /*  DSP code        */
 /*                  */
 
@@ -187,9 +227,9 @@ typedef struct POLAR_OSCILLATOR
     f32 TwoPiOverSampleRate;                        //2 * Pi / Sample rate is a constant variable
     f32 PhaseCurrent;
     f32 PhaseIncrement;                             //Store calculated phase increment
-    f32 FrequencyCurrent;
-    f32 FrequencyTarget;
-    f32 FrequencyDelta;
+    POLAR_PER_SAMPLE_STATE Frequency;
+    f64 FrequencyTarget;
+    f64 FrequencyDelta;
 } POLAR_OSCILLATOR;
 
 
@@ -266,29 +306,6 @@ void polar_StringConcatenate(size_t StringALength, const char *StringA, size_t S
 
 
 /*                  */
-/*  Envelope code  	*/
-/*                  */
-
-//Defines
-#define MAX_BREAKPOINT_LINE_LENGTH 64
-
-//Structs
-typedef struct POLAR_ENVELOPE_POINT
-{
-    f32 Time;
-    f32 Value;
-} POLAR_ENVELOPE_POINT;
-
-typedef struct POLAR_ENVELOPE
-{
-    u32 Assignment;
-    u32 CurrentPoints;
-    u32 Index;
-    POLAR_ENVELOPE_POINT Points[MAX_BREAKPOINTS];
-} POLAR_ENVELOPE;
-
-
-/*                  */
 /*  Sources code  	*/
 /*                  */
 
@@ -314,17 +331,10 @@ typedef enum POLAR_SOURCE_PLAY_STATE
 //Current state of the source
 typedef struct POLAR_SOURCE_STATE
 {
-
     f32 *PanPositions;
     
-    f32 AmplitudeCurrent;
-    f32 AmplitudePrevious;
-    f32 FadeStartAmplitude;
-    f32 FadeEndAmplitude;
-    f32 FadeDuration;
-    f32 FadeStartTime;
-    bool IsFading;
-    
+    POLAR_PER_SAMPLE_STATE Amplitude;
+
     VECTOR4D Position;
     f32 MinDistance;
     f32 MaxDistance;
@@ -352,6 +362,23 @@ typedef struct POLAR_SOURCE
     u32 BufferSize[MAX_SOURCES];
     f32 *Buffer[MAX_SOURCES];
 } POLAR_SOURCE;
+
+
+typedef struct POLAR_SOURCE_SOLO
+{
+    u64 UID;
+    POLAR_SOURCE_TYPE Type;
+    POLAR_SOURCE_PLAY_STATE PlayState;
+    POLAR_SOURCE_STATE States;
+    u32 FX;
+    u8 Channels;
+    u32 SampleRate;
+    u64 SampleCount;
+    u32 BufferSize;
+    f32 *Buffer;
+} POLAR_SOURCE_SOLO;
+
+
 
 /*                  */
 /*  Listener code   */
@@ -414,13 +441,13 @@ void polar_mixer_ContainerCreate(POLAR_MIXER *Mixer, const char SubmixUID[MAX_ST
 void polar_mixer_ContainerDestroy(POLAR_MIXER *Mixer, const char ContainerUID[MAX_STRING_LENGTH]);                                                                          //Remove container from the array
 
 //Sources
-POLAR_SOURCE *polar_source_Retrieval(POLAR_MIXER *Mixer, const char UID[MAX_STRING_LENGTH], u32 &SourceIndex);                                                              //Find a specific source and return it's struct with a given index
-void polar_source_Create(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE Engine, const char ContainerUID[MAX_STRING_LENGTH], const char SourceUID[MAX_STRING_LENGTH], u32 Channels, u32 Type, ...);
-void polar_source_CreateFromFile(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE Engine, const char *FileName);                                                       //Read CSV text file to create any sources
-void polar_source_Update(POLAR_MIXER *Mixer, POLAR_SOURCE *Sources, u32 &SourceIndex, f64 GlobalTime, f32 NoiseFloor);                                                                                                          //Internal update function used by polar_source_UpdatePlaying
-void polar_source_UpdatePlaying(POLAR_MIXER *Mixer, f64 GlobalTime, f32 NoiseFloor);                                                                                                                        //Update every playing source's current state
-void polar_source_Play(POLAR_MIXER *Mixer, const char *SourceUID, f64 GlobalTime, f32 Duration, f32 *PanPositions, u32 FX, u32 EnvelopeType, ...);                                          //Mark a source for playback
-void polar_source_Fade(POLAR_MIXER *Mixer, const char *SourceUID, f64 GlobalTime, f32 NewAmplitude, f32 Duration);                                                           //Change source amplitude with a fade over time in seconds
+// POLAR_SOURCE *polar_source_Retrieval(POLAR_MIXER *Mixer, u64 UID, u32 &SourceIndex);                                                              //Find a specific source and return it's struct with a given index
+// void polar_source_Create(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE Engine, const char ContainerUID[MAX_STRING_LENGTH], const char SourceUID[MAX_STRING_LENGTH], u32 Channels, u32 Type, ...);
+// void polar_source_CreateFromFile(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE Engine, const char *FileName);                                                       //Read CSV text file to create any sources
+// void polar_source_Update(POLAR_MIXER *Mixer, POLAR_SOURCE *Sources, u32 &SourceIndex, f64 GlobalTime, f32 NoiseFloor);                                                                                                          //Internal update function used by polar_source_UpdatePlaying
+// void polar_source_UpdatePlaying(POLAR_MIXER *Mixer, f64 GlobalTime, f32 NoiseFloor);                                                                                                                        //Update every playing source's current state
+// void polar_source_Play(POLAR_MIXER *Mixer, u64 SourceUID, f64 GlobalTime, f32 Duration, f32 *PanPositions, u32 FX, u32 EnvelopeType, ...);                                          //Mark a source for playback
+// void polar_source_Fade(POLAR_MIXER *Mixer, u64 SourceUID, f64 GlobalTime, f32 NewAmplitude, f32 Duration);                                                           //Change source amplitude with a fade over time in seconds
 
 /*                  */
 /*  Render code     */

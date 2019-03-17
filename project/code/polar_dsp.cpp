@@ -62,12 +62,14 @@ void polar_dsp_OscillatorInit(POLAR_OSCILLATOR *Oscillator, u32 SampleRate, u32 
     
     if(InitialFrequency != 0)
     {
-        Oscillator->FrequencyCurrent = InitialFrequency;
+        Oscillator->Frequency.Current = InitialFrequency;
+        Oscillator->Frequency.Previous = Oscillator->Frequency.Current;
     }
 
     else
     {
-        Oscillator->FrequencyCurrent = 0;
+        Oscillator->Frequency.Current = 0;
+        Oscillator->Frequency.Previous = Oscillator->Frequency.Current;
     }
 
     Oscillator->PhaseCurrent = 0;
@@ -101,7 +103,7 @@ f32 polar_dsp_TickSine(POLAR_OSCILLATOR *Oscillator)
 #else
     SineValue = (f32) sin(Oscillator->PhaseCurrent);
 #endif
-    Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->FrequencyCurrent; //Load atomic value, multiply to get the phase increment
+    Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->Frequency.Current; //Load atomic value, multiply to get the phase increment
     Oscillator->PhaseCurrent += Oscillator->PhaseIncrement; //Increase phase by the calculated cycle increment
     
     polar_dsp_PhaseWrap(Oscillator->PhaseCurrent);
@@ -114,7 +116,7 @@ f32 polar_dsp_TickSquare(POLAR_OSCILLATOR *Oscillator)
 {
     f32 SquareValue;
     
-    Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->FrequencyCurrent;
+    Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->Frequency.Current;
     
     if(Oscillator->PhaseCurrent <= PI32)
     {
@@ -139,7 +141,7 @@ f32 polar_dsp_TickSawDown(POLAR_OSCILLATOR *Oscillator)
     
     SawDownValue = ((-1.0) * (Oscillator->PhaseCurrent * (1.0 / TWO_PI32)));
 
-    Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->FrequencyCurrent;
+    Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->Frequency.Current;
     Oscillator->PhaseCurrent += Oscillator->PhaseIncrement;
     
     polar_dsp_PhaseWrap(Oscillator->PhaseCurrent);
@@ -154,7 +156,7 @@ f32 polar_dsp_TickSawUp(POLAR_OSCILLATOR *Oscillator)
     
     SawUpValue = ((2.0 * (Oscillator->PhaseCurrent * (1.0 / TWO_PI32))) - 1.0);
 
-    Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->FrequencyCurrent;
+    Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->Frequency.Current;
     Oscillator->PhaseCurrent += Oscillator->PhaseIncrement;
     
     polar_dsp_PhaseWrap(Oscillator->PhaseCurrent);
@@ -176,7 +178,7 @@ f32 polar_dsp_TickTriangle(POLAR_OSCILLATOR *Oscillator)
     
     TriangleValue = (2.0 * (TriangleValue - 0.5));
 
-    Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->FrequencyCurrent;
+    Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->Frequency.Current;
     Oscillator->PhaseCurrent += Oscillator->PhaseIncrement;
     
     polar_dsp_PhaseWrap(Oscillator->PhaseCurrent);
