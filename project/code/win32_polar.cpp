@@ -255,6 +255,7 @@ int main()
             if(i == 10)
             {
                 f32 StackPositions[MAX_CHANNELS] = {0.0};
+<<<<<<< HEAD
                 polar_container_Play(Master, Hash("CO_FileContainer"), GlobalTime, 3, StackPositions, FX_DRY, EN_NONE, AMP(-1));
                 polar_source_Fade(Master, Hash("SO_Orbifold"), GlobalTime, AMP(-65), 2);
 
@@ -272,6 +273,23 @@ int main()
                 // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_11"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial11.txt");
                 // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_12"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial12.txt");
                 // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_13"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial13.txt");
+=======
+                // polar_source_Play(MasterOutput, "SO_Orbifold", GlobalTime, 0, StackPositions, FX_DRY, EN_NONE, AMP(-12));
+
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_01", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial1.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_02", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial2.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_03", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial3.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_04", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial4.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_05", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial5.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_06", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial6.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_07", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial7.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_08", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial8.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_09", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial9.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_10", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial10.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_11", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial11.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_12", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial12.txt");
+                // polar_source_Play(MasterOutput, "SO_Trumpet14_Partial_13", GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial13.txt");
+>>>>>>> origin/CUDA
             }
 
             //Render

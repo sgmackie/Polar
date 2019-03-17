@@ -274,6 +274,7 @@ void polar_source_CreateFromFile(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_
     }
 }
 
+<<<<<<< HEAD
 void polar_source_UpdatePerSampleState(f64 GlobalTime, POLAR_PER_SAMPLE_STATE *State)
 {
     f32 TimePassed = (GlobalTime - State->StartTime);
@@ -288,6 +289,10 @@ void polar_source_UpdatePerSampleState(f64 GlobalTime, POLAR_PER_SAMPLE_STATE *S
     }
 }
 
+=======
+#define ZERO 1e-10
+#define isBetween(A, B, C) ( ((A-B) > -ZERO) && ((A-C) < ZERO) )
+>>>>>>> origin/CUDA
 
 void polar_source_Update(POLAR_MIXER *Mixer, POLAR_SOURCE *Sources, u32 &SourceIndex, f64 GlobalTime, f32 NoiseFloor)
 {
@@ -305,18 +310,30 @@ void polar_source_Update(POLAR_MIXER *Mixer, POLAR_SOURCE *Sources, u32 &SourceI
                 case EN_AMPLITUDE:
                 {
                     u32 PointIndex = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Index;
+<<<<<<< HEAD
                     f32 Current = Sources->States[SourceIndex].Amplitude.Current;
+=======
+                    f32 Current = Sources->States[SourceIndex].AmplitudeCurrent;
+>>>>>>> origin/CUDA
 
                     if(PointIndex == 0)
                     {
                         f64 Amplitude = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Value;
                         f64 Duration = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex + 1].Time - Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Time;
                         
+<<<<<<< HEAD
                         Sources->States[SourceIndex].Amplitude.StartValue = Sources->States[SourceIndex].Amplitude.Current;
                         Sources->States[SourceIndex].Amplitude.EndValue = Amplitude;
                         Sources->States[SourceIndex].Amplitude.Duration = MAX(Duration, 0.0f);
                         Sources->States[SourceIndex].Amplitude.StartTime = GlobalTime;
                         Sources->States[SourceIndex].Amplitude.IsFading = true;
+=======
+                        Sources->States[SourceIndex].FadeStartAmplitude = Sources->States[SourceIndex].AmplitudeCurrent;
+                        Sources->States[SourceIndex].FadeEndAmplitude = Amplitude;
+                        Sources->States[SourceIndex].FadeDuration = MAX(Duration, 0.0f);
+                        Sources->States[SourceIndex].FadeStartTime = GlobalTime;
+                        Sources->States[SourceIndex].IsFading = true;
+>>>>>>> origin/CUDA
 
                         ++PointIndex;
                         ++Sources->States[SourceIndex].Envelope[EnvelopeIndex].Index;
@@ -329,11 +346,19 @@ void polar_source_Update(POLAR_MIXER *Mixer, POLAR_SOURCE *Sources, u32 &SourceI
                             f64 Amplitude = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Value;
                             f64 Duration = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex + 1].Time - Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Time;
                         
+<<<<<<< HEAD
                             Sources->States[SourceIndex].Amplitude.StartValue = Sources->States[SourceIndex].Amplitude.Current;
                             Sources->States[SourceIndex].Amplitude.EndValue = Amplitude;
                             Sources->States[SourceIndex].Amplitude.Duration = MAX(Duration, 0.0f);
                             Sources->States[SourceIndex].Amplitude.StartTime = GlobalTime;
                             Sources->States[SourceIndex].Amplitude.IsFading = true;
+=======
+                            Sources->States[SourceIndex].FadeStartAmplitude = Sources->States[SourceIndex].AmplitudeCurrent;
+                            Sources->States[SourceIndex].FadeEndAmplitude = Amplitude;
+                            Sources->States[SourceIndex].FadeDuration = MAX(Duration, 0.0f);
+                            Sources->States[SourceIndex].FadeStartTime = GlobalTime;
+                            Sources->States[SourceIndex].IsFading = true;
+>>>>>>> origin/CUDA
 
                             ++PointIndex;
                             ++Sources->States[SourceIndex].Envelope[EnvelopeIndex].Index;
@@ -343,15 +368,24 @@ void polar_source_Update(POLAR_MIXER *Mixer, POLAR_SOURCE *Sources, u32 &SourceI
                     break;
                 }
 
+                //!Create a per-sample parameter struct to use for frequency ramping!
                 case EN_FREQUENCY:
                 {
                     u32 PointIndex = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Index;
+<<<<<<< HEAD
                     f32 Current = Sources->Type[SourceIndex].Oscillator->Frequency.Current;
+=======
+                    f32 Current = Sources->Type[SourceIndex].Oscillator->FrequencyCurrent;
+>>>>>>> origin/CUDA
 
                     if(PointIndex == 0)
                     {
                         f64 Frequency = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Value;
+<<<<<<< HEAD
                         Sources->Type[SourceIndex].Oscillator->Frequency.Current = Frequency;
+=======
+                        Sources->Type[SourceIndex].Oscillator->FrequencyCurrent = Frequency;
+>>>>>>> origin/CUDA
 
                         ++PointIndex;
                         ++Sources->States[SourceIndex].Envelope[EnvelopeIndex].Index;
@@ -362,7 +396,11 @@ void polar_source_Update(POLAR_MIXER *Mixer, POLAR_SOURCE *Sources, u32 &SourceI
                         if(Current != Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex + 1].Value)
                         {
                             f64 Frequency = Sources->States[SourceIndex].Envelope[EnvelopeIndex].Points[PointIndex].Value;
+<<<<<<< HEAD
                             Sources->Type[SourceIndex].Oscillator->Frequency.Current = Frequency;
+=======
+                            Sources->Type[SourceIndex].Oscillator->FrequencyCurrent = Frequency;
+>>>>>>> origin/CUDA
 
                             ++PointIndex;
                             ++Sources->States[SourceIndex].Envelope[EnvelopeIndex].Index;
@@ -380,6 +418,7 @@ void polar_source_Update(POLAR_MIXER *Mixer, POLAR_SOURCE *Sources, u32 &SourceI
         }
     }
 
+<<<<<<< HEAD
     //Update per-sample parameters
     if(Sources->States[SourceIndex].Amplitude.IsFading)
     {
@@ -397,6 +436,19 @@ void polar_source_Update(POLAR_MIXER *Mixer, POLAR_SOURCE *Sources, u32 &SourceI
                 Sources->Type[SourceIndex].Oscillator->Frequency.Current = 0;
             }
         }
+=======
+    //Update fades
+    GlobalTime = polar_WallTime();
+    f32 TimePassed = GlobalTime - Sources->States[SourceIndex].FadeStartTime;
+    f32 FadeCompletion = TimePassed / Sources->States[SourceIndex].FadeDuration;
+    Sources->States[SourceIndex].AmplitudeCurrent = ((Sources->States[SourceIndex].FadeEndAmplitude - Sources->States[SourceIndex].FadeStartAmplitude) * FadeCompletion) + Sources->States[SourceIndex].FadeStartAmplitude;
+
+    if(FadeCompletion >= 1.0f)
+    {
+        Sources->States[SourceIndex].AmplitudeCurrent = Sources->States[SourceIndex].FadeEndAmplitude;
+        Sources->States[SourceIndex].IsFading = false;
+        Sources->States[SourceIndex].FadeDuration = 0.0f;
+>>>>>>> origin/CUDA
     }
 
     //Update distance attenuation
@@ -476,10 +528,19 @@ void polar_source_Fade(POLAR_MIXER *Mixer, u64 SourceUID, f64 GlobalTime, f32 Ne
         return;
     }
 
+<<<<<<< HEAD
     polar_source_CopyToContainer(Source, Sources, i);
 
     return; 
 }
+=======
+    switch(EnvelopeType)
+    {
+        case EN_NONE:
+        {
+            va_list ArgList;
+            va_start(ArgList, EnvelopeType);
+>>>>>>> origin/CUDA
 
 
 
@@ -493,7 +554,13 @@ void polar_source_Play(POLAR_MIXER *Mixer, u64 SourceUID, f64 GlobalTime, f32 Du
         return;
     }
 
+<<<<<<< HEAD
     POLAR_SOURCE_SOLO Source = polar_source_CopyFromContainer(Sources, i);
+=======
+            
+            //!Source won't play unless this is called - check how amplitude is first updated/automatic fading
+            polar_source_Fade(Mixer, SourceUID, GlobalTime, AmpNew, 0.001);
+>>>>>>> origin/CUDA
 
     if(Source.UID)
     {
