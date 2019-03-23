@@ -234,7 +234,7 @@ void polar_mixer_ContainerCreate(POLAR_MIXER *Mixer, const char SubmixUID[MAX_ST
                 if(SubmixIndex->Containers.UID[i] == 0)
                 {
                     SubmixIndex->Containers.UID[i] = ContainerHash;
-                    SubmixIndex->Containers.Amplitude[i] = DB(Amplitude);
+                    SubmixIndex->Containers.Amplitude[i] = Amplitude;
                     SubmixIndex->Containers.FX[i] = FX_DRY;
 
                     SubmixIndex->Containers.CurrentContainers += 1;
@@ -253,7 +253,7 @@ void polar_mixer_ContainerCreate(POLAR_MIXER *Mixer, const char SubmixUID[MAX_ST
                     if(ChildSubmixIndex->Containers.UID[i] == 0)
                     {
                         ChildSubmixIndex->Containers.UID[i] = ContainerHash;
-                        ChildSubmixIndex->Containers.Amplitude[i] = DB(Amplitude);
+                        ChildSubmixIndex->Containers.Amplitude[i] = Amplitude;
                         ChildSubmixIndex->Containers.FX[i] = FX_DRY;
 
                         ChildSubmixIndex->Containers.CurrentContainers += 1;

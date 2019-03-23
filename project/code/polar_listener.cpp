@@ -121,6 +121,8 @@ VECTOR4D TransformToListener(VECTOR4D Source, VECTOR4D Listener)
 
     // printf("X: %f\tY: %f\tZ: %f\tW: %f\n", RelativePostion.X, RelativePostion.Y, RelativePostion.Z, RelativePostion.W);
 
+    
+
     return RelativePostion;
 }
 
@@ -130,10 +132,8 @@ VECTOR4D TransformToListener(VECTOR4D Source, VECTOR4D Listener)
 // Purpose: Input handler for fading in volume over time.
 // Input  : Float volume fade in time 0 - 100 seconds
 //-----------------------------------------------------------------------------
-f32 polar_listener_DistanceFromListener(POLAR_LISTENER *Listener, POLAR_SOURCE_STATE &State, f32 NoiseFloor)
+void polar_listener_DistanceFromListener(POLAR_LISTENER *Listener, POLAR_SOURCE_STATE &State, f32 NoiseFloor)
 {
-    f32 Result = 0;
-
     if(State.RolloffDirty)
     {
         State.RolloffFactor = NoiseFloor / powf((State.MaxDistance - State.MinDistance), State.Rolloff);
@@ -141,13 +141,18 @@ f32 polar_listener_DistanceFromListener(POLAR_LISTENER *Listener, POLAR_SOURCE_S
     }
 
     VECTOR4D Posi = TransformToListener(State.Position, Listener->Position);
-    f32 DistanceFromListener = VectorLength(Posi);
-    if(DistanceFromListener > State.MinDistance)
+    
+    State.DistanceFromListener = VectorLength(Posi);
+    
+    if(State.DistanceFromListener > State.MinDistance)
     {
-        Result = (State.RolloffFactor * powf((DistanceFromListener - State.MinDistance), State.Rolloff));
+        State.DistanceAttenuation = (State.RolloffFactor * powf((State.DistanceFromListener - State.MinDistance), State.Rolloff));
     }
 
-    return Result;
+    else
+    {
+        State.DistanceAttenuation = 0.0f;
+    }
 }
 
 #endif

@@ -1,12 +1,16 @@
-//Perfomance defines (will change stack allocation sizes for things like max sources per container)
-#define MAX_STRING_LENGTH 128
+#define MAX_STRING_LENGTH 64
 #define MAX_CHANNELS 4
 #define MAX_CONTAINERS 4
-#define MAX_SOURCES 128
-#define MAX_BREAKPOINTS 64
+#define MAX_SOURCES 32
+#define MAX_BREAKPOINTS 1024
 #define MAX_ENVELOPES 4
-#define DEFAULT_AMPLITUDE 0.8
+
 #define DEFAULT_SAMPLERATE 48000
+#define DEFAULT_CHANNELS 2
+#define DEFAULT_LATENCY_FRAMES 2
+#define DEFAULT_AMPLITUDE 0.8
+
+#define MONITOR_HZ 120
 
 #include "polar.h"
 #include "../external/external_code.h"
@@ -17,14 +21,14 @@ global_scope char AssetPath[MAX_STRING_LENGTH] = {"../../data/"};
 #include "polar.cpp"
 
 //ALSA setup
-ALSA_DATA *linux_ALSA_Create(MEMORY_ARENA *Arena, i32 &FramesAvailable, u32 UserSampleRate, u16 UserChannels, u32 UserFrames)
+ALSA_DATA *linux_ALSA_Create(MEMORY_ARENA *Arena, u32 SampleRate, u32 BufferSize)
 {
     ALSA_DATA *Result = 0;
     Result = (ALSA_DATA *) memory_arena_Push(Arena, Result, (sizeof (ALSA_DATA)));
-    Result->SampleRate = UserSampleRate;
+    Result->SampleRate = SampleRate;
     Result->ALSAResample = 1;
-    Result->Channels = UserChannels;
-    Result->Frames = UserFrames;
+    Result->Channels = 2;
+    Result->Frames = BufferSize;
 
     //Error handling code passed to snd_strerror()
     Result->ALSAError = 0;
@@ -33,7 +37,6 @@ ALSA_DATA *linux_ALSA_Create(MEMORY_ARENA *Arena, i32 &FramesAvailable, u32 User
     ERR_TO_RETURN(Result->ALSAError, "Failed to open default audio device", nullptr);
 
     Result->HardwareParameters = (snd_pcm_hw_params_t *) memory_arena_Push(Arena, Result->HardwareParameters, (sizeof (Result->HardwareParameters)));
-    Result->SoftwareParameters = (snd_pcm_sw_params_t *) memory_arena_Push(Arena, Result->SoftwareParameters, (sizeof (Result->SoftwareParameters)));
 
     Result->ALSAError = snd_pcm_hw_params_any(Result->Device, Result->HardwareParameters);
     ERR_TO_RETURN(Result->ALSAError, "Failed to initialise hardware parameters", nullptr);
@@ -41,7 +44,7 @@ ALSA_DATA *linux_ALSA_Create(MEMORY_ARENA *Arena, i32 &FramesAvailable, u32 User
     Result->ALSAError = snd_pcm_hw_params_set_access(Result->Device, Result->HardwareParameters, SND_PCM_ACCESS_RW_INTERLEAVED);
     ERR_TO_RETURN(Result->ALSAError, "Failed to set PCM read and write access", nullptr);
 
-    Result->ALSAError = snd_pcm_hw_params_set_format(Result->Device, Result->HardwareParameters, SND_PCM_FORMAT_FLOAT);
+    Result->ALSAError = snd_pcm_hw_params_set_format(Result->Device, Result->HardwareParameters, SND_PCM_FORMAT_S16);
     ERR_TO_RETURN(Result->ALSAError, "Failed to set PCM output format", nullptr);
 
     Result->ALSAError = snd_pcm_hw_params_set_rate(Result->Device, Result->HardwareParameters, Result->SampleRate, 0);
@@ -53,43 +56,11 @@ ALSA_DATA *linux_ALSA_Create(MEMORY_ARENA *Arena, i32 &FramesAvailable, u32 User
     Result->ALSAError = snd_pcm_hw_params_set_channels(Result->Device, Result->HardwareParameters, Result->Channels);
     ERR_TO_RETURN(Result->ALSAError, "Failed to set channels", nullptr);
 
-    Result->ALSAError = snd_pcm_hw_params_set_period_size_near(Result->Device, Result->HardwareParameters, (snd_pcm_uframes_t *) &Result->Frames, 0);
-    ERR_TO_RETURN(Result->ALSAError, "Failed to set hardware buffer size", nullptr);
-
     Result->ALSAError = snd_pcm_hw_params(Result->Device, Result->HardwareParameters);
     ERR_TO_RETURN(Result->ALSAError, "Failed to set period", nullptr);
 
-    Result->ALSAError = snd_pcm_sw_params_current(Result->Device, Result->SoftwareParameters);
-    ERR_TO_RETURN(Result->ALSAError, "Failed to get current software parameters", nullptr);
-
-    Result->ALSAError = snd_pcm_sw_params_set_avail_min(Result->Device, Result->SoftwareParameters, Result->Frames);
-    ERR_TO_RETURN(Result->ALSAError, "Failed to set software available frames", nullptr);
-
-    Result->ALSAError = snd_pcm_sw_params_set_start_threshold(Result->Device, Result->SoftwareParameters, 0);
-    ERR_TO_RETURN(Result->ALSAError, "Failed to set software available frames", nullptr);
-    
-    Result->ALSAError = snd_pcm_sw_params(Result->Device, Result->SoftwareParameters);
-    ERR_TO_RETURN(Result->ALSAError, "Failed to set software parameters", nullptr);
-    
     Result->ALSAError = snd_pcm_prepare(Result->Device);
     ERR_TO_RETURN(Result->ALSAError, "Failed to start PCM device", nullptr);
-
-    Result->ALSAError = snd_pcm_hw_params_get_period_size_min(Result->HardwareParameters, &Result->PeriodSizeMin, 0);
-    ERR_TO_RETURN(Result->ALSAError, "Failed to get minimum period size", nullptr);
-
-    Result->ALSAError = snd_pcm_hw_params_get_period_size_max(Result->HardwareParameters, &Result->PeriodSizeMax, 0);
-    ERR_TO_RETURN(Result->ALSAError, "Failed to get maximum period size", nullptr);
-
-    Result->ALSAError = snd_pcm_hw_params_get_buffer_size_min(Result->HardwareParameters, &Result->BufferSizeMin);
-    ERR_TO_RETURN(Result->ALSAError, "Failed to get minimum buffer size", nullptr);
-
-    Result->ALSAError = snd_pcm_hw_params_get_buffer_size_max(Result->HardwareParameters, &Result->BufferSizeMax);
-    ERR_TO_RETURN(Result->ALSAError, "Failed to get maximum buffer size", nullptr);
-
-    Result->ALSAError = snd_pcm_hw_params_get_periods(Result->HardwareParameters, &Result->Periods, 0);
-    ERR_TO_RETURN(Result->ALSAError, "Failed to get period count", nullptr);
-
-    FramesAvailable = (Result->PeriodSizeMin * Result->Channels);
 
     return Result;
 }
@@ -103,33 +74,20 @@ void linux_ALSA_Destroy(MEMORY_ARENA *Arena, ALSA_DATA *ALSA)
     memory_arena_Pull(Arena);
 }
 
-void linux_ALSA_Callback(ALSA_DATA *ALSA, POLAR_ENGINE PolarEngine, POLAR_MIXER *Mixer, POLAR_RINGBUFFER *CallbackBuffer)
+void linux_ALSA_Callback(ALSA_DATA *ALSA, u32 SampleCount, u32 Channels, i16 *OutputBuffer)
 {
-    snd_pcm_wait(ALSA->Device, -1);
-
-    if(polar_ringbuffer_WriteCheck(CallbackBuffer))
+    ALSA->FramesWritten = snd_pcm_writei(ALSA->Device, OutputBuffer, SampleCount);
+    if(ALSA->FramesWritten < 0)
     {
-        Callback(PolarEngine, Mixer, polar_ringbuffer_WriteData(CallbackBuffer));
-        polar_ringbuffer_WriteFinish(CallbackBuffer);
+        ALSA->FramesWritten = snd_pcm_recover(ALSA->Device, ALSA->FramesWritten, 0);
     }
-
-    if(polar_ringbuffer_ReadCheck(CallbackBuffer))
+    if(ALSA->FramesWritten < 0) 
     {
-        ALSA->FramesWritten = snd_pcm_writei(ALSA->Device, polar_ringbuffer_ReadData(CallbackBuffer), (PolarEngine.BufferSize / PolarEngine.Channels));
-        if(ALSA->FramesWritten < 0)
-        {
-            ALSA->FramesWritten = snd_pcm_recover(ALSA->Device, ALSA->FramesWritten, 0);
-        }
-        if(ALSA->FramesWritten < 0) 
-        {
-            ERR_TO_RETURN(ALSA->FramesWritten, "ALSA: Failed to write any output frames! snd_pcm_writei()", NONE);
-        }
-        if(ALSA->FramesWritten > 0 && ALSA->FramesWritten < (PolarEngine.BufferSize / PolarEngine.Channels))
-        {
-            printf("ALSA: Short write!\tExpected %i, wrote %li\n", (PolarEngine.BufferSize / PolarEngine.Channels), ALSA->FramesWritten);
-        }
-
-        polar_ringbuffer_ReadFinish(CallbackBuffer);
+        // ERR_TO_RETURN(ALSA->FramesWritten, "ALSA: Failed to write any output frames! snd_pcm_writei()", NONE);
+    }
+    if(ALSA->FramesWritten > 0 && ALSA->FramesWritten < (SampleCount / Channels))
+    {
+        // printf("ALSA: Short write!\tExpected %i, wrote %li\n",  (SampleCount / Channels), ALSA->FramesWritten);
     }
 }
 
@@ -150,142 +108,181 @@ f32 linux_SecondsElapsed(timespec Start, timespec End)
 int main(int argc, char *argv[])
 {
     //Allocate memory
-    MEMORY_ARENA *EngineArena = memory_arena_Create(Kilobytes(500));
+    MEMORY_ARENA *EngineArena = memory_arena_Create(Kilobytes(100));
     MEMORY_ARENA *SourceArena = memory_arena_Create(Megabytes(100));
 
     //Define engine update rate
-    f32 EngineUpdateRate = 60;
-    f32 TargetSecondsPerFrame = 1.0f / (f32) EngineUpdateRate;
-
-    //Fill out engine properties
     POLAR_ENGINE Engine = {};
-    i32 FramesAvailable = 0;
-    ALSA_DATA *ALSA =      linux_ALSA_Create(EngineArena, FramesAvailable, 48000, 2, 512);
-    Engine.BufferSize =  FramesAvailable;
-    Engine.Channels =      ALSA->Channels;
-    Engine.SampleRate =    ALSA->SampleRate;
-
-    //Define the callback and channel summing functions
-    Callback = &polar_render_Callback;
-    switch(Engine.Channels)
-    {
-        case 2:
-        {
-            Summing = &polar_render_SumStereo;
-            break;
-        }
-        default:
-        {
-            Summing = &polar_render_SumStereo;
-            break;
-        }
-    }
+    Engine.UpdateRate = MONITOR_HZ / 2;
+    f32 TargetSecondsPerFrame = 1.0f / (f32) Engine.UpdateRate;
 
     //PCG Random Setup
     i32 Rounds = 5;
     pcg32_srandom(time(NULL) ^ (intptr_t) &printf, (intptr_t) &Rounds);
 
-    //Create ringbuffer with a specified block count (default is 3)
-    POLAR_RINGBUFFER *CallbackBuffer = polar_ringbuffer_Create(EngineArena, Engine.BufferSize, 3);
-
-    //Create mixer object that holds all submixes and their containers
-    POLAR_MIXER *MasterOutput = polar_mixer_Create(SourceArena, -1);
+    //Start ALSA
+    ALSA_DATA *ALSA = linux_ALSA_Create(EngineArena, DEFAULT_SAMPLERATE, DEFAULT_SAMPLERATE);
     
-    //Sine sources
-    polar_mixer_SubmixCreate(SourceArena, MasterOutput, 0, "SM_SineChordMix", -1);
-    polar_mixer_ContainerCreate(MasterOutput, "SM_SineChordMix", "CO_ChordContainer", -1);
-    polar_source_CreateFromFile(SourceArena, MasterOutput, Engine, "asset_lists/Source_Import.txt");
+    //Fill out engine properties
+    Engine.NoiseFloor = AMP(-50);
+    Engine.SampleRate = ALSA->SampleRate;
+    Engine.Channels = ALSA->Channels;
+    Engine.BytesPerSample = sizeof(i16) * Engine.Channels;
+    Engine.BufferSize = ALSA->Frames;
+    Engine.LatencySamples = DEFAULT_LATENCY_FRAMES * (Engine.SampleRate / Engine.UpdateRate);
 
-    //File sources
-    polar_mixer_SubmixCreate(SourceArena, MasterOutput, 0, "SM_FileMix", -1);
-    polar_mixer_ContainerCreate(MasterOutput, "SM_FileMix", "CO_FileContainer", -1);
-    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_WPN_Phasor", Stereo, SO_FILE, "audio/wpn_phasor.wav");
-    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_AMB_Forest_01", Stereo, SO_FILE, "audio/amb_river.wav");
-    polar_source_Create(SourceArena, MasterOutput, Engine, "CO_FileContainer", "SO_Whiterun", Stereo, SO_FILE, "audio/Whiterun48.wav");
+    //Buffer size:
+    //The max buffer size is 1 second worth of samples
+    //LatencySamples determines how many samples to render at a given frame delay (default is 2)
+    //The sample count to write for each callback is the LatencySamples - any padding from the audio device
 
-    //OSC setup
-    UdpSocket OSCSocket = polar_OSC_StartServer(4795);
-
-    //Silent first loop
-    printf("Polar: Pre-roll silence\n");
-    MasterOutput->Amplitude = DB(-99);
-    for(u32 i = 0; i < 60; ++i)
+    //Create ringbuffer with a specified block count (default is 3)
+    POLAR_RINGBUFFER *CallbackBuffer = polar_ringbuffer_Create(EngineArena, Engine.BufferSize, DEFAULT_LATENCY_FRAMES);
+    
+    //Create a temporary mixing buffer 
+    POLAR_BUFFER *MixBuffer = 0;
+    MixBuffer = (POLAR_BUFFER *) memory_arena_Push(EngineArena, MixBuffer, (sizeof(POLAR_BUFFER)));
+    MixBuffer->SampleCount = Engine.BufferSize;
+    MixBuffer->Data = (f32 *) memory_arena_Push(EngineArena, MixBuffer, MixBuffer->SampleCount);
+    
+    if(ALSA && CallbackBuffer && MixBuffer)
     {
-        linux_ALSA_Callback(ALSA, Engine, MasterOutput, CallbackBuffer);
-    }
+        //OSC setup
+        UdpSocket OSCSocket = polar_OSC_StartServer(4795);
 
-    //Start timings
-    timespec LastCounter = linux_WallClock();
-    timespec FlipWallClock = linux_WallClock();
+        //Create mixer object that holds all submixes and their containers
+        POLAR_MIXER *Master = polar_mixer_Create(SourceArena, -1);
 
-    //Loop
-    printf("Polar: Playback\n");
-    MasterOutput->Amplitude = DB(-6);
-    for(u32 i = 0; i < 2000; ++i)
-    {
-        //!Uses std::vector for message allocation: replace with arena to be realtime safe
-        polar_OSC_UpdateMessages(MasterOutput, OSCSocket, 1);
+        //Assign a listener to the mixer
+        polar_listener_Create(Master, "LN_Player");
 
-        polar_source_UpdatePlaying(MasterOutput);
+        //File sources
+        polar_mixer_SubmixCreate(SourceArena, Master, 0, "SM_FileMix", -1);
+        polar_mixer_ContainerCreate(Master, "SM_FileMix", "CO_FileContainer", AMP(-1));
+        polar_source_Create(SourceArena, Master, Engine, Hash("CO_FileContainer"), Hash("SO_Whiterun"), Stereo, SO_FILE, "audio/Whiterun48.wav");
+        polar_source_Create(SourceArena, Master, Engine, Hash("CO_FileContainer"), Hash("SO_Orbifold"), Stereo, SO_FILE, "audio/LGOrbifold48.wav");
 
-        if(i == 100)
+        //Start timings
+        timespec LastCounter = linux_WallClock();
+        timespec FlipWallClock = linux_WallClock();
+
+        i64 i = 0;
+
+        //Loop
+        f64 GlobalTime = 0;
+        bool GlobalRunning = true;
+        printf("Polar: Playback\n");
+        while(GlobalRunning)
         {
-            f32 StackPositions[MAX_CHANNELS] = {0.0};
+            ++i;
 
-            polar_source_Play(MasterOutput, "SO_SineChord_Segment_A", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
-            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_B", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
-            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_C", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
-            // polar_source_Play(MasterOutput, "SO_SineChord_Segment_D", 9, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/breaks2.txt");
+            //Updates
+            //Calculate size of callback sample block
+            i32 MaxSampleCount = (i32) (Engine.BufferSize);
+            i32 SamplesToWrite = (i32) (Engine.LatencySamples);
 
-            // polar_source_Play(MasterOutput, "SO_Whiterun", 8, StackPositions, FX_DRY, EN_NONE, AMP(-1));
-        }
+            //Round the samples to write to the next power of 2
+            MaxSampleCount = UpperPowerOf2(MaxSampleCount);
+            SamplesToWrite = UpperPowerOf2(SamplesToWrite);
 
-        //Callback
-        linux_ALSA_Callback(ALSA, Engine, MasterOutput, CallbackBuffer);
-        // printf("ALSA: Frames written:\t%ld\n", ALSA->FramesWritten);
-
-        //End performance timings
-        FlipWallClock = linux_WallClock();
-
-        //Check rendering work elapsed and sleep if time remaining
-        timespec WorkCounter = linux_WallClock();
-        f32 WorkSecondsElapsed = linux_SecondsElapsed(LastCounter, WorkCounter);
-        f32 SecondsElapsedForFrame = WorkSecondsElapsed;
-
-        //If the rendering finished under the target seconds, then sleep until the next update
-        if(SecondsElapsedForFrame < TargetSecondsPerFrame)
-        {
-            //!Sleep causes buffer underruns, sleeping for too long? Actually measure latency to compensate for this
-            f32 SleepTimeInMS = (1000.0f * (TargetSecondsPerFrame - SecondsElapsedForFrame));
-            
-            f32 ALSALatency = 6.0f; //!Arbitrary value
-            SleepTimeInMS -= ALSALatency;
-            u64 SleepTimeInNS = (u32) SleepTimeInMS * 1000000;
-            
-            timespec SleepTimer = {};
-            SleepTimer.tv_nsec = SleepTimeInNS;
-
-            if(SleepTimeInMS > 0)
+            if(SamplesToWrite < 0)
             {
-                // printf("Polar: Sleeping for %fms\n", (f32) SleepTimeInMS);
-                nanosleep(&SleepTimer, 0);
+                snd_pcm_hw_params_get_buffer_size(ALSA->HardwareParameters, (u64 *) &SamplesToWrite);
             }
+
+            Assert(SamplesToWrite <= MaxSampleCount);
+            MixBuffer->SampleCount = SamplesToWrite;
+            snd_pcm_hw_params_set_buffer_size(ALSA->Device, ALSA->HardwareParameters, SamplesToWrite);
+            
+            //Check the minimum update period for per-sample stepping states
+            f64 MinPeriod = ((f64) SamplesToWrite / (f64) Engine.SampleRate);
+
+            //Get current time for update functions
+            GlobalTime = polar_WallTime();
+
+            //Get OSC messages from Unreal
+            //!Uses std::vector for message allocation: replace with arena to be realtime safe
+            polar_OSC_UpdateMessages(Master, GlobalTime, OSCSocket, 1);
+
+            //Update the amplitudes, durations etc of all playing sources
+            polar_source_UpdatePlaying(Master, GlobalTime, MinPeriod, Engine.NoiseFloor);
+
+            if(i == 10)
+            {
+                f32 StackPositions[MAX_CHANNELS] = {0.0};
+                // polar_container_Play(Master, Hash("CO_FileContainer"), 0, StackPositions, FX_DRY, EN_NONE, AMP(-1));
+                
+                polar_source_Play(Master, Hash("SO_Whiterun"), 0, StackPositions, FX_DRY, EN_NONE, AMP(-1));
+            }
+
+
+            //Render
+            //Write data
+            if(polar_ringbuffer_WriteCheck(CallbackBuffer))
+            {
+                //Render sources
+                polar_render_Callback(&Engine, Master, MixBuffer, polar_ringbuffer_WriteData(CallbackBuffer));
+
+                //Update ringbuffer addresses
+                polar_ringbuffer_WriteFinish(CallbackBuffer);
+            }
+
+            //Read data
+            if(polar_ringbuffer_ReadCheck(CallbackBuffer))
+            {
+                //ALSA pcm_write call
+                linux_ALSA_Callback(ALSA, MixBuffer->SampleCount, Engine.Channels, polar_ringbuffer_ReadData(CallbackBuffer));
+
+                //Update ringbuffer addresses
+                polar_ringbuffer_ReadFinish(CallbackBuffer);
+            }
+
+            //End performance timings
+            FlipWallClock = linux_WallClock();
+        
+            //Check rendering work elapsed and sleep if time remaining
+            timespec WorkCounter = linux_WallClock();
+            f32 WorkSecondsElapsed = linux_SecondsElapsed(LastCounter, WorkCounter);
+            f32 SecondsElapsedForFrame = WorkSecondsElapsed;
+
+            //If the rendering finished under the target seconds, then sleep until the next update
+            if(SecondsElapsedForFrame < TargetSecondsPerFrame)
+            {
+                f32 SleepTimeInMS = (1000.0f * (TargetSecondsPerFrame - SecondsElapsedForFrame));
+                u64 SleepTimeInNS = (u32) SleepTimeInMS * 1000000;
+                timespec SleepTimer = {};
+                SleepTimer.tv_nsec = SleepTimeInNS;
+
+                if(SleepTimeInMS > 0)
+                {
+                    // printf("Polar: Sleeping for %fms\n", (f32) SleepTimeInMS);
+                    nanosleep(&SleepTimer, 0);
+                }
+                
+                f32 TestSecondsElapsedForFrame = linux_SecondsElapsed(LastCounter, linux_WallClock());
+                while(SecondsElapsedForFrame < TargetSecondsPerFrame)
+                {                            
+                    SecondsElapsedForFrame = linux_SecondsElapsed(LastCounter, linux_WallClock());
+                }
+            }
+
+            else
+            {
+                //!Missed frame rate!
+                f32 Difference = (SecondsElapsedForFrame - TargetSecondsPerFrame);
+                printf("Polar\tERROR: Missed frame rate!\tDifference: %f\t[Current: %f, Target: %f]\n", Difference, SecondsElapsedForFrame, TargetSecondsPerFrame);
+            } 
+
+            //Prepare timers before next loop
+            timespec EndCounter = linux_WallClock();
+            LastCounter = EndCounter;
         }
-
-        else
-        {
-            //!Missed frame rate!
-            f32 Difference = (SecondsElapsedForFrame - TargetSecondsPerFrame);
-            printf("Polar\tERROR: Missed frame rate!\tDifference: %f\t[Current: %f, Target: %f]\n", Difference, SecondsElapsedForFrame, TargetSecondsPerFrame);
-        } 
-
-        //Prepare timers before next loop
-        timespec EndCounter = linux_WallClock();
-        LastCounter = EndCounter;
     }
 
-    polar_mixer_Destroy(EngineArena, MasterOutput);
-
+    else
+    {
+    }
+    
     polar_ringbuffer_Destroy(EngineArena, CallbackBuffer);
     linux_ALSA_Destroy(EngineArena, ALSA);
 

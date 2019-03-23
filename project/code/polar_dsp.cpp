@@ -63,13 +63,15 @@ void polar_dsp_OscillatorInit(POLAR_OSCILLATOR *Oscillator, u32 SampleRate, u32 
     if(InitialFrequency != 0)
     {
         Oscillator->Frequency.Current = InitialFrequency;
-        Oscillator->Frequency.Previous = Oscillator->Frequency.Current;
+        Oscillator->Frequency.Target = 0;
+        Oscillator->Frequency.Delta = 0;
     }
 
     else
     {
         Oscillator->Frequency.Current = 0;
-        Oscillator->Frequency.Previous = Oscillator->Frequency.Current;
+        Oscillator->Frequency.Target = 0;
+        Oscillator->Frequency.Delta = 0;
     }
 
     Oscillator->PhaseCurrent = 0;

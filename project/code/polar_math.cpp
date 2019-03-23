@@ -57,6 +57,18 @@ u64 UpperPowerOf2U64(u64 A)
     return A;
 }
 
+
+
+bool CheckFloat(f32 A, f32 Min, f32 Max)
+{
+    if(A >= Min && A <= Max)
+    {
+        return true;
+    }
+
+    return false;
+}
+
 f32 Int16ToFloat(i16 Input)
 {
     f32 Result = 0;

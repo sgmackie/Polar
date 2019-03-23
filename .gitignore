@@ -10,6 +10,7 @@ build/
 #Assets
 *.wav
 audio/
+*.xlsx
 
 #Misc
 TODO.txt

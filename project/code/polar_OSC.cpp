@@ -103,7 +103,7 @@ void polar_OSC_ProcessSourceEvents(POLAR_MIXER *Mixer, f64 GlobalTime, oscpkt::M
                 f32 Amplitude = 0;
                 Message->match(FullAddress).popInt32(Duration).popFloat(Amplitude).isOkNoMoreArgs();
                 f32 StackPositions[MAX_CHANNELS] = {0.0};
-                polar_source_Play(Mixer, Hash(Source), GlobalTime, Duration, StackPositions, FX_DRY, EN_NONE, AMP(Amplitude));
+                polar_source_Play(Mixer, Hash(Source), Duration, StackPositions, FX_DRY, EN_NONE, AMP(Amplitude));
 #if OSC_LOG
                 printf("OSC: %s: Duration: %d Amplitude: %f\t[%s]\n", Source, Duration, Amplitude, FullAddress);
 #endif
@@ -112,17 +112,13 @@ void polar_OSC_ProcessSourceEvents(POLAR_MIXER *Mixer, f64 GlobalTime, oscpkt::M
 
             case VECTOR:
             {
-                // VECTOR4D Vector = {};
-
-                // if(strcmp(Source, "Cube") == 0)
-                // {
-                //    Message->match(FullAddress).popFloat(Vector.X).popFloat(Vector.Y).popFloat(Vector.Z).isOkNoMoreArgs(); 
-
-                //    Object = Vector;
-                // }
-// #if OSC_LOG                            
-                // printf("OSC: %s: X: %f Y: %f Z:%f\t[%s]\n", Source, Vector.X, Vector.Y, Vector.Z, FullAddress);
-// #endif
+                VECTOR4D Vector = {};
+                Message->match(FullAddress).popFloat(Vector.X).popFloat(Vector.Y).popFloat(Vector.Z).isOkNoMoreArgs(); 
+#if OSC_LOG
+                printf("OSC: %s: X: %f Y: %f Z:%f\t[%s]\n", Source, Vector.X, Vector.Y, Vector.Z, FullAddress);
+#endif                
+                polar_source_Position(Mixer, Hash(Source), Vector);
+                
                 break;
             }
 

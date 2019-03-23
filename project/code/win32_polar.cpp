@@ -1,6 +1,3 @@
-//! Frequency not updating properly, gets worse at lower frame rates, need to check interpolation
-#define MonitorRefreshHz 120
-
 #define MAX_STRING_LENGTH 64
 #define MAX_CHANNELS 4
 #define MAX_CONTAINERS 4
@@ -12,6 +9,8 @@
 #define DEFAULT_CHANNELS 2
 #define DEFAULT_LATENCY_FRAMES 2
 #define DEFAULT_AMPLITUDE 0.8
+
+#define MONITOR_HZ 60
 
 #include "polar.h"
 #include "../external/external_code.h"
@@ -159,7 +158,7 @@ int main()
 
     //Define engine update rate
     POLAR_ENGINE Engine = {};
-    Engine.UpdateRate = MonitorRefreshHz / 2;
+    Engine.UpdateRate = MONITOR_HZ / 2;
     f32 TargetSecondsPerFrame = 1.0f / (f32) Engine.UpdateRate;
 
     //PCG Random Setup
@@ -204,7 +203,7 @@ int main()
 
         //Sine sources
         polar_mixer_SubmixCreate(SourceArena, Master, 0, "SM_Trumpet", -1);
-        polar_mixer_ContainerCreate(Master, "SM_Trumpet", "CO_Trumpet14", -1);
+        polar_mixer_ContainerCreate(Master, "SM_Trumpet", "CO_Trumpet14", AMP(-10));
         polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_01"), Mono, SO_OSCILLATOR, WV_SINE, 0);
         polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_02"), Mono, SO_OSCILLATOR, WV_SINE, 0);
         polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_03"), Mono, SO_OSCILLATOR, WV_SINE, 0);
@@ -221,7 +220,7 @@ int main()
 
         //File sources
         polar_mixer_SubmixCreate(SourceArena, Master, 0, "SM_FileMix", -1);
-        polar_mixer_ContainerCreate(Master, "SM_FileMix", "CO_FileContainer", -1);
+        polar_mixer_ContainerCreate(Master, "SM_FileMix", "CO_FileContainer", AMP(-1));
         polar_source_Create(SourceArena, Master, Engine, Hash("CO_FileContainer"), Hash("SO_Whiterun"), Stereo, SO_FILE, "audio/Whiterun48.wav");
         polar_source_Create(SourceArena, Master, Engine, Hash("CO_FileContainer"), Hash("SO_Orbifold"), Stereo, SO_FILE, "audio/LGOrbifold48.wav");
 
@@ -233,6 +232,7 @@ int main()
 
         i64 i = 0;
 
+
         //Loop
         f64 GlobalTime = 0;
         bool GlobalRunning = true;
@@ -241,70 +241,79 @@ int main()
         while(GlobalRunning)
         {
             ++i;
-            //Update
+
+            //Updates
+            //Calculate size of callback sample block
+            i32 SamplesToWrite = 0;
+            i32 MaxSampleCount = 0;
+
+            //Get current padding of the audio device and determine samples to write for this callback
+            if(SUCCEEDED(WASAPI->AudioClient->GetCurrentPadding(&WASAPI->PaddingFrames)))
+            {
+                MaxSampleCount = (i32) (Engine.BufferSize - WASAPI->PaddingFrames);
+                SamplesToWrite = (i32) (Engine.LatencySamples - WASAPI->PaddingFrames);
+                    
+                //Round the samples to write to the next power of 2
+                MaxSampleCount = UpperPowerOf2(MaxSampleCount);
+                SamplesToWrite = UpperPowerOf2(SamplesToWrite);
+
+                if(SamplesToWrite < 0)
+                {
+                    UINT32 DeviceSampleCount = 0;
+                    if(SUCCEEDED(WASAPI->AudioClient->GetBufferSize(&DeviceSampleCount)))
+                    {
+                        SamplesToWrite = DeviceSampleCount;
+                        printf("WASAPI: Failed to set SamplesToWrite!\n");
+                    }
+                }
+
+                Assert(SamplesToWrite <= MaxSampleCount);
+                MixBuffer->SampleCount = SamplesToWrite;
+            }
+
+            //Check the minimum update period for per-sample stepping states
+            f64 MinPeriod = ((f64) SamplesToWrite / (f64) Engine.SampleRate);
+
             //Get current time for update functions
             GlobalTime = polar_WallTime();
-            
+
             //Get OSC messages from Unreal
             //!Uses std::vector for message allocation: replace with arena to be realtime safe
-            polar_OSC_UpdateMessages(Master, GlobalTime, OSCSocket, 5);
+            polar_OSC_UpdateMessages(Master, GlobalTime, OSCSocket, 1);
 
             //Update the amplitudes, durations etc of all playing sources
-            polar_source_UpdatePlaying(Master, GlobalTime, Engine.NoiseFloor);
+            polar_source_UpdatePlaying(Master, GlobalTime, MinPeriod, Engine.NoiseFloor);
             
             if(i == 10)
             {
                 f32 StackPositions[MAX_CHANNELS] = {0.0};
-                polar_container_Play(Master, Hash("CO_FileContainer"), GlobalTime, 3, StackPositions, FX_DRY, EN_NONE, AMP(-1));
-                polar_source_Fade(Master, Hash("SO_Orbifold"), GlobalTime, AMP(-65), 2);
+                // polar_container_Play(Master, Hash("CO_FileContainer"), 0, StackPositions, FX_DRY, EN_NONE, AMP(-1));
+                
+                polar_source_Play(Master, Hash("SO_Whiterun"), 0, StackPositions, FX_DRY, EN_NONE, AMP(-1));
+                
+                
+                // polar_container_Fade(Master, Hash("CO_FileContainer"), GlobalTime, AMP(-65), 12);
 
-                //! Frequency not updating properly, gets worse at lower frame rates, need to check interpolation
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_01"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial1.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_02"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial2.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_03"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial3.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_04"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial4.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_05"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial5.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_06"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial6.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_07"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial7.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_08"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial8.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_09"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial9.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_10"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial10.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_11"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial11.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_12"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial12.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_13"), GlobalTime, 7, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial13.txt");
+
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_01"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial1.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_02"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial2.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_03"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial3.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_04"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial4.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_05"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial5.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_06"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial6.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_07"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial7.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_08"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial8.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_09"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial9.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_10"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial10.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_11"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial11.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_12"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial12.txt");
+                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_13"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial13.txt");
             }
 
             //Render
             //Write data
             if(polar_ringbuffer_WriteCheck(CallbackBuffer))
             {
-                i32 SamplesToWrite = 0;
-                i32 MaxSampleCount = 0;
-
-                //Get current padding of the audio device and determine samples to write for this callback
-                if(SUCCEEDED(WASAPI->AudioClient->GetCurrentPadding(&WASAPI->PaddingFrames)))
-                {
-                    MaxSampleCount = (i32) (Engine.BufferSize - WASAPI->PaddingFrames);
-                    SamplesToWrite = (i32) (Engine.LatencySamples - WASAPI->PaddingFrames);
-                    
-                    //Round the samples to write to the next power of 2
-                    MaxSampleCount = UpperPowerOf2(MaxSampleCount);
-                    SamplesToWrite = UpperPowerOf2(SamplesToWrite);
-
-                    if(SamplesToWrite < 0)
-                    {
-                        UINT32 DeviceSampleCount = 0;
-                        if(SUCCEEDED(WASAPI->AudioClient->GetBufferSize(&DeviceSampleCount)))
-                        {
-                            SamplesToWrite = DeviceSampleCount;
-                            printf("WASAPI: Failed to set SamplesToWrite!\n");
-                        }
-                    }
-
-                    Assert(SamplesToWrite <= MaxSampleCount);
-                    MixBuffer->SampleCount = SamplesToWrite;
-                }
-
                 //Render sources
                 polar_render_Callback(&Engine, Master, MixBuffer, polar_ringbuffer_WriteData(CallbackBuffer));
 

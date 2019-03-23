@@ -191,7 +191,7 @@ typedef struct POLAR_ENVELOPE
 } POLAR_ENVELOPE;
 
 
-typedef struct POLAR_PER_SAMPLE_STATE
+typedef struct POLAR_STATE_FADE
 {
     f32 Current;
     f32 Previous;
@@ -200,8 +200,15 @@ typedef struct POLAR_PER_SAMPLE_STATE
     f32 StartTime;
     f32 Duration;
     bool IsFading;
-} POLAR_PER_SAMPLE_STATE;
+} POLAR_STATE_FADE;
 
+
+typedef struct POLAR_STATE_PER_SAMPLE
+{
+    f32 Current;
+    f32 Target;
+    f32 Delta;
+} POLAR_STATE_PER_SAMPLE;
 
 
 /*                  */
@@ -227,7 +234,7 @@ typedef struct POLAR_OSCILLATOR
     f32 TwoPiOverSampleRate;                        //2 * Pi / Sample rate is a constant variable
     f32 PhaseCurrent;
     f32 PhaseIncrement;                             //Store calculated phase increment
-    POLAR_PER_SAMPLE_STATE Frequency;
+    POLAR_STATE_PER_SAMPLE Frequency;
     f64 FrequencyTarget;
     f64 FrequencyDelta;
 } POLAR_OSCILLATOR;
@@ -333,9 +340,12 @@ typedef struct POLAR_SOURCE_STATE
 {
     f32 *PanPositions;
     
-    POLAR_PER_SAMPLE_STATE Amplitude;
+    POLAR_STATE_FADE Amplitude;
+
 
     VECTOR4D Position;
+    f32 DistanceFromListener;
+    f32 DistanceAttenuation;
     f32 MinDistance;
     f32 MaxDistance;
     f32 Rolloff;
