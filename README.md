@@ -14,12 +14,12 @@ All platforms were built using Clang (8.0): https://releases.llvm.org/download.h
 CUDA kernels built using NVCC (10.1): 
 
 - Windows (x64):
-    - VS2017: Call vcvars64.bat from the Visual Studio install directory and run build.bat
-    -         Run build_cuda.bat
-    -         Run build.bat
+    - VS2017: Call vcvars64.bat from the Visual Studio install directory
+    - VS2017: Run build_cuda.bat
+    - VS2017: Run build.bat
 - Linux (x64):
     - Clang: Run build_cuda.sh
-    -        Run build.sh
+    - Clang: Run build.sh
 
 ### Acknowledegments: <a name="acknowledgements"></a>
 
