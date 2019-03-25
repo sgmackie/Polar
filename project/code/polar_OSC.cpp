@@ -113,8 +113,7 @@ void polar_OSC_ProcessSourceEvents(POLAR_MIXER *Mixer, f64 GlobalTime, oscpkt::M
                 i32 Duration = 0;
                 f32 Amplitude = 0;
                 Message->match(FullAddress).popInt32(Duration).popFloat(Amplitude).isOkNoMoreArgs();
-                f32 StackPositions[MAX_CHANNELS] = {0.0};
-                polar_source_Play(Mixer, Hash(Source), Duration, StackPositions, FX_DRY, EN_NONE, AMP(Amplitude));
+                polar_source_Play(Mixer, Hash(Source), Duration, FX_DRY, EN_NONE, AMP(Amplitude));
 #if OSC_LOG
                 printf("OSC: %s: Duration: %d Amplitude: %f\t[%s]\n", Source, Duration, Amplitude, FullAddress);
 #endif

@@ -18,6 +18,8 @@ typedef struct CUDA_DEVICE
 //Use the CUDA helper functions to find the best device on the system (usually one with the highest FLOPs rating)
 i32 cuda_DeviceGet(CUDA_DEVICE *GPU, i32 ID);
 
+f32 cuda_Sine(f32 X, u32 Block);
+
 #endif
 
 

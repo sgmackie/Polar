@@ -618,7 +618,7 @@ void polar_source_Position(POLAR_MIXER *Mixer, u64 SourceUID, VECTOR4D NewPositi
 }
 
 
-void polar_source_Play(POLAR_MIXER *Mixer, u64 SourceUID, f32 Duration, f32 *PanPositions, u32 FX, u32 EnvelopeType, ...)
+void polar_source_Play(POLAR_MIXER *Mixer, u64 SourceUID, f32 Duration, u32 FX, u32 EnvelopeType, ...)
 {
     u32 i = 0;
     POLAR_SOURCE *Sources = polar_source_Retrieval(Mixer, SourceUID, i);
@@ -729,10 +729,6 @@ void polar_source_Play(POLAR_MIXER *Mixer, u64 SourceUID, f32 Duration, f32 *Pan
         Source.FX = FX;
         Source.PlayState = Playing;
 
-        for(u32 f = 0; f < ArrayCount(PanPositions); ++f)
-        {
-            Source.States.PanPositions[f] = PanPositions[f];
-        }
 
         Source.States.DistanceFromListener = 0.0f;
         Source.States.DistanceAttenuation = 0.0f;
@@ -759,7 +755,7 @@ void polar_source_Play(POLAR_MIXER *Mixer, u64 SourceUID, f32 Duration, f32 *Pan
 
 
 
-void polar_container_Play(POLAR_MIXER *Mixer, u64 ContainerUID, f32 Duration, f32 *PanPositions, u32 FX, u32 EnvelopeType, ...)
+void polar_container_Play(POLAR_MIXER *Mixer, u64 ContainerUID, f32 Duration, u32 FX, u32 EnvelopeType, ...)
 {
     u32 Index = 0;
 
@@ -783,7 +779,7 @@ void polar_container_Play(POLAR_MIXER *Mixer, u64 ContainerUID, f32 Duration, f3
 
                     f64 AmpNew = va_arg(ArgList, f64);
 
-                    polar_source_Play(Mixer, Sources->UID[i], Duration, PanPositions, FX, EnvelopeType, AmpNew);
+                    polar_source_Play(Mixer, Sources->UID[i], Duration, FX, EnvelopeType, AmpNew);
 
                     va_end(ArgList);
                     break;

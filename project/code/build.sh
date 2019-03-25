@@ -23,8 +23,11 @@ pushd ${BuildDir} > /dev/null
 # Set compiler arguments
 PlatformFiles="${CurDir}/${Platform}.cpp"
 
+# Set CUDA include paths
+CUDAPaths="-I${CUDA_PATH}include -L=${CUDA_PATH}lib"
+
 # Set Clang compiler flags (https://clang.llvm.org/docs/genindex.html)
-CompilerFlags="-g -pedantic -std=c++11 -DCUDA=1 -DOSC_LOG=1"
+CompilerFlags="-g -pedantic -std=c++14 -DCUDA=0 -DOSC_LOG=0"
 
 # Set warning labels:
 CommonWarnings="-Wall -Werror -Wno-unused-function -Wno-unused-variable -Wno-vla-extension -Wno-format"
@@ -35,8 +38,11 @@ CompilerOpt="-O0"
 # Set Linux libraries
 Libs="-lm -lasound"
 
+# Set path for CUDA function library
+CUDAFunctions=
+
 # Run Clang compiler
-clang++ ${CompilerFlags} ${CommonWarnings} ${CompilerOpt} ${Libs} ${PlatformFiles} -o ${Platform}
+clang++ ${CompilerFlags} ${CUDAPaths} ${CommonWarnings} ${CompilerOpt} ${Libs} ${CUDAFunctions} ${PlatformFiles} -o ${Platform} -v
 
 # Exit
 popd > /dev/null

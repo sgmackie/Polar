@@ -7,6 +7,7 @@
 
 #include "polar.h"
 #include "../external/external_code.h"
+#include "cuda/polar_cuda.h"
 #include "linux_polar.h"
 
 global_scope char AssetPath[MAX_STRING_LENGTH] = {"../../data/"};
@@ -106,211 +107,228 @@ int main(int argc, char *argv[])
     MEMORY_ARENA *EngineArena = memory_arena_Create(Kilobytes(100));
     MEMORY_ARENA *SourceArena = memory_arena_Create(Megabytes(100));
 
-    //Define engine update rate
-    POLAR_ENGINE Engine = {};
-    Engine.UpdateRate = MONITOR_HZ / 2;
-    f32 TargetSecondsPerFrame = 1.0f / (f32) Engine.UpdateRate;
+#if CUDA
+    //Get CUDA Device
+    CUDA_DEVICE GPU = {};
+    cuda_DeviceGet(&GPU, 0);
 
-    //PCG Random Setup
-    i32 Rounds = 5;
-    pcg32_srandom(time(NULL) ^ (intptr_t) &printf, (intptr_t) &Rounds);
+    printf("%f\n", cuda_Sine(0.63787, 1));
 
-    //Start ALSA
-    ALSA_DATA *ALSA = linux_ALSA_Create(EngineArena, DEFAULT_SAMPLERATE, DEFAULT_SAMPLERATE);
-    
-    //Fill out engine properties
-    Engine.NoiseFloor = AMP(-50);
-    Engine.SampleRate = ALSA->SampleRate;
-    Engine.Channels = ALSA->Channels;
-    Engine.BytesPerSample = sizeof(i16) * Engine.Channels;
-    Engine.BufferSize = ALSA->Frames;
-    Engine.LatencySamples = DEFAULT_LATENCY_FRAMES * (Engine.SampleRate / Engine.UpdateRate);
+#endif
 
-    //Buffer size:
-    //The max buffer size is 1 second worth of samples
-    //LatencySamples determines how many samples to render at a given frame delay (default is 2)
-    //The sample count to write for each callback is the LatencySamples - any padding from the audio device
-
-    //Create ringbuffer with a specified block count (default is 3)
-    POLAR_RINGBUFFER *CallbackBuffer = polar_ringbuffer_Create(EngineArena, Engine.BufferSize, DEFAULT_LATENCY_FRAMES);
-    
-    //Create a temporary mixing buffer 
-    POLAR_BUFFER *MixBuffer = 0;
-    MixBuffer = (POLAR_BUFFER *) memory_arena_Push(EngineArena, MixBuffer, (sizeof(POLAR_BUFFER)));
-    MixBuffer->SampleCount = Engine.BufferSize;
-    MixBuffer->Data = (f32 *) memory_arena_Push(EngineArena, MixBuffer, MixBuffer->SampleCount);
-    
-    if(ALSA && CallbackBuffer && MixBuffer)
+    if(EngineArena && SourceArena)
     {
-        //OSC setup
-        UdpSocket OSCSocket = polar_OSC_StartServer(4795);
 
-        //Create mixer object that holds all submixes and their containers
-        POLAR_MIXER *Master = polar_mixer_Create(SourceArena, -1);
+        //Define engine update rate
+        POLAR_ENGINE Engine = {};
+        Engine.UpdateRate = MONITOR_HZ / 2;
+        f32 TargetSecondsPerFrame = 1.0f / (f32) Engine.UpdateRate;
 
-        //Assign a listener to the mixer
-        polar_listener_Create(Master, "LN_Player");
+        //PCG Random Setup
+        i32 Rounds = 5;
+        pcg32_srandom(time(NULL) ^ (intptr_t) &printf, (intptr_t) &Rounds);
 
-        //Sine sources
-        polar_mixer_SubmixCreate(SourceArena, Master, 0, "SM_Trumpet", -1);
-        polar_mixer_ContainerCreate(Master, "SM_Trumpet", "CO_Trumpet14", AMP(-10));
-        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_01"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_02"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_03"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_04"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_05"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_06"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_07"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_08"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_09"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_10"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_11"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_12"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-        polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_13"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+        //Start ALSA
+        ALSA_DATA *ALSA = linux_ALSA_Create(EngineArena, DEFAULT_SAMPLERATE, DEFAULT_SAMPLERATE);
 
-        //File sources
-        polar_mixer_SubmixCreate(SourceArena, Master, 0, "SM_FileMix", -1);
-        polar_mixer_ContainerCreate(Master, "SM_FileMix", "CO_FileContainer", AMP(-1));
-        polar_source_Create(SourceArena, Master, Engine, Hash("CO_FileContainer"), Hash("SO_Whiterun"), Stereo, SO_FILE, "audio/Whiterun48.wav");
-        polar_source_Create(SourceArena, Master, Engine, Hash("CO_FileContainer"), Hash("SO_Orbifold"), Stereo, SO_FILE, "audio/LGOrbifold48.wav");
+        //Fill out engine properties
+        Engine.NoiseFloor = AMP(-50);
+        Engine.SampleRate = ALSA->SampleRate;
+        Engine.Channels = ALSA->Channels;
+        Engine.BytesPerSample = sizeof(i16) * Engine.Channels;
+        Engine.BufferSize = ALSA->Frames;
+        Engine.LatencySamples = DEFAULT_LATENCY_FRAMES * (Engine.SampleRate / Engine.UpdateRate);
 
-        //Start timings
-        timespec LastCounter = linux_WallClock();
-        timespec FlipWallClock = linux_WallClock();
+        //Buffer size:
+        //The max buffer size is 1 second worth of samples
+        //LatencySamples determines how many samples to render at a given frame delay (default is 2)
+        //The sample count to write for each callback is the LatencySamples - any padding from the audio device
 
-        i64 i = 0;
+        //Create ringbuffer with a specified block count (default is 3)
+        POLAR_RINGBUFFER *CallbackBuffer = polar_ringbuffer_Create(EngineArena, Engine.BufferSize, DEFAULT_LATENCY_FRAMES);
 
-        //Loop
-        f64 GlobalTime = 0;
-        bool GlobalRunning = true;
-        printf("Polar: Playback\n");
-        while(GlobalRunning)
+        //Create a temporary mixing buffer 
+        POLAR_BUFFER *MixBuffer = 0;
+        MixBuffer = (POLAR_BUFFER *) memory_arena_Push(EngineArena, MixBuffer, (sizeof(POLAR_BUFFER)));
+        MixBuffer->SampleCount = Engine.BufferSize;
+        MixBuffer->Data = (f32 *) memory_arena_Push(EngineArena, MixBuffer, MixBuffer->SampleCount);
+
+        if(ALSA && CallbackBuffer && MixBuffer)
         {
-            ++i;
+            //OSC setup
+            UdpSocket OSCSocket = polar_OSC_StartServer(4795);
 
-            //Updates
-            //Calculate size of callback sample block
-            i32 MaxSampleCount = (i32) (Engine.BufferSize);
-            i32 SamplesToWrite = (i32) (Engine.LatencySamples);
+            //Create mixer object that holds all submixes and their containers
+            POLAR_MIXER *Master = polar_mixer_Create(SourceArena, -1);
 
-            //Round the samples to write to the next power of 2
-            MaxSampleCount = UpperPowerOf2(MaxSampleCount);
-            SamplesToWrite = UpperPowerOf2(SamplesToWrite);
+            //Assign a listener to the mixer
+            polar_listener_Create(Master, "LN_Player");
 
-            if(SamplesToWrite < 0)
+            //Sine sources
+            polar_mixer_SubmixCreate(SourceArena, Master, 0, "SM_Trumpet", -1);
+            polar_mixer_ContainerCreate(Master, "SM_Trumpet", "CO_Trumpet14", AMP(-10));
+            polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_01"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+            polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_02"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+            polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_03"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+            polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_04"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+            polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_05"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+            polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_06"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+            polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_07"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+            polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_08"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+            polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_09"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+            polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_10"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+            polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_11"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+            polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_12"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+            polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_13"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+
+            //File sources
+            polar_mixer_SubmixCreate(SourceArena, Master, 0, "SM_FileMix", -1);
+            polar_mixer_ContainerCreate(Master, "SM_FileMix", "CO_FileContainer", AMP(-1));
+            polar_source_Create(SourceArena, Master, Engine, Hash("CO_FileContainer"), Hash("SO_Whiterun"), Stereo, SO_FILE, "audio/Whiterun48.wav");
+            polar_source_Create(SourceArena, Master, Engine, Hash("CO_FileContainer"), Hash("SO_Orbifold"), Stereo, SO_FILE, "audio/LGOrbifold48.wav");
+
+            //Start timings
+            timespec LastCounter = linux_WallClock();
+            timespec FlipWallClock = linux_WallClock();
+
+            i64 i = 0;
+
+            //Loop
+            f64 GlobalTime = 0;
+            bool GlobalRunning = true;
+            printf("Polar: Playback\n");
+            while(GlobalRunning)
             {
-                snd_pcm_hw_params_get_buffer_size(ALSA->HardwareParameters, (u64 *) &SamplesToWrite);
-            }
+                ++i;
 
-            Assert(SamplesToWrite <= MaxSampleCount);
-            MixBuffer->SampleCount = SamplesToWrite;
-            snd_pcm_hw_params_set_buffer_size(ALSA->Device, ALSA->HardwareParameters, SamplesToWrite);
-            
-            //Check the minimum update period for per-sample stepping states
-            f64 MinPeriod = ((f64) SamplesToWrite / (f64) Engine.SampleRate);
+                //Updates
+                //Calculate size of callback sample block
+                i32 MaxSampleCount = (i32) (Engine.BufferSize);
+                i32 SamplesToWrite = (i32) (Engine.LatencySamples);
 
-            //Get current time for update functions
-            GlobalTime = polar_WallTime();
+                //Round the samples to write to the next power of 2
+                MaxSampleCount = UpperPowerOf2(MaxSampleCount);
+                SamplesToWrite = UpperPowerOf2(SamplesToWrite);
 
-            //Get OSC messages from Unreal
-            //!Uses std::vector for message allocation: replace with arena to be realtime safe
-            polar_OSC_UpdateMessages(Master, GlobalTime, OSCSocket, 1);
-
-            //Update the amplitudes, durations etc of all playing sources
-            polar_source_UpdatePlaying(Master, GlobalTime, MinPeriod, Engine.NoiseFloor);
-
-            if(i == 10)
-            {
-                f32 StackPositions[MAX_CHANNELS] = {0.0};
-                // polar_container_Play(Master, Hash("CO_FileContainer"), 0, StackPositions, FX_DRY, EN_NONE, AMP(-1));
-                
-                // polar_source_Play(Master, Hash("SO_Whiterun"), 0, StackPositions, FX_DRY, EN_NONE, AMP(-1));
-
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_01"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial1.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_02"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial2.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_03"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial3.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_04"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial4.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_05"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial5.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_06"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial6.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_07"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial7.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_08"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial8.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_09"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial9.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_10"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial10.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_11"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial11.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_12"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial12.txt");
-                // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_13"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial13.txt");
-            }
-
-
-            //Render
-            //Write data
-            if(polar_ringbuffer_WriteCheck(CallbackBuffer))
-            {
-                //Render sources
-                polar_render_Callback(&Engine, Master, MixBuffer, polar_ringbuffer_WriteData(CallbackBuffer));
-
-                //Update ringbuffer addresses
-                polar_ringbuffer_WriteFinish(CallbackBuffer);
-            }
-
-            //Read data
-            if(polar_ringbuffer_ReadCheck(CallbackBuffer))
-            {
-                //ALSA pcm_write call
-                linux_ALSA_Callback(ALSA, MixBuffer->SampleCount, Engine.Channels, polar_ringbuffer_ReadData(CallbackBuffer));
-
-                //Update ringbuffer addresses
-                polar_ringbuffer_ReadFinish(CallbackBuffer);
-            }
-
-            //End performance timings
-            FlipWallClock = linux_WallClock();
-        
-            //Check rendering work elapsed and sleep if time remaining
-            timespec WorkCounter = linux_WallClock();
-            f32 WorkSecondsElapsed = linux_SecondsElapsed(LastCounter, WorkCounter);
-            f32 SecondsElapsedForFrame = WorkSecondsElapsed;
-
-            //If the rendering finished under the target seconds, then sleep until the next update
-            if(SecondsElapsedForFrame < TargetSecondsPerFrame)
-            {
-                f32 SleepTimeInMS = (1000.0f * (TargetSecondsPerFrame - SecondsElapsedForFrame));
-                u64 SleepTimeInNS = (u32) SleepTimeInMS * 1000000;
-                timespec SleepTimer = {};
-                SleepTimer.tv_nsec = SleepTimeInNS;
-
-                if(SleepTimeInMS > 0)
+                if(SamplesToWrite < 0)
                 {
-                    // printf("Polar: Sleeping for %fms\n", (f32) SleepTimeInMS);
-                    nanosleep(&SleepTimer, 0);
+                    snd_pcm_hw_params_get_buffer_size(ALSA->HardwareParameters, (u64 *) &SamplesToWrite);
                 }
-                
-                f32 TestSecondsElapsedForFrame = linux_SecondsElapsed(LastCounter, linux_WallClock());
-                while(SecondsElapsedForFrame < TargetSecondsPerFrame)
-                {                            
-                    SecondsElapsedForFrame = linux_SecondsElapsed(LastCounter, linux_WallClock());
+
+                Assert(SamplesToWrite <= MaxSampleCount);
+                MixBuffer->SampleCount = SamplesToWrite;
+                snd_pcm_hw_params_set_buffer_size(ALSA->Device, ALSA->HardwareParameters, SamplesToWrite);
+
+                //Check the minimum update period for per-sample stepping states
+                f64 MinPeriod = ((f64) SamplesToWrite / (f64) Engine.SampleRate);
+
+                //Get current time for update functions
+                GlobalTime = polar_WallTime();
+
+                //Get OSC messages from Unreal
+                //!Uses std::vector for message allocation: replace with arena to be realtime safe
+                polar_OSC_UpdateMessages(Master, GlobalTime, OSCSocket, 1);
+
+                //Update the amplitudes, durations etc of all playing sources
+                polar_source_UpdatePlaying(Master, GlobalTime, MinPeriod, Engine.NoiseFloor);
+
+                if(i == 10)
+                {
+                    f32 StackPositions[MAX_CHANNELS] = {0.0};
+                    // polar_container_Play(Master, Hash("CO_FileContainer"), 0, StackPositions, FX_DRY, EN_NONE, AMP(-1));
+
+                    polar_source_Play(Master, Hash("SO_Whiterun"), 0, StackPositions, FX_DRY, EN_NONE, AMP(-1));
+
+                    // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_01"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial1.txt");
+                    // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_02"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial2.txt");
+                    // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_03"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial3.txt");
+                    // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_04"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial4.txt");
+                    // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_05"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial5.txt");
+                    // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_06"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial6.txt");
+                    // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_07"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial7.txt");
+                    // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_08"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial8.txt");
+                    // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_09"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial9.txt");
+                    // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_10"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial10.txt");
+                    // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_11"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial11.txt");
+                    // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_12"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial12.txt");
+                    // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_13"), 1, StackPositions, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial13.txt");
                 }
+
+
+                //Render
+                //Write data
+                if(polar_ringbuffer_WriteCheck(CallbackBuffer))
+                {
+                    //Render sources
+                    polar_render_Callback(&Engine, Master, MixBuffer, polar_ringbuffer_WriteData(CallbackBuffer));
+
+                    //Update ringbuffer addresses
+                    polar_ringbuffer_WriteFinish(CallbackBuffer);
+                }
+
+                //Read data
+                if(polar_ringbuffer_ReadCheck(CallbackBuffer))
+                {
+                    //ALSA pcm_write call
+                    linux_ALSA_Callback(ALSA, MixBuffer->SampleCount, Engine.Channels, polar_ringbuffer_ReadData(CallbackBuffer));
+
+                    //Update ringbuffer addresses
+                    polar_ringbuffer_ReadFinish(CallbackBuffer);
+                }
+
+                //End performance timings
+                FlipWallClock = linux_WallClock();
+
+                //Check rendering work elapsed and sleep if time remaining
+                timespec WorkCounter = linux_WallClock();
+                f32 WorkSecondsElapsed = linux_SecondsElapsed(LastCounter, WorkCounter);
+                f32 SecondsElapsedForFrame = WorkSecondsElapsed;
+
+                //If the rendering finished under the target seconds, then sleep until the next update
+                if(SecondsElapsedForFrame < TargetSecondsPerFrame)
+                {
+                    f32 SleepTimeInMS = (1000.0f * (TargetSecondsPerFrame - SecondsElapsedForFrame));
+                    u64 SleepTimeInNS = (u32) SleepTimeInMS * 1000000;
+                    timespec SleepTimer = {};
+                    SleepTimer.tv_nsec = SleepTimeInNS;
+
+                    if(SleepTimeInMS > 0)
+                    {
+                        // printf("Polar: Sleeping for %fms\n", (f32) SleepTimeInMS);
+                        nanosleep(&SleepTimer, 0);
+                    }
+
+                    f32 TestSecondsElapsedForFrame = linux_SecondsElapsed(LastCounter, linux_WallClock());
+                    while(SecondsElapsedForFrame < TargetSecondsPerFrame)
+                    {                            
+                        SecondsElapsedForFrame = linux_SecondsElapsed(LastCounter, linux_WallClock());
+                    }
+                }
+
+                else
+                {
+                    //!Missed frame rate!
+                    f32 Difference = (SecondsElapsedForFrame - TargetSecondsPerFrame);
+                    printf("Polar\tERROR: Missed frame rate!\tDifference: %f\t[Current: %f, Target: %f]\n", Difference, SecondsElapsedForFrame, TargetSecondsPerFrame);
+                } 
+
+                //Prepare timers before next loop
+                timespec EndCounter = linux_WallClock();
+                LastCounter = EndCounter;
             }
-
-            else
-            {
-                //!Missed frame rate!
-                f32 Difference = (SecondsElapsedForFrame - TargetSecondsPerFrame);
-                printf("Polar\tERROR: Missed frame rate!\tDifference: %f\t[Current: %f, Target: %f]\n", Difference, SecondsElapsedForFrame, TargetSecondsPerFrame);
-            } 
-
-            //Prepare timers before next loop
-            timespec EndCounter = linux_WallClock();
-            LastCounter = EndCounter;
         }
+
+        else
+        {
+        }
+
+        polar_ringbuffer_Destroy(EngineArena, CallbackBuffer);
+        linux_ALSA_Destroy(EngineArena, ALSA);
     }
 
     else
     {
     }
-    
-    polar_ringbuffer_Destroy(EngineArena, CallbackBuffer);
-    linux_ALSA_Destroy(EngineArena, ALSA);
 
     memory_arena_Destroy(EngineArena);
     memory_arena_Destroy(SourceArena);

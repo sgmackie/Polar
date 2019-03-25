@@ -140,11 +140,16 @@ int main()
     MEMORY_ARENA *EngineArena = memory_arena_Create(Kilobytes(100));
     MEMORY_ARENA *SourceArena = memory_arena_Create(Megabytes(100));
 
+#if CUDA
     //Get CUDA Device
     CUDA_DEVICE GPU = {};
-    i32 CUDAResult = cuda_DeviceGet(&GPU, 0);
+    cuda_DeviceGet(&GPU, 0);
 
-    if(CUDAResult == 0 && EngineArena && SourceArena)
+    printf("%f\n", cuda_Sine(0.63787, 1));
+
+#endif
+
+    if(EngineArena && SourceArena)
     {
         //Start timings
         LARGE_INTEGER PerformanceCounterFrequencyResult;
@@ -282,10 +287,9 @@ int main()
 
                 if(i == 10)
                 {
-                    f32 StackPositions[MAX_CHANNELS] = {0.0};
                     // polar_container_Play(Master, Hash("CO_FileContainer"), 0, StackPositions, FX_DRY, EN_NONE, AMP(-1));
 
-                    polar_source_Play(Master, Hash("SO_Whiterun"), 0, StackPositions, FX_DRY, EN_NONE, AMP(-1));
+                    // polar_source_Play(Master, Hash("SO_Whiterun"), 0, StackPositions, FX_DRY, EN_NONE, AMP(-1));
 
 
 
