@@ -69,6 +69,17 @@ void polar_OSC_ProcessListenerEvents(POLAR_MIXER *Mixer, oscpkt::Message *Messag
                 break;
             }
 
+            case ROTATION:
+            {
+                ROTATION3D Rotation = {};
+                Message->match(FullAddress).popFloat(Rotation.Roll).popFloat(Rotation.Pitch).popFloat(Rotation.Yaw).isOkNoMoreArgs(); 
+#if OSC_LOG
+                printf("OSC: %s: Roll: %f Pitch: %f Yaw:%f\t[%s]\n", Source, Rotation.Roll, Rotation.Pitch, Rotation.Yaw, FullAddress);
+#endif                
+                Mixer->Listener->Rotation = Rotation;
+                break;
+            }
+
             default:
             {
                 printf("OSC: Invalid event parameters for %s!\t[%s]\n", Source, FullAddress);

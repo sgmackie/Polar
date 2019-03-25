@@ -1,6 +1,33 @@
 //Polar
 #include "polar.h"
 
+i32 StringLength(const char *String)
+{
+    i32 Count = 0;
+
+    while(*String++)
+    {
+        ++Count;
+    }
+
+    return Count;
+}
+
+void polar_StringConcatenate(size_t StringALength, const char *StringA, size_t StringBLength, const char *StringB, char *StringC)
+{
+    for(u32 Index = 0; Index < StringALength; ++Index)
+    {
+        *StringC++ = *StringA++;
+    }
+
+    for(u32 Index = 0; Index < StringBLength; ++Index)
+    {
+        *StringC++ = *StringB++;
+    }
+
+    *StringC++ = 0;
+}
+
 
 f64 polar_WallTime()
 {

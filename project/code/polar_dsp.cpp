@@ -100,11 +100,14 @@ f32 polar_dsp_TickSine(POLAR_OSCILLATOR *Oscillator)
 {
     f32 SineValue;
 
-#if CUDA
+// #if CUDA
+//     SineValue = (f32) MiniMax(Oscillator->PhaseCurrent);
+// #else
+//     SineValue = (f32) sin(Oscillator->PhaseCurrent);
+// #endif
+
     SineValue = (f32) MiniMax(Oscillator->PhaseCurrent);
-#else
-    SineValue = (f32) sin(Oscillator->PhaseCurrent);
-#endif
+
     Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->Frequency.Current; //Load atomic value, multiply to get the phase increment
     Oscillator->PhaseCurrent += Oscillator->PhaseIncrement; //Increase phase by the calculated cycle increment
     

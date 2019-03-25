@@ -97,6 +97,14 @@ void polar_render_Source(u32 &SampleRate, u64 &SampleCount, u32 SamplesToWrite, 
     }
 }
 
+void Pan(f32 Gain, f32 Pan)
+{
+    f32 Angle = ((1.0f + Pan) * PI32 * 0.25f);
+    f32 Left = (Gain * polar_cos(Angle));
+    f32 Right = (Gain * polar_sin(Angle));
+
+    printf("Left: %f\tRight: %f\n", Left, Right);
+}
 
 
 void polar_render_MixSources(f32 &AmplitudeCurrent, f32 &AmplitudePrevious, f32 *Buffer, POLAR_BUFFER *MixBuffer)
@@ -147,7 +155,17 @@ void polar_render_Container(POLAR_SOURCE &ContainerSources, f64 ContainerAmplitu
             case Playing:
             {
                 polar_render_Source(ContainerSources.SampleRate[i], ContainerSources.SampleCount[i], MixBuffer->SampleCount, ContainerSources.Type[i], ContainerSources.FX[i], ContainerSources.Buffer[i]);
-                polar_render_MixSources(ContainerSources.States[i].Amplitude.Current, ContainerSources.States[i].Amplitude.Previous, ContainerSources.Buffer[i], MixBuffer);
+                
+                if(ContainerSources.States[i].IsDistanceAttenuated)
+                {
+                    polar_render_MixSources(ContainerSources.States[i].DistanceAttenuation, ContainerSources.States[i].Amplitude.Previous, ContainerSources.Buffer[i], MixBuffer);
+                }
+                
+                else
+                {
+                    polar_render_MixSources(ContainerSources.States[i].Amplitude.Current, ContainerSources.States[i].Amplitude.Previous, ContainerSources.Buffer[i], MixBuffer);
+                }                
+                
                 break;
             }
 

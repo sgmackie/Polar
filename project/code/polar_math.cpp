@@ -1,7 +1,9 @@
 #ifndef polar_math_cpp
 #define polar_math_cpp
 
+#ifndef MAX
 #define MAX(A, B) (((A) > (B)) ? (A) : (B))
+#endif
 
 //Assertions
 void PowerOfTwoCheck(size_t Value) 
@@ -218,8 +220,6 @@ f32 Series(f32 x)
     y = y * x + C[3];
     y = y * x + C[4];
 
-
-
     return y;
 }
 
@@ -237,5 +237,33 @@ f32 MiniMax(f32 x)
 
     return x * Series(x * x);
 }
+
+
+//Remex Exchange Polynomial with range [-1:1]
+f64 polar_sin(f64 x)
+{
+    f64 u = -1.9227257000839916e-4;
+    u = u * x + -3.4022729658798851e-8;
+    u = u * x + 8.328754228903701e-3;
+    u = u * x + 2.9187310895369112e-8;
+    u = u * x + -1.6666540269736411e-1;
+    u = u * x + -5.7378907443639691e-9;
+    u = u * x + 9.9999990584636532e-1;
+    return u * x + 1.4656652388792014e-10;
+}
+
+//Remex Exchange Polynomial with range [-1:1]
+f64 polar_cos(f64 x)
+{
+    f64 u = 4.5207091507209189e-149;
+    u = u * x + -1.3400704681371456e-3;
+    u = u * x + -9.6128614515849353e-149;
+    u = u * x + 4.1636329124213521e-2;
+    u = u * x + 6.293016012824196e-149;
+    u = u * x + -4.9999395278793666e-1;
+    u = u * x + -1.1994354397101548e-149;
+    return u * x + 9.9999981155164767e-1;
+}
+
 
 #endif

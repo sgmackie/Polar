@@ -16,6 +16,13 @@
 /*  Global code  	*/
 /*                  */
 
+//Maximums
+#define MAX_STRING_LENGTH 64
+#define MAX_CHANNELS 4
+#define MAX_CONTAINERS 4
+#define MAX_SOURCES 32
+#define MAX_BREAKPOINTS 1024
+#define MAX_ENVELOPES 4
 
 //Hex defines
 //Sources
@@ -49,6 +56,7 @@
 #define PLAY                    11120484276852016966U
 #define FADE                    7677966677680727406U
 #define VECTOR                  12143376858605269818U
+#define ROTATION                405295350552126795U
 #define MATRIX                  16755126490873392952U
 
 //General Defines
@@ -75,6 +83,13 @@ typedef struct VECTOR4D
     f32 Z;
     f32 W;
 } VECTOR4D;
+
+typedef struct ROTATION3D
+{
+    f32 Roll;
+    f32 Pitch;
+    f32 Yaw;
+} ROTATION3D;
 
 typedef struct MATRIX_4x4
 {
@@ -283,34 +298,7 @@ typedef struct POLAR_ENGINE         //Struct to hold platform specific audio API
 //Prototypes
 //String handling
 i32 StringLength(const char *String);
-i32 StringLength(const char *String)
-{
-    i32 Count = 0;
-
-    while(*String++)
-    {
-        ++Count;
-    }
-
-    return Count;
-}
-
 void polar_StringConcatenate(size_t StringALength, const char *StringA, size_t StringBLength, const char *StringB, char *StringC);
-void polar_StringConcatenate(size_t StringALength, const char *StringA, size_t StringBLength, const char *StringB, char *StringC)
-{
-    for(u32 Index = 0; Index < StringALength; ++Index)
-    {
-        *StringC++ = *StringA++;
-    }
-
-    for(u32 Index = 0; Index < StringBLength; ++Index)
-    {
-        *StringC++ = *StringB++;
-    }
-
-    *StringC++ = 0;
-}
-
 
 /*                  */
 /*  Sources code  	*/
@@ -352,6 +340,9 @@ typedef struct POLAR_SOURCE_STATE
     f32 RolloffFactor;
     bool RolloffDirty;
     bool IsDistanceAttenuated;
+
+
+    f32 Pan;
 
     u32 CurrentEnvelopes;
     POLAR_ENVELOPE Envelope[MAX_ENVELOPES];
@@ -398,6 +389,7 @@ typedef struct POLAR_LISTENER
 {
     u64 UID;
     VECTOR4D Position;
+    ROTATION3D Rotation;
 } POLAR_LISTENER;
 
 
@@ -471,11 +463,8 @@ void polar_render_Container(POLAR_ENGINE PolarEngine, POLAR_SOURCE &ContainerSou
 void polar_render_Submix(POLAR_ENGINE PolarEngine, POLAR_SUBMIX *Submix, f32 *SubmixOutput);                                                                                            //Render every container in a submix
 void polar_render_Callback(POLAR_ENGINE PolarEngine, POLAR_MIXER *Mixer, f32 *MixBuffer, i16 *MasterOutput);                                                                                  //Loop through each submix and render their containers/sources  
 
-
 //Function pointers
-void (*Summing)(POLAR_ENGINE, u8 &, f32 *, f32 &, f32 &, f32 *, f32 *);        //Pointer to summing function that is dependant on the output channel configuration
-void (*Callback)(POLAR_ENGINE, POLAR_MIXER *, f32 *, i16 *);                   //Audio callback function called by the Windows/Linux audio API
-
+internal_scope void (*Callback)(POLAR_ENGINE, POLAR_MIXER *, f32 *, i16 *);                   //Audio callback function called by the Windows/Linux audio API
 
 
 #endif

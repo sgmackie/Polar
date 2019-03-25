@@ -28,8 +28,8 @@
 
 //3 ways to use static
 #define global_scope static       //Global access to variable
-// #define internal static     //Variable local to source file only
-#define local static        //Variable persists after stepping out of scope (this should be avoided when possible)
+#define internal_scope static     //Variable local to source file only
+#define local_scope static        //Variable persists after stepping out of scope (this should be avoided when possible)
 
 //Types include longform and short form names
 //Standard integers

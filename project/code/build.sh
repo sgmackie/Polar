@@ -27,7 +27,7 @@ PlatformFiles="${CurDir}/${Platform}.cpp"
 CompilerFlags="-g -pedantic -std=c++11 -DCUDA=1 -DOSC_LOG=1"
 
 # Set warning labels:
-CommonWarnings="-Wall -Werror -Wno-unused-function -Wno-vla-extension"
+CommonWarnings="-Wall -Werror -Wno-unused-function -Wno-unused-variable -Wno-vla-extension -Wno-format"
 
 # Set Compiler optimsation level for debug or release builds
 CompilerOpt="-O0"
@@ -36,7 +36,7 @@ CompilerOpt="-O0"
 Libs="-lm -lasound"
 
 # Run Clang compiler
-clang++ ${CompilerFlags} ${CompilerWarnings} ${CompilerOpt} ${Libs} ${PlatformFiles} -o ${Platform}
+clang++ ${CompilerFlags} ${CommonWarnings} ${CompilerOpt} ${Libs} ${PlatformFiles} -o ${Platform}
 
 # Exit
 popd > /dev/null
