@@ -42,7 +42,7 @@ Libs="-lm -lasound"
 CUDAFunctions=
 
 # Run Clang compiler
-clang++ ${CompilerFlags} ${CUDAPaths} ${CommonWarnings} ${CompilerOpt} ${Libs} ${CUDAFunctions} ${PlatformFiles} -o ${Platform} -v
+clang++ ${CompilerFlags} ${CUDAPaths} ${CommonWarnings} ${CompilerOpt} ${Libs} ${CUDAFunctions} ${PlatformFiles} -o ${Platform}
 
 # Exit
 popd > /dev/null

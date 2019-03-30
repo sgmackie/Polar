@@ -35,10 +35,10 @@ set CommonWarnings=-Wall -Wextra -Werror -Wno-unused-function -Wno-language-exte
 set CompilerOpt=-O0
 
 :: Set win32 libraries
-set Libs=-lUser32.lib -lOle32.lib -lAvrt.lib -lWinmm.lib -lcudart.lib
+set Libs=-lUser32.lib -lOle32.lib -lAvrt.lib -lWinmm.lib -ld3d9.lib -lGdi32.lib
 
 :: Set path for CUDA function library
-set CUDAFunctions=-lpolar_cuda.lib
+set CUDAFunctions=-lcudart.lib -lpolar_cuda.lib
 
 :: Run Clang compiler
 clang %CompilerFlags% %CUDAPaths% %CommonWarnings% %CompilerOpt% %Libs% %CUDAFunctions% %PlatformFiles% -o %Platform%.exe

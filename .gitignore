@@ -1,6 +1,10 @@
 #VSCode Setting
 .vscode/
 
+#Tools
+profile/
+tools/
+
 #Build files
 misc/
 build/

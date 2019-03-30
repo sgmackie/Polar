@@ -2,6 +2,7 @@
 #define polar_cuda_h
 
 #include "../polar.h"
+#include "../../external/pcg_basic.h"
 
 //CUDA runtime 
 #include <cuda_runtime.h>
@@ -19,6 +20,8 @@ typedef struct CUDA_DEVICE
 i32 cuda_DeviceGet(CUDA_DEVICE *GPU, i32 ID);
 
 f32 cuda_Sine(f32 X, u32 Block);
+
+void cuda_Multiply(i32 GridWidth, i32 GridHeight, u64 MaxSize);
 
 #endif
 

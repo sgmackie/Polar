@@ -250,8 +250,6 @@ typedef struct POLAR_OSCILLATOR
     f32 PhaseCurrent;
     f32 PhaseIncrement;                             //Store calculated phase increment
     POLAR_STATE_PER_SAMPLE Frequency;
-    f64 FrequencyTarget;
-    f64 FrequencyDelta;
 } POLAR_OSCILLATOR;
 
 
@@ -403,7 +401,7 @@ typedef struct POLAR_CONTAINER
 {
     u8 CurrentContainers;
     u64 UID[MAX_CONTAINERS];
-    f64 Amplitude[MAX_CONTAINERS];
+    f32 Amplitude[MAX_CONTAINERS];
     u32 FX[MAX_CONTAINERS];
     POLAR_SOURCE Sources[MAX_CONTAINERS];
 } POLAR_CONTAINER;
@@ -412,7 +410,7 @@ typedef struct POLAR_CONTAINER
 typedef struct POLAR_SUBMIX
 {
     u64 UID;
-    f64 Amplitude;
+    f32 Amplitude;
     u32 FX;
     POLAR_CONTAINER Containers;
     u32 ChildSubmixCount;
@@ -423,7 +421,7 @@ typedef struct POLAR_SUBMIX
 //Global mixer that holds all submixes and their child containers
 typedef struct POLAR_MIXER
 {
-    f64 Amplitude;
+    f32 Amplitude;
     POLAR_LISTENER *Listener;
     u32 SubmixCount;
     POLAR_SUBMIX *FirstInList;
@@ -431,15 +429,15 @@ typedef struct POLAR_MIXER
 
 //Prototypes
 //Mixer
-POLAR_MIXER *polar_mixer_Create(MEMORY_ARENA *Arena, f64 Amplitude);            //Create mixing object to hold singly linked list of submixes
+POLAR_MIXER *polar_mixer_Create(MEMORY_ARENA *Arena, f32 Amplitude);            //Create mixing object to hold singly linked list of submixes
 void polar_mixer_Destroy(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer);              //Free the mixer
 
 //Submixing
-void polar_mixer_SubmixCreate(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, const char ParentUID[MAX_STRING_LENGTH], const char ChildUID[MAX_STRING_LENGTH], f64 Amplitude);     //Create a submix that is either assigned to any free space in the list or is the child of another submix
+void polar_mixer_SubmixCreate(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, const char ParentUID[MAX_STRING_LENGTH], const char ChildUID[MAX_STRING_LENGTH], f32 Amplitude);     //Create a submix that is either assigned to any free space in the list or is the child of another submix
 void polar_mixer_SubmixDestroy(POLAR_MIXER *Mixer, const char UID[MAX_STRING_LENGTH]);                                                                                      //Remove submix from the list
 
 //Containers
-void polar_mixer_ContainerCreate(POLAR_MIXER *Mixer, const char SubmixUID[MAX_STRING_LENGTH], const char ContainerUID[MAX_STRING_LENGTH], f64 Amplitude);                   //Create a container to hold any audio sources as a single group, then assign it to a submix
+void polar_mixer_ContainerCreate(POLAR_MIXER *Mixer, const char SubmixUID[MAX_STRING_LENGTH], const char ContainerUID[MAX_STRING_LENGTH], f32 Amplitude);                   //Create a container to hold any audio sources as a single group, then assign it to a submix
 void polar_mixer_ContainerDestroy(POLAR_MIXER *Mixer, const char ContainerUID[MAX_STRING_LENGTH]);                                                                          //Remove container from the array
 
 //Sources
@@ -458,8 +456,8 @@ void polar_mixer_ContainerDestroy(POLAR_MIXER *Mixer, const char ContainerUID[MA
 //Prototypes
 
 void polar_render_Source(u32 &SampleRate, u64 &SampleCount, u32 Samples, POLAR_SOURCE_TYPE &Type, u32 &FX, f32 *Buffer);     //Fills a source's buffer and applies any FX
-void polar_render_SumStereo(POLAR_ENGINE PolarEngine, u8 &Channels, f32 *PanPositions, f64 &Amplitude, f32 *Buffer, f32 *SourceOutput);                                                 //Sums source to stereo output buffer
-void polar_render_Container(POLAR_ENGINE PolarEngine, POLAR_SOURCE &ContainerSources, f64 ContainerAmplitude, f32 *ContainerOutput);                                                    //Render every source in a container and mix as a single buffer
+void polar_render_SumStereo(POLAR_ENGINE PolarEngine, u8 &Channels, f32 *PanPositions, f32 &Amplitude, f32 *Buffer, f32 *SourceOutput);                                                 //Sums source to stereo output buffer
+void polar_render_Container(POLAR_ENGINE PolarEngine, POLAR_SOURCE &ContainerSources, f32 ContainerAmplitude, f32 *ContainerOutput);                                                    //Render every source in a container and mix as a single buffer
 void polar_render_Submix(POLAR_ENGINE PolarEngine, POLAR_SUBMIX *Submix, f32 *SubmixOutput);                                                                                            //Render every container in a submix
 void polar_render_Callback(POLAR_ENGINE PolarEngine, POLAR_MIXER *Mixer, f32 *MixBuffer, i16 *MasterOutput);                                                                                  //Loop through each submix and render their containers/sources  
 

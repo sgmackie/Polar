@@ -20,7 +20,7 @@ void Resample(f32 *InputBuffer, u32 InputFrames, f32 *OutputBuffer, u32 OutputFr
     }
 }
 
-POLAR_MIXER *polar_mixer_Create(MEMORY_ARENA *Arena, f64 Amplitude)
+POLAR_MIXER *polar_mixer_Create(MEMORY_ARENA *Arena, f32 Amplitude)
 {
     Assert(Arena);
 
@@ -54,7 +54,7 @@ void polar_mixer_Destroy(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer)
     }
 }
 
-void polar_mixer_SubmixCreate(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, const char ParentUID[MAX_STRING_LENGTH], const char ChildUID[MAX_STRING_LENGTH], f64 Amplitude)
+void polar_mixer_SubmixCreate(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, const char ParentUID[MAX_STRING_LENGTH], const char ChildUID[MAX_STRING_LENGTH], f32 Amplitude)
 {
     u64 ChildHash = Hash(ChildUID);
     
@@ -220,7 +220,7 @@ void polar_mixer_SubmixDestroy(POLAR_MIXER *Mixer, const char UID[MAX_STRING_LEN
 }
 
 
-void polar_mixer_ContainerCreate(POLAR_MIXER *Mixer, const char SubmixUID[MAX_STRING_LENGTH], const char ContainerUID[MAX_STRING_LENGTH], f64 Amplitude)
+void polar_mixer_ContainerCreate(POLAR_MIXER *Mixer, const char SubmixUID[MAX_STRING_LENGTH], const char ContainerUID[MAX_STRING_LENGTH], f32 Amplitude)
 {
     u64 SubmixHash = Hash(SubmixUID);
     u64 ContainerHash = Hash(ContainerUID);

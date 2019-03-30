@@ -4,6 +4,12 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
+#include <d3d9.h>
+
+//IMGUI implementation - DirectX9
+#include "../external/imgui/win32/imgui_impl_dx9.cpp"
+#include "../external/imgui/win32/imgui_impl_win32.cpp"
+
 /*                  */
 /*  WASAPI code     */
 /*                  */

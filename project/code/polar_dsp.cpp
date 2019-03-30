@@ -79,21 +79,20 @@ void polar_dsp_OscillatorInit(POLAR_OSCILLATOR *Oscillator, u32 SampleRate, u32 
 }
 
 //Wrap phase 2*PI32 as precaution against sin(x) function on different compilers failing to wrap large scale values internally
-f32 polar_dsp_PhaseWrap(f32 &Phase)
+f32 polar_dsp_PhaseWrap(f32 &Phase, f64 Size)
 {    
-    if(Phase >= TWO_PI32)
+    while(Phase >= Size)
     {
-        Phase -= TWO_PI32;
+        Phase -= Size;
     }
 
-    if(Phase < 0)
+    while(Phase < 0)
     {
-        Phase += TWO_PI32;
+        Phase += Size;
     }
 
     return Phase;
 }
-
 
 //Calculate sine wave samples
 f32 polar_dsp_TickSine(POLAR_OSCILLATOR *Oscillator)
@@ -106,10 +105,10 @@ f32 polar_dsp_TickSine(POLAR_OSCILLATOR *Oscillator)
     SineValue = MiniMax(Oscillator->PhaseCurrent);
 #endif
 
-    Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->Frequency.Current; //Load atomic value, multiply to get the phase increment
+    Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->Frequency.Current; 
     Oscillator->PhaseCurrent += Oscillator->PhaseIncrement; //Increase phase by the calculated cycle increment
     
-    polar_dsp_PhaseWrap(Oscillator->PhaseCurrent);
+    polar_dsp_PhaseWrap(Oscillator->PhaseCurrent, TWO_PI32);
 
     return SineValue;
 }
@@ -132,7 +131,7 @@ f32 polar_dsp_TickSquare(POLAR_OSCILLATOR *Oscillator)
     }
     
     Oscillator->PhaseCurrent += Oscillator->PhaseIncrement;
-    polar_dsp_PhaseWrap(Oscillator->PhaseCurrent);
+    polar_dsp_PhaseWrap(Oscillator->PhaseCurrent, TWO_PI32);
 
     return SquareValue;
 }
@@ -147,7 +146,7 @@ f32 polar_dsp_TickSawDown(POLAR_OSCILLATOR *Oscillator)
     Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->Frequency.Current;
     Oscillator->PhaseCurrent += Oscillator->PhaseIncrement;
     
-    polar_dsp_PhaseWrap(Oscillator->PhaseCurrent);
+    polar_dsp_PhaseWrap(Oscillator->PhaseCurrent, TWO_PI32);
     
     return SawDownValue;
 }
@@ -162,7 +161,7 @@ f32 polar_dsp_TickSawUp(POLAR_OSCILLATOR *Oscillator)
     Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->Frequency.Current;
     Oscillator->PhaseCurrent += Oscillator->PhaseIncrement;
     
-    polar_dsp_PhaseWrap(Oscillator->PhaseCurrent);
+    polar_dsp_PhaseWrap(Oscillator->PhaseCurrent, TWO_PI32);
     
     return SawUpValue;
 }
@@ -184,9 +183,111 @@ f32 polar_dsp_TickTriangle(POLAR_OSCILLATOR *Oscillator)
     Oscillator->PhaseIncrement = Oscillator->TwoPiOverSampleRate * Oscillator->Frequency.Current;
     Oscillator->PhaseCurrent += Oscillator->PhaseIncrement;
     
-    polar_dsp_PhaseWrap(Oscillator->PhaseCurrent);
+    polar_dsp_PhaseWrap(Oscillator->PhaseCurrent, TWO_PI32);
     
     return TriangleValue;
 }
+
+
+void FillTable(f64 *Table, u64 Length)
+{
+    f64 Step = TWO_PI32 / Length;
+
+    u64 i = 0;
+    for(i = 0; i < Length; ++i) 
+    {
+        Table[i] = MiniMax(Step * i);
+    }
+
+    //Wraparound
+    Table[i] = Table[0];
+}
+
+void RenderTable(f32 *outframe, u32 Samples, f64 *Table, u64 Length, f64 Frequency, u32 SampleRate, bool IsTruncated)
+{
+    f64 curphase = 0.0;
+    f64 tablen = (f64) Length;
+
+    f64 sizeovrsr = (f64) Length / SampleRate;
+    f64 phaseincr = sizeovrsr * Frequency;
+
+    if(IsTruncated)
+    {   
+        // Truncated loop
+        for(u64 i = 0; i < Samples; ++i)
+        {
+            i32 Index = (i32) curphase; //Truncation
+
+            outframe[i] = (f32) Table[Index];
+            // printf("Sample: %f\tTable: %f\n", outframe[i], Table[Index]);
+            curphase += phaseincr;
+
+            while(curphase >= tablen) 
+            {
+                curphase -= tablen;
+            }
+
+            while(curphase < 0)
+            {
+                curphase += tablen;
+            }
+        }
+    }
+    
+    else
+    {
+        //Interpolated loop
+        i32 Base = 0;
+        i32 Next = 0;
+        f64 Fraction = 0;
+        f64 Value = 0;
+        f64 Slope = 0;
+
+        for(u64 i = 0; i < Samples; ++i)
+        {
+            Base = (i32) curphase;
+            Next = (Base + 1);
+
+            Fraction = curphase - Base;
+            Value = Table[Base];
+            Slope = (Table[Next] - Value);
+
+            Value += (Fraction * Slope);
+            outframe[i] = (f32) Value;
+            // printf("Sample: %f\n", outframe[i]);
+            curphase += phaseincr;
+
+            while(curphase >= tablen) 
+            {
+                curphase -= tablen;
+            }
+
+            while(curphase < 0)
+            {
+                curphase += tablen;
+            }
+        }
+    }
+}
+
+void TableTest()
+{
+    MEMORY_ARENA *TableMemory = memory_arena_Create(Kilobytes(100));
+    
+    u64 Length = (8192 + 1); //+1 for guard point at end of the table for wraparound
+    f64 *Table = 0;
+    Table = (f64 *) memory_arena_Push(TableMemory, Table, (sizeof(* Table) * Length));
+    FillTable(Table, Length);
+
+    u32 Samples = 4096;
+    f32 *outframe = 0;
+    outframe = (f32 *) memory_arena_Push(TableMemory, outframe, (sizeof(* outframe) * Samples));
+    RenderTable(outframe, Samples, Table, Length, 440, 48000, false);
+
+}
+
+
+
+
 
 #endif
