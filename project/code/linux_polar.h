@@ -9,6 +9,7 @@
 #include <sys/mman.h>   //Memory allocations (mmap, munmap)
 #include <time.h>
 #include <unistd.h>
+#define ANSI(code) code
 
 /*                  */
 /*  ALSA code       */

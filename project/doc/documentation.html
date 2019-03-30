@@ -1,0 +1,23 @@
+<meta charset='utf-8' emacsmode='-*- markdown -*-'>
+<link rel='stylesheet' href='https://casual-effects.com/markdeep/latest/apidoc.css?'>
+<style>.backtick, .tilde {overflow-x: auto;} .longTOC {overflow-x: hidden;}</style>
+### Mixer
+Mixers contain a collection of submixes
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~c
+typedef struct POLAR_MIXER
+{
+    f32 Amplitude;
+    POLAR_LISTENER *Listener;
+    u32 SubmixCount;
+    POLAR_SUBMIX *FirstInList;
+} POLAR_MIXER;
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#### Functions
+Function            | Description                                                               | Inputs
+--------------------|---------------------------------------------------------------------------|---------
+polar_mixer_Create  | Create mixing object to hold singly linked list of submixes               | Arena:
+                    |                                                                           | Amplitude: 
+<script>markdeepOptions={tocStyle:'long'};</script>
+<!-- Markdeep: --><script src='https://casual-effects.com/markdeep/latest/markdeep.min.js?'></script>

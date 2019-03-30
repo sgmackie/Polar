@@ -4,6 +4,16 @@
 //Type defines
 #include "polar_typedefs.h"
 
+//Logging function
+#define polar_Log(...) do                                                                                       \
+{                                                                                                               \
+    time_t t = time(0);                                                                                         \
+    printf("%s[%.8s]%s %s:%d: \t", ANSI("\27[36m"), 11+ctime(&t), ANSI("\27[0m"), __FUNCTION__, __LINE__);      \
+    printf(__VA_ARGS__);                                                                                        \
+    }                                                                                                           \
+while(0)                                                                                                        \
+
+
 //TODO: Remove CRT
 #include <stdlib.h>
 #include <stdio.h>
@@ -391,9 +401,31 @@ typedef struct POLAR_LISTENER
 } POLAR_LISTENER;
 
 
-/*                  */
-/*  Mixer code      */
-/*                  */
+/* =============================================================================
+ *
+ *                                  Mixer
+ *
+ * =============================================================================*/
+/*
+/// ### Mixer
+/// Mixers contain a collection of submixes
+/// 
+/// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~c
+/// typedef struct POLAR_MIXER
+/// {
+///     f32 Amplitude;
+///     POLAR_LISTENER *Listener;
+///     u32 SubmixCount;
+///     POLAR_SUBMIX *FirstInList;
+/// } POLAR_MIXER;
+/// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+///
+/// #### Functions
+/// Function            | Description                                                               | Inputs
+/// --------------------|---------------------------------------------------------------------------|---------
+/// polar_mixer_Create  | Create mixing object to hold singly linked list of submixes               | Arena:
+///                     |                                                                           | Amplitude: 
+*/
 
 //Struct
 //Container to hold a static amount of sources

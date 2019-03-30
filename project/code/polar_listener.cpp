@@ -7,11 +7,6 @@ void polar_listener_Create(POLAR_MIXER *Mixer, const char UID[MAX_STRING_LENGTH]
     Mixer->Listener->Position = {};
 }
 
-
-//-----------------------------------------------------------------------------
-// Purpose: Input handler for fading in volume over time.
-// Input  : Float volume fade in time 0 - 100 seconds
-//-----------------------------------------------------------------------------
 void polar_listener_DistanceFromListener(POLAR_LISTENER *Listener, POLAR_SOURCE_STATE &State, f32 NoiseFloor)
 {
     if(State.RolloffDirty)

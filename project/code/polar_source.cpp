@@ -551,6 +551,8 @@ void polar_source_Update(POLAR_MIXER *Mixer, POLAR_SOURCE *Sources, u32 &SourceI
     
     Sources->States[SourceIndex].Pan = (Mixer->Listener->Rotation.Yaw / Sources->States[SourceIndex].DistanceFromListener);
     Sources->States[SourceIndex].Pan = -Sources->States[SourceIndex].Pan;
+
+    // polar_Log("Current: %f Previous: %f\n", Sources->States[SourceIndex].Amplitude.Current, Sources->States[SourceIndex].Amplitude.Previous);
 }
 
 

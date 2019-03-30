@@ -3,6 +3,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#define ANSI(code) ""
 
 #include <d3d9.h>
 
