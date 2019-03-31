@@ -65,3 +65,4 @@ f64 polar_WallTime()
 #include "polar_source.cpp"
 #include "polar_OSC.cpp"
 #include "polar_render.cpp"
+#include "polar_GUI.cpp"

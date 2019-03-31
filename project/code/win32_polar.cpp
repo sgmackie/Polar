@@ -14,15 +14,16 @@
 #endif
 #include "win32_polar.h"
 
-global_scope char AssetPath[MAX_STRING_LENGTH] = {"../../data/"};
-global_scope i64 GlobalPerformanceCounterFrequency;
-global_scope f64 GlobalTime = 0;
-global_scope bool GlobalRunning = false;
+//Globals
+global_scope char                       AssetPath[MAX_STRING_LENGTH] = {"../../data/"};
+global_scope i64                        GlobalPerformanceCounterFrequency;
+global_scope f64                        GlobalTime = 0;
+global_scope bool                       GlobalRunning = false;
 
 //D3D9 contexts for GUI rendering
-global_scope LPDIRECT3D9              D3D9 = NULL;
-global_scope LPDIRECT3DDEVICE9        D3Device = NULL;
-global_scope D3DPRESENT_PARAMETERS    D3DeviceParamters = {};
+global_scope LPDIRECT3D9                D3D9 = NULL;
+global_scope LPDIRECT3DDEVICE9          D3Device = NULL;
+global_scope D3DPRESENT_PARAMETERS      D3DeviceParamters = {};
 
 //Source
 #include "polar.cpp"
@@ -259,8 +260,18 @@ int main()
 
         if(WindowHandle && CreateDeviceD3D(WindowHandle))
         {
+            //Display window
             ShowWindow(WindowHandle, SW_SHOWDEFAULT);
             UpdateWindow(WindowHandle);
+
+            //Get monitor refresh rate
+            HDC RefreshDC = GetDC(WindowHandle);
+            i32 MonitorRefresh = GetDeviceCaps(RefreshDC, VREFRESH);
+            ReleaseDC(WindowHandle, RefreshDC);
+            if(MonitorRefresh < 1)
+            {
+                MonitorRefresh = DEFAULT_HZ;
+            }
 
             //Start timings
             LARGE_INTEGER PerformanceCounterFrequencyResult;
@@ -271,14 +282,14 @@ int main()
             UINT SchedulerPeriodInMS = 1;
             bool IsSleepGranular = (timeBeginPeriod(SchedulerPeriodInMS) == TIMERR_NOERROR);
 
-            //Get monitor refresh rate
-            HDC RefreshDC = GetDC(WindowHandle);
-            i32 MonitorRefresh = GetDeviceCaps(RefreshDC, VREFRESH);
-            ReleaseDC(WindowHandle, RefreshDC);
-            if(MonitorRefresh < 1)
-            {
-                MonitorRefresh = DEFAULT_HZ;
-            }
+            //Define engine update rate
+            POLAR_ENGINE Engine = {};
+            Engine.UpdateRate = (MonitorRefresh / DEFAULT_LATENCY_FRAMES);
+            f32 TargetSecondsPerFrame = 1.0f / (f32) Engine.UpdateRate;
+
+            //PCG Random Setup
+            i32 Rounds = 5;
+            pcg32_srandom(time(NULL) ^ (intptr_t) &printf, (intptr_t) &Rounds);
 
             //Create GUI context
             IMGUI_CHECKVERSION();
@@ -296,15 +307,6 @@ int main()
             //Bind to DX9 renderer
             ImGui_ImplWin32_Init(WindowHandle);
             ImGui_ImplDX9_Init(D3Device);
-
-            //Define engine update rate
-            POLAR_ENGINE Engine = {};
-            Engine.UpdateRate = (MonitorRefresh / DEFAULT_LATENCY_FRAMES);
-            f32 TargetSecondsPerFrame = 1.0f / (f32) Engine.UpdateRate;
-
-            //PCG Random Setup
-            i32 Rounds = 5;
-            pcg32_srandom(time(NULL) ^ (intptr_t) &printf, (intptr_t) &Rounds);
 
             //Start WASAPI
             WASAPI_DATA *WASAPI = win32_WASAPI_Create(EngineArena, DEFAULT_SAMPLERATE, DEFAULT_SAMPLERATE);
@@ -344,26 +346,28 @@ int main()
 
                 //Sine sources
                 polar_mixer_SubmixCreate(SourceArena, Master, 0, "SM_Trumpet", -1);
+                polar_mixer_SubmixCreate(SourceArena, Master, "SM_Trumpet", "CM_TEST", -1);
                 polar_mixer_ContainerCreate(Master, "SM_Trumpet", "CO_Trumpet14", AMP(-10));
-                polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_01"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_02"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_03"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_04"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_05"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_06"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_07"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_08"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_09"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_10"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_11"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_12"), Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, Hash("CO_Trumpet14"), Hash("SO_Trumpet14_Partial_13"), Mono, SO_OSCILLATOR, WV_SINE, 0);
+                polar_mixer_ContainerCreate(Master, "SM_Trumpet", "CO_ES", AMP(-10));
+                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_01", Mono, SO_OSCILLATOR, WV_SINE, 0);
+                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_02", Mono, SO_OSCILLATOR, WV_SINE, 0);
+                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_03", Mono, SO_OSCILLATOR, WV_SINE, 0);
+                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_04", Mono, SO_OSCILLATOR, WV_SINE, 0);
+                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_05", Mono, SO_OSCILLATOR, WV_SINE, 0);
+                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_06", Mono, SO_OSCILLATOR, WV_SINE, 0);
+                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_07", Mono, SO_OSCILLATOR, WV_SINE, 0);
+                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_08", Mono, SO_OSCILLATOR, WV_SINE, 0);
+                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_09", Mono, SO_OSCILLATOR, WV_SINE, 0);
+                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_10", Mono, SO_OSCILLATOR, WV_SINE, 0);
+                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_11", Mono, SO_OSCILLATOR, WV_SINE, 0);
+                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_12", Mono, SO_OSCILLATOR, WV_SINE, 0);
+                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_13", Mono, SO_OSCILLATOR, WV_SINE, 0);
 
                 //File sources
                 polar_mixer_SubmixCreate(SourceArena, Master, 0, "SM_FileMix", -1);
                 polar_mixer_ContainerCreate(Master, "SM_FileMix", "CO_FileContainer", AMP(-1));
-                polar_source_Create(SourceArena, Master, Engine, Hash("CO_FileContainer"), Hash("SO_Whiterun"), Stereo, SO_FILE, "audio/Whiterun48.wav");
-                polar_source_Create(SourceArena, Master, Engine, Hash("CO_FileContainer"), Hash("SO_Orbifold"), Stereo, SO_FILE, "audio/LGOrbifold48.wav");
+                polar_source_Create(SourceArena, Master, Engine, "CO_FileContainer", "SO_Whiterun", Stereo, SO_FILE, "audio/Whiterun48.wav");
+                polar_source_Create(SourceArena, Master, Engine, "CO_FileContainer", "SO_Orbifold", Stereo, SO_FILE, "audio/LGOrbifold48.wav");
 
                 //Start timings
                 LARGE_INTEGER LastCounter = win32_WallClock();
@@ -429,7 +433,7 @@ int main()
                     {
                         // polar_container_Play(Master, Hash("CO_FileContainer"), 0, FX_DRY, EN_NONE, AMP(-1));
 
-                        polar_source_Play(Master, Hash("SO_Whiterun"), 0, FX_DRY, EN_NONE, AMP(-1));
+                        // polar_source_Play(Master, Hash("SO_Whiterun"), 0, FX_DRY, EN_NONE, AMP(-1));
 
                         // polar_container_Fade(Master, Hash("CO_FileContainer"), GlobalTime, AMP(-65), 12);
 
@@ -476,42 +480,8 @@ int main()
                     ImGui_ImplWin32_NewFrame();
                     ImGui::NewFrame();
 
-                    // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
-                    if (show_demo_window)
-                        ImGui::ShowDemoWindow(&show_demo_window);
-            
-                    // 2. Show a simple window that we create ourselves. We use a Begin/End pair to created a named window.
-                    {
-                        static float f = 0.0f;
-                        static int counter = 0;
-            
-                        ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
-            
-                        ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-                        ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
-                        ImGui::Checkbox("Another Window", &show_another_window);
-            
-                        ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-                        ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
-            
-                        if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-                            counter++;
-                        ImGui::SameLine();
-                        ImGui::Text("counter = %d", counter);
-            
-                        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-                        ImGui::End();
-                    }
-
-                    // 3. Show another simple window.
-                    if (show_another_window)
-                    {
-                        ImGui::Begin("Another Window", &show_another_window);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-                        ImGui::Text("Hello from another window!");
-                        if (ImGui::Button("Close Me"))
-                            show_another_window = false;
-                        ImGui::End();
-                    }
+                    //Build GUI
+                    polar_GUI_Construct(Master);
 
                     // Rendering
                     ImGui::EndFrame();

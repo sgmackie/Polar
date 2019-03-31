@@ -6,6 +6,7 @@ POLAR_SOURCE_SOLO polar_source_CopyFromContainer(POLAR_SOURCE *Sources, u32 Inde
 {
     POLAR_SOURCE_SOLO Result = {};
 
+    memcpy(Result.Name, Sources->Name[Index], sizeof(Result.Name));
     Result.UID                      = Sources->UID[Index];
     Result.Type                     = Sources->Type[Index];
     Result.PlayState                = Sources->PlayState[Index];
@@ -22,6 +23,7 @@ POLAR_SOURCE_SOLO polar_source_CopyFromContainer(POLAR_SOURCE *Sources, u32 Inde
 
 void polar_source_CopyToContainer(POLAR_SOURCE_SOLO Source, POLAR_SOURCE *Sources, u32 Index)
 {
+    memcpy(Sources->Name[Index], Source.Name, sizeof(Sources->Name[Index]));
     Sources->UID[Index]             = Source.UID;
     Sources->Type[Index]            = Source.Type;
     Sources->PlayState[Index]       = Source.PlayState;
@@ -99,20 +101,20 @@ POLAR_SOURCE *polar_source_Retrieval(POLAR_MIXER *Mixer, u64 UID, u32 &SourceInd
         }
     }
 
-    printf("Polar\tERROR: Failed to retrieve %llu\n", UID);
+    polar_Log("ERROR: Failed to retrieve %llu\n", UID);
     
     return 0;
 }
 
 
-void polar_source_Create(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE Engine, u64 ContainerUID, u64 SourceUID, u32 Channels, u32 Type, ...)
+void polar_source_Create(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE Engine, const char ContainerUID[MAX_STRING_LENGTH], const char SourceUID[MAX_STRING_LENGTH], u32 Channels, u32 Type, ...)
 {
     u32 i = 0;
-    POLAR_SOURCE *Sources = polar_source_Retrieval(Mixer, ContainerUID, i);
+    POLAR_SOURCE *Sources = polar_source_Retrieval(Mixer, Hash(ContainerUID), i);
     
     if(!Sources)
     {
-        printf("Polar\tERROR: Failed to add source %llu to container %llu\n", SourceUID, ContainerUID);
+        polar_Log("ERROR: Failed to add source %s to container %s\n", SourceUID, ContainerUID);
         return;
     }
     
@@ -120,7 +122,8 @@ void polar_source_Create(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE E
 
     if(!Source.UID)
     {
-        Source.UID = SourceUID;
+        memcpy(Source.Name, SourceUID, sizeof(Source.Name));
+        Source.UID = Hash(SourceUID);
         Source.PlayState = Stopped;
         Source.Channels = Channels;
 
@@ -156,7 +159,7 @@ void polar_source_Create(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE E
 
                 if(!Source.Type.File->Samples)
                 {
-                    printf("Polar\tERROR: Cannot open file %s\n", FilePath);
+                    polar_Log("ERROR: Cannot open file %s\n", FilePath);
                     break;
                 }
 
@@ -231,7 +234,7 @@ void polar_source_Create(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE E
 
     else
     {
-        printf("Polar\tERROR: Failed to add source %llu to container %llu\n", SourceUID, ContainerUID);
+        polar_Log("ERROR: Failed to add source %s to container %s\n", SourceUID, ContainerUID);
         return;
     }
 
@@ -270,7 +273,7 @@ void polar_source_CreateFromFile(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_
         FileError = sscanf(SourceLine, "%s %s %d %s %lf", Container, Source, &Channels, Type, &Frequency);
         if(strncmp(Type, "SO_OSCILLATOR", 32) == 0)
         {
-            polar_source_Create(Arena, Mixer, Engine, Hash(Container), Hash(Source), Channels, SO_OSCILLATOR, WV_SINE, Frequency);
+            polar_source_Create(Arena, Mixer, Engine, Container, Source, Channels, SO_OSCILLATOR, WV_SINE, Frequency);
         }
         ++Index;
     }
@@ -317,7 +320,7 @@ void polar_source_Fade(POLAR_MIXER *Mixer, u64 SourceUID, f64 GlobalTime, f32 Ne
     POLAR_SOURCE *Sources = polar_source_Retrieval(Mixer, SourceUID, i);
     if(!Sources)
     {
-        printf("Polar\tERROR: Cannot fade source %llu\n", SourceUID);
+        polar_Log("ERROR: Cannot fade source %llu\n", SourceUID);
         return;
     }
 
@@ -334,7 +337,7 @@ void polar_source_Fade(POLAR_MIXER *Mixer, u64 SourceUID, f64 GlobalTime, f32 Ne
 
     else
     {
-        printf("Polar\tERROR: Cannot fade source %llu\n", SourceUID);
+        polar_Log("ERROR: Cannot fade source %llu\n", SourceUID);
         return;
     }
 
@@ -350,7 +353,7 @@ void polar_source_Attenuation(POLAR_MIXER *Mixer, u64 SourceUID, bool IsAttenuat
     POLAR_SOURCE *Sources = polar_source_Retrieval(Mixer, SourceUID, i);
     if(!Sources)
     {
-        printf("Polar\tERROR: Cannot edit attenuation on source %llu\n", SourceUID);
+        polar_Log("ERROR: Cannot edit attenuation on source %llu\n", SourceUID);
         return;
     }
 
@@ -384,7 +387,7 @@ void polar_source_Attenuation(POLAR_MIXER *Mixer, u64 SourceUID, bool IsAttenuat
 
     else
     {
-        printf("Polar\tERROR: Cannot edit attenuation on source %llu\n", SourceUID);
+        polar_Log("ERROR: Cannot edit attenuation on source %llu\n", SourceUID);
         return;
     }
 
@@ -596,7 +599,7 @@ void polar_source_Position(POLAR_MIXER *Mixer, u64 SourceUID, VECTOR4D NewPositi
     POLAR_SOURCE *Sources = polar_source_Retrieval(Mixer, SourceUID, i);
     if(!Sources)
     {
-        printf("Polar\tERROR: Cannot update position of source %llu\n", SourceUID);
+        polar_Log("ERROR: Cannot update position of source %llu\n", SourceUID);
         return;
     }
 
@@ -609,7 +612,7 @@ void polar_source_Position(POLAR_MIXER *Mixer, u64 SourceUID, VECTOR4D NewPositi
 
     else
     {
-        printf("Polar\tERROR: Cannot update position of source %llu\n", SourceUID);
+        polar_Log("ERROR: Cannot update position of source %llu\n", SourceUID);
         return;
     }
 
@@ -626,7 +629,7 @@ void polar_source_Play(POLAR_MIXER *Mixer, u64 SourceUID, f32 Duration, u32 FX, 
     POLAR_SOURCE *Sources = polar_source_Retrieval(Mixer, SourceUID, i);
     if(!Sources)
     {
-        printf("Polar\tERROR: Cannot play source %llu\n", SourceUID);
+        polar_Log("ERROR: Cannot play source %llu\n", SourceUID);
         return;
     }
 
@@ -746,7 +749,7 @@ void polar_source_Play(POLAR_MIXER *Mixer, u64 SourceUID, f32 Duration, u32 FX, 
 
     else
     {
-        printf("Polar\tERROR: Cannot play source %llu\n", SourceUID);
+        polar_Log("ERROR: Cannot play source %llu\n", SourceUID);
         return;
     }
 
@@ -764,7 +767,7 @@ void polar_container_Play(POLAR_MIXER *Mixer, u64 ContainerUID, f32 Duration, u3
     POLAR_SOURCE *Sources = polar_source_Retrieval(Mixer, ContainerUID, Index);
     if(!Sources)
     {
-        printf("Polar\tERROR: Cannot play container %llu\n", ContainerUID);
+        polar_Log("ERROR: Cannot play container %llu\n", ContainerUID);
         return;
     }
 
@@ -807,7 +810,7 @@ void polar_container_Fade(POLAR_MIXER *Mixer, u64 ContainerUID, f64 GlobalTime, 
     POLAR_SOURCE *Sources = polar_source_Retrieval(Mixer, ContainerUID, Index);
     if(!Sources)
     {
-        printf("Polar\tERROR: Cannot play container %llu\n", ContainerUID);
+        polar_Log("ERROR: Cannot play container %llu\n", ContainerUID);
         return;
     }
 

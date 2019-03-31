@@ -360,6 +360,7 @@ typedef struct POLAR_SOURCE_STATE
 typedef struct POLAR_SOURCE
 {
     u8 CurrentSources;
+    char Name[MAX_STRING_LENGTH][MAX_SOURCES];
     u64 UID[MAX_SOURCES];
     POLAR_SOURCE_TYPE Type[MAX_SOURCES];
     POLAR_SOURCE_PLAY_STATE PlayState[MAX_SOURCES];
@@ -375,6 +376,7 @@ typedef struct POLAR_SOURCE
 
 typedef struct POLAR_SOURCE_SOLO
 {
+    char Name[MAX_STRING_LENGTH];
     u64 UID;
     POLAR_SOURCE_TYPE Type;
     POLAR_SOURCE_PLAY_STATE PlayState;
@@ -395,6 +397,7 @@ typedef struct POLAR_SOURCE_SOLO
 
 typedef struct POLAR_LISTENER
 {
+    char Name[MAX_STRING_LENGTH];
     u64 UID;
     VECTOR4D Position;
     ROTATION3D Rotation;
@@ -432,6 +435,7 @@ typedef struct POLAR_LISTENER
 typedef struct POLAR_CONTAINER
 {
     u8 CurrentContainers;
+    char Name[MAX_STRING_LENGTH][MAX_CONTAINERS];
     u64 UID[MAX_CONTAINERS];
     f32 Amplitude[MAX_CONTAINERS];
     u32 FX[MAX_CONTAINERS];
@@ -441,6 +445,7 @@ typedef struct POLAR_CONTAINER
 //Linked list of submixes with their own containers
 typedef struct POLAR_SUBMIX
 {
+    char Name[MAX_STRING_LENGTH];
     u64 UID;
     f32 Amplitude;
     u32 FX;

@@ -60,6 +60,7 @@ void polar_mixer_SubmixCreate(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, const cha
     
     POLAR_SUBMIX *Result = 0;
     Result = (POLAR_SUBMIX *) memory_arena_Push(Arena, Result, (sizeof (POLAR_SUBMIX)));
+    memcpy(Result->Name, ChildUID, sizeof(Result->Name));
     Result->UID = ChildHash;
     Result->ChildSubmixCount = 0;
     Result->Amplitude = DB(Amplitude);
@@ -233,6 +234,7 @@ void polar_mixer_ContainerCreate(POLAR_MIXER *Mixer, const char SubmixUID[MAX_ST
             {
                 if(SubmixIndex->Containers.UID[i] == 0)
                 {
+                    memcpy(SubmixIndex->Containers.Name[i], ContainerUID, sizeof(SubmixIndex->Containers.Name[i]));
                     SubmixIndex->Containers.UID[i] = ContainerHash;
                     SubmixIndex->Containers.Amplitude[i] = Amplitude;
                     SubmixIndex->Containers.FX[i] = FX_DRY;
@@ -252,6 +254,7 @@ void polar_mixer_ContainerCreate(POLAR_MIXER *Mixer, const char SubmixUID[MAX_ST
                 {
                     if(ChildSubmixIndex->Containers.UID[i] == 0)
                     {
+                        memcpy(ChildSubmixIndex->Containers.Name[i], ContainerUID, sizeof(ChildSubmixIndex->Containers.Name[i]));
                         ChildSubmixIndex->Containers.UID[i] = ContainerHash;
                         ChildSubmixIndex->Containers.Amplitude[i] = Amplitude;
                         ChildSubmixIndex->Containers.FX[i] = FX_DRY;
