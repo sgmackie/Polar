@@ -1,7 +1,9 @@
 #VSCode Setting
 .vscode/
+.vs
 
 #Tools
+microprofile/
 profile/
 tools/
 
@@ -19,3 +21,4 @@ audio/
 #Misc
 TODO.txt
 SLACK_NOTES.txt
+DOD_Notes.txt

@@ -1,32 +1,89 @@
-#define DEFAULT_SAMPLERATE 48000
-#define DEFAULT_CHANNELS 2
-#define DEFAULT_AMPLITUDE 0.8
-#define DEFAULT_LATENCY_FRAMES 3
+
+#include "polar.h"
 
 #define DEFAULT_WIDTH 1280
 #define DEFAULT_HEIGHT 720
 #define DEFAULT_HZ 60
 
-#include "polar.h"
-#include "../external/external_code.h"
-#if CUDA
-#include "cuda/polar_cuda.h"
+#define DEFAULT_SAMPLERATE 48000
+#define DEFAULT_CHANNELS 2
+#define DEFAULT_AMPLITUDE 0.8
+#define DEFAULT_LATENCY_FRAMES 4
+
+//Latency frames determines update rate - 4 @ 120HZ = 30FPS
+
+#if MICROPROFILE
+#define MICROPROFILE_MAX_FRAME_HISTORY (2<<10)
+#include "../external/microprofile/microprofile.h"
+#include "../external/microprofile/microprofile_html.h"
+#include "../external/microprofile/microprofile.cpp"
 #endif
-#include "win32_polar.h"
+
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+#include <timeapi.h>
+#define ANSI(code) ""
+
+//IMGUI implementation - DirectX9
+#include <d3d9.h>
+#include "../external/imgui/win32/imgui_impl_dx9.cpp"
+#include "../external/imgui/win32/imgui_impl_win32.cpp"
+
+//WASAPI includes
+#include <audioclient.h>                    //WASAPI
+#include <initguid.h>
+#include <mmdeviceapi.h>                    //Audio endpoints
+#include <Functiondiscoverykeys_devpkey.h>  //Used for getting "FriendlyNames" from audio endpoints
+#include <avrt.h>
 
 //Globals
-global_scope char                       AssetPath[MAX_STRING_LENGTH] = {"../../data/"};
-global_scope i64                        GlobalPerformanceCounterFrequency;
-global_scope f64                        GlobalTime = 0;
-global_scope bool                       GlobalRunning = false;
+static f64                      GlobalTime = 0;
+static u32                      GlobalSamplesWritten = 0;
+static bool                     GlobalRunning = false;
+static i64                      GlobalPerformanceCounterFrequency = 0;
+static bool                     GlobalUseCUDA = false;
 
 //D3D9 contexts for GUI rendering
-global_scope LPDIRECT3D9                D3D9 = NULL;
-global_scope LPDIRECT3DDEVICE9          D3Device = NULL;
-global_scope D3DPRESENT_PARAMETERS      D3DeviceParamters = {};
+static LPDIRECT3D9              D3D9 = NULL;
+static LPDIRECT3DDEVICE9        D3Device = NULL;
+static D3DPRESENT_PARAMETERS    D3DeviceParamters = {};
 
-//Source
-#include "polar.cpp"
+f64 core_WallTime()
+{
+#ifdef _WIN32
+    LARGE_INTEGER time,freq;
+    if (!QueryPerformanceFrequency(&freq)){
+        //  Handle error
+        return 0;
+    }
+    if (!QueryPerformanceCounter(&time)){
+        //  Handle error
+        return 0;
+    }
+    return (double)time.QuadPart / freq.QuadPart;
+
+#elif __linux__
+    struct timeval time;
+    if (gettimeofday(&time,NULL)){
+        //  Handle error
+        return 0;
+    }
+    return (double)time.tv_sec + (double)time.tv_usec * .000001;
+#endif
+}
+
+LARGE_INTEGER win32_WallClock()
+{    
+    LARGE_INTEGER Result;
+    QueryPerformanceCounter(&Result);
+    return Result;
+}
+
+f32 win32_SecondsElapsed(LARGE_INTEGER Start, LARGE_INTEGER End)
+{
+    f32 Result = ((f32) (End.QuadPart - Start.QuadPart) / (f32) GlobalPerformanceCounterFrequency);
+    return Result;
+}
 
 bool CreateDeviceD3D(HWND hWnd)
 {
@@ -105,99 +162,193 @@ void win32_ProcessMessages()
     }
 }
 
-WASAPI_DATA *win32_WASAPI_Create(MEMORY_ARENA *Arena, u32 SampleRate, u32 BufferSize)
+//Reference times as variable
+static const u64 REF_TIMES_PER_SECOND = 10000000;
+
+//Convert WASAPI HRESULT to printable string
+static const TCHAR *wasapi_HRString(HRESULT Result)
 {
-    WASAPI_DATA *Result = 0;
-    Result = (WASAPI_DATA *) memory_arena_Push(Arena, Result, (sizeof (WASAPI_DATA)));
-
-    Result->HR = CoInitializeEx(0, COINIT_SPEED_OVER_MEMORY);
-	HR_TO_RETURN(Result->HR, "Failed to initialise COM", nullptr);
-
-    Result->RenderEvent = CreateEvent(0, 0, 0, 0);
-	if(!Result->RenderEvent)
+	switch(Result)
 	{
-		HR_TO_RETURN(Result->HR, "Failed to create event", nullptr);
+		case S_OK:										return TEXT("S_OK");
+		case S_FALSE:									return TEXT("S_FALSE");
+		case AUDCLNT_E_NOT_INITIALIZED:					return TEXT("AUDCLNT_E_NOT_INITIALIZED");
+		case AUDCLNT_E_ALREADY_INITIALIZED:				return TEXT("AUDCLNT_E_ALREADY_INITIALIZED");
+		case AUDCLNT_E_WRONG_ENDPOINT_TYPE:				return TEXT("AUDCLNT_E_WRONG_ENDPOINT_TYPE");
+		case AUDCLNT_E_DEVICE_INVALIDATED:				return TEXT("AUDCLNT_E_DEVICE_INVALIDATED");
+		case AUDCLNT_E_NOT_STOPPED:						return TEXT("AUDCLNT_E_NOT_STOPPED");
+		case AUDCLNT_E_BUFFER_TOO_LARGE:				return TEXT("AUDCLNT_E_BUFFER_TOO_LARGE");
+		case AUDCLNT_E_OUT_OF_ORDER:					return TEXT("AUDCLNT_E_OUT_OF_ORDER");
+		case AUDCLNT_E_UNSUPPORTED_FORMAT:				return TEXT("AUDCLNT_E_UNSUPPORTED_FORMAT");
+		case AUDCLNT_E_INVALID_SIZE:					return TEXT("AUDCLNT_E_INVALID_SIZE");
+		case AUDCLNT_E_DEVICE_IN_USE:					return TEXT("AUDCLNT_E_DEVICE_IN_USE");
+		case AUDCLNT_E_BUFFER_OPERATION_PENDING:		return TEXT("AUDCLNT_E_BUFFER_OPERATION_PENDING");
+		case AUDCLNT_E_THREAD_NOT_REGISTERED:			return TEXT("AUDCLNT_E_THREAD_NOT_REGISTERED");
+		case AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED:		return TEXT("AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED");
+		case AUDCLNT_E_ENDPOINT_CREATE_FAILED:			return TEXT("AUDCLNT_E_ENDPOINT_CREATE_FAILED");
+		case AUDCLNT_E_SERVICE_NOT_RUNNING:				return TEXT("AUDCLNT_E_SERVICE_NOT_RUNNING");
+		case AUDCLNT_E_EVENTHANDLE_NOT_EXPECTED:		return TEXT("AUDCLNT_E_EVENTHANDLE_NOT_EXPECTED");
+		case AUDCLNT_E_EXCLUSIVE_MODE_ONLY:				return TEXT("AUDCLNT_E_EXCLUSIVE_MODE_ONLY");
+		case AUDCLNT_E_BUFDURATION_PERIOD_NOT_EQUAL:	return TEXT("AUDCLNT_E_BUFDURATION_PERIOD_NOT_EQUAL");
+		case AUDCLNT_E_EVENTHANDLE_NOT_SET:				return TEXT("AUDCLNT_E_EVENTHANDLE_NOT_SET");
+		case AUDCLNT_E_INCORRECT_BUFFER_SIZE:			return TEXT("AUDCLNT_E_INCORRECT_BUFFER_SIZE");
+		case AUDCLNT_E_BUFFER_SIZE_ERROR:				return TEXT("AUDCLNT_E_BUFFER_SIZE_ERROR");
+		case AUDCLNT_E_CPUUSAGE_EXCEEDED:				return TEXT("AUDCLNT_E_CPUUSAGE_EXCEEDED");
+		case AUDCLNT_E_BUFFER_ERROR:					return TEXT("AUDCLNT_E_BUFFER_ERROR");
+		case AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED:			return TEXT("AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED");
+		case AUDCLNT_E_INVALID_DEVICE_PERIOD:			return TEXT("AUDCLNT_E_INVALID_DEVICE_PERIOD");
+		case AUDCLNT_E_INVALID_STREAM_FLAG:				return TEXT("AUDCLNT_E_INVALID_STREAM_FLAG");
+		case AUDCLNT_E_ENDPOINT_OFFLOAD_NOT_CAPABLE:	return TEXT("AUDCLNT_E_ENDPOINT_OFFLOAD_NOT_CAPABLE");
+		case AUDCLNT_E_OUT_OF_OFFLOAD_RESOURCES:		return TEXT("AUDCLNT_E_OUT_OF_OFFLOAD_RESOURCES");
+		case AUDCLNT_E_OFFLOAD_MODE_ONLY:				return TEXT("AUDCLNT_E_OFFLOAD_MODE_ONLY");
+		case AUDCLNT_E_NONOFFLOAD_MODE_ONLY:			return TEXT("AUDCLNT_E_NONOFFLOAD_MODE_ONLY");
+		case AUDCLNT_E_RESOURCES_INVALIDATED:			return TEXT("AUDCLNT_E_RESOURCES_INVALIDATED");
+		case AUDCLNT_E_RAW_MODE_UNSUPPORTED:			return TEXT("AUDCLNT_E_RAW_MODE_UNSUPPORTED");
+		case REGDB_E_CLASSNOTREG:						return TEXT("REGDB_E_CLASSNOTREG");
+		case CLASS_E_NOAGGREGATION:						return TEXT("CLASS_E_NOAGGREGATION");
+		case E_NOINTERFACE:								return TEXT("E_NOINTERFACE");
+		case E_POINTER:									return TEXT("E_POINTER");
+		case E_INVALIDARG:								return TEXT("E_INVALIDARG");
+		case E_OUTOFMEMORY:								return TEXT("E_OUTOFMEMORY");
+		default:										return TEXT("UNKNOWN");
+	}
+}
+
+#define NONE    //Blank space for returning nothing in void functions
+
+//Use print and return on HRESULT codes
+#define HR_TO_RETURN(Result, Text, Type)				                    \
+	if(FAILED(Result))								                        \
+	{												                        \
+		char HRBuffer[256];													\
+		OutputDebugString(HRBuffer);										\
+		sprintf_s(HRBuffer, Text "\t[%s]\n", wasapi_HRString(Result));   	\
+		return Type;								                        \
 	}
 
-    Result->HR = CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator), (void **) &Result->DeviceEnumerator);
-    HR_TO_RETURN(Result->HR, "Failed to create device COM", nullptr);
 
-    Result->HR = Result->DeviceEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &Result->AudioDevice);
-    HR_TO_RETURN(Result->HR, "Failed to get default audio endpoint", nullptr);
-
-	Result->HR = Result->AudioDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**) &Result->AudioClient);
-	HR_TO_RETURN(Result->HR, "Failed to activate audio endpoint", nullptr);
-
-    WAVEFORMATEXTENSIBLE *MixFormat;
-	Result->HR = Result->AudioClient->GetMixFormat((WAVEFORMATEX **) &MixFormat);
-	HR_TO_RETURN(Result->HR, "Failed to activate audio endpoint", nullptr);
-
-    //Create output format
-    Result->DeviceWaveFormat = (WAVEFORMATEXTENSIBLE *) memory_arena_Push(Arena, Result->DeviceWaveFormat, (sizeof (Result->DeviceWaveFormat)));
-    Result->DeviceWaveFormat->Format.cbSize = sizeof(WAVEFORMATEXTENSIBLE);
-    Result->DeviceWaveFormat->Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
-    Result->DeviceWaveFormat->Format.wBitsPerSample = 16;
-    Result->DeviceWaveFormat->Format.nChannels = 2;
-    Result->DeviceWaveFormat->Format.nSamplesPerSec = (DWORD) SampleRate;
-    Result->DeviceWaveFormat->Format.nBlockAlign = (WORD) (Result->DeviceWaveFormat->Format.nChannels * Result->DeviceWaveFormat->Format.wBitsPerSample / 8);
-    Result->DeviceWaveFormat->Format.nAvgBytesPerSec = Result->DeviceWaveFormat->Format.nSamplesPerSec * Result->DeviceWaveFormat->Format.nBlockAlign;
-    Result->DeviceWaveFormat->Samples.wValidBitsPerSample = 16;
-    Result->DeviceWaveFormat->dwChannelMask = KSAUDIO_SPEAKER_STEREO;
-    Result->DeviceWaveFormat->SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
-
-    //If the current device sample rate doesn't equal the output, than set WASAPI to autoconvert
-    DWORD Flags = 0;
-    if(MixFormat->Format.nSamplesPerSec != Result->DeviceWaveFormat->Format.nSamplesPerSec)
-    {
-        printf("WASAPI: Sample rate does not equal the requested rate, resampling\t Result: %lu\t Requested: %lu\n", MixFormat->Format.nSamplesPerSec, Result->DeviceWaveFormat->Format.nSamplesPerSec);
-        Flags = AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
-    }
-
-    //Free reference format
-    CoTaskMemFree(MixFormat);
-
-    //Buffer size in 100 nano second units
-    REFERENCE_TIME BufferDuration = 10000000ULL * BufferSize / Result->DeviceWaveFormat->Format.nSamplesPerSec;
-	Result->HR = Result->AudioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, Flags, BufferDuration, 0, &Result->DeviceWaveFormat->Format, NULL);
-    HR_TO_RETURN(Result->HR, "Failed to initialise audio client", nullptr);
-
-	Result->HR = Result->AudioClient->GetService(__uuidof(IAudioRenderClient), (void**) &Result->AudioRenderClient);
-	HR_TO_RETURN(Result->HR, "Failed to assign client to render client", nullptr);
-
-    Result->HR = Result->AudioClient->GetBufferSize(&Result->OutputBufferFrames);
-	HR_TO_RETURN(Result->HR, "Failed to get maximum read buffer size for audio client", nullptr);
-
-	Result->HR = Result->AudioClient->Reset();
-	HR_TO_RETURN(Result->HR, "Failed to reset audio client before playback", nullptr);
-
-	Result->HR = Result->AudioClient->Start();
-	HR_TO_RETURN(Result->HR, "Failed to start audio client", nullptr);
-
-    if(Result->OutputBufferFrames != BufferSize)
-    {
-        printf("WASAPI: WASAPI buffer size does not equal requested size!\t Result: %u\t Requested: %u\n", Result->OutputBufferFrames, BufferSize);
-    }
-
-    return Result;
-}
-
-
-void win32_WASAPI_Destroy(MEMORY_ARENA *Arena, WASAPI_DATA *WASAPI)
+typedef struct WASAPI
 {
-	WASAPI->AudioRenderClient->Release();
-	WASAPI->AudioClient->Reset();
-	WASAPI->AudioClient->Stop();
-	WASAPI->AudioClient->Release();
-	WASAPI->AudioDevice->Release();
+    //Data
+    HRESULT HR;
+    HANDLE RenderEvent;
+    WAVEFORMATEXTENSIBLE *DeviceFormat;
+	
+    //Device endpoints
+	IMMDeviceEnumerator *DeviceEnumerator;
+	IMMDevice *AudioDevice;
 
-	CoUninitialize();
+	//Rendering clients
+	IAudioClient *AudioClient;
+	IAudioRenderClient *AudioRenderClient;
 
-    memory_arena_Reset(Arena);
-    memory_arena_Pull(Arena);
-}
+	u32 PaddingFrames;
+	u32 BufferFrames;
 
+    //Functions
+    void Init()
+    {
+        HRESULT HR = 0;
+        HANDLE RenderEvent = 0;
+        WAVEFORMATEXTENSIBLE *DeviceFormat = 0;
+	    IMMDeviceEnumerator *DeviceEnumerator = 0;
+	    IMMDevice *AudioDevice = 0;
+	    IAudioClient *AudioClient = 0;
+	    IAudioRenderClient *AudioRenderClient = 0;
+	    u32 PaddingFrames = 0;
+	    u32 BufferFrames = 0;
+    }
 
-void win32_WASAPI_Callback(WASAPI_DATA *WASAPI, u32 SampleCount, u32 Channels, i16 *OutputBuffer)
+    void Create(MEMORY_ARENA *Arena, u32 InputSampleRate, u32 InputChannelCount, u32 InputBitRate, size_t InputBufferSize)
+    {
+        Init();
+
+        HR = CoInitializeEx(0, COINIT_SPEED_OVER_MEMORY);
+	    HR_TO_RETURN(HR, "Failed to initialise COM", NONE);
+
+        RenderEvent = CreateEvent(0, 0, 0, 0);
+	    if(!RenderEvent)
+	    {
+	    	HR_TO_RETURN(HR, "Failed to create event", NONE);
+	    }
+
+        HR = CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator), (void **) &DeviceEnumerator);
+        HR_TO_RETURN(HR, "Failed to create device COM", NONE);
+
+        HR = DeviceEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &AudioDevice);
+        HR_TO_RETURN(HR, "Failed to get default audio endpoint", NONE);
+
+	    HR = AudioDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**) &AudioClient);
+	    HR_TO_RETURN(HR, "Failed to activate audio endpoint", NONE);
+
+        WAVEFORMATEXTENSIBLE *MixFormat;
+	    HR = AudioClient->GetMixFormat((WAVEFORMATEX **) &MixFormat);
+	    HR_TO_RETURN(HR, "Failed to activate audio endpoint", NONE);
+
+        //Create output format
+        DeviceFormat = 0;
+        DeviceFormat = (WAVEFORMATEXTENSIBLE *) Arena->Alloc(sizeof(WAVEFORMATEXTENSIBLE), MEMORY_ARENA_ALIGNMENT);
+        DeviceFormat->Format.cbSize = sizeof(WAVEFORMATEXTENSIBLE);
+        DeviceFormat->Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+        DeviceFormat->Format.wBitsPerSample = InputBitRate;
+        DeviceFormat->Format.nChannels = InputChannelCount;
+        DeviceFormat->Format.nSamplesPerSec = (DWORD) InputSampleRate;
+        DeviceFormat->Format.nBlockAlign = (WORD) (DeviceFormat->Format.nChannels * DeviceFormat->Format.wBitsPerSample / 8);
+        DeviceFormat->Format.nAvgBytesPerSec = DeviceFormat->Format.nSamplesPerSec * DeviceFormat->Format.nBlockAlign;
+        DeviceFormat->Samples.wValidBitsPerSample = InputBitRate;
+        DeviceFormat->dwChannelMask = KSAUDIO_SPEAKER_STEREO;
+        DeviceFormat->SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
+
+        //If the current device sample rate doesn't equal the output, than set WASAPI to autoconvert
+        DWORD Flags = 0;
+        if(MixFormat->Format.nSamplesPerSec != DeviceFormat->Format.nSamplesPerSec)
+        {
+            Warning("WASAPI: Sample rate does not equal the requested rate, resampling\t Result: %lu\t Requested: %lu", MixFormat->Format.nSamplesPerSec, DeviceFormat->Format.nSamplesPerSec);
+            Flags = AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
+        }
+
+        //Free reference format
+        CoTaskMemFree(MixFormat);
+
+        //Buffer size in 100 nano second units
+        REFERENCE_TIME BufferDuration = 10000000ULL * InputBufferSize / DeviceFormat->Format.nSamplesPerSec;
+	    HR = AudioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, Flags, BufferDuration, 0, &DeviceFormat->Format, NULL);
+        HR_TO_RETURN(HR, "Failed to initialise audio client", NONE);
+
+	    HR = AudioClient->GetService(__uuidof(IAudioRenderClient), (void**) &AudioRenderClient);
+	    HR_TO_RETURN(HR, "Failed to assign client to render client", NONE);
+
+        HR = AudioClient->GetBufferSize(&BufferFrames);
+	    HR_TO_RETURN(HR, "Failed to get maximum read buffer size for audio client", NONE);
+
+	    HR = AudioClient->Reset();
+	    HR_TO_RETURN(HR, "Failed to reset audio client before playback", NONE);
+
+	    HR = AudioClient->Start();
+	    HR_TO_RETURN(HR, "Failed to start audio client", NONE);
+
+        if(BufferFrames != InputBufferSize)
+        {
+            Warning("WASAPI: WASAPI buffer size does not equal requested size!\t Result: %u\t Requested: %u", BufferFrames, InputBufferSize);
+        }
+    }
+
+    void Destroy()
+    {
+	    AudioRenderClient->Release();
+	    AudioClient->Reset();
+	    AudioClient->Stop();
+	    AudioClient->Release();
+	    AudioDevice->Release();
+
+	    CoUninitialize();
+
+        Init();
+    }
+
+} WASAPI;
+
+void win32_WASAPI_Callback(WASAPI *WASAPI, u32 SampleCount, u32 Channels, i16 *OutputBuffer)
 {
     BYTE* BYTEBuffer;
     
@@ -211,368 +362,491 @@ void win32_WASAPI_Callback(WASAPI_DATA *WASAPI, u32 SampleCount, u32 Channels, i
     }
 }
 
-
-LARGE_INTEGER win32_WallClock()
-{    
-    LARGE_INTEGER Result;
-    QueryPerformanceCounter(&Result);
-    return Result;
-}
-
-f32 win32_SecondsElapsed(LARGE_INTEGER Start, LARGE_INTEGER End)
-{
-    f32 Result = ((f32) (End.QuadPart - Start.QuadPart) / (f32) GlobalPerformanceCounterFrequency);
-    return Result;
-}
-
-
 int main()
 {
-    //Allocate memory
-    MEMORY_ARENA *EngineArena = memory_arena_Create(Kilobytes(100));
-    MEMORY_ARENA *SourceArena = memory_arena_Create(Megabytes(100));
+    //Create logging function
+#if LOGGER_ERROR    
+    if(core_CreateLogger("logs.txt", LOG_ERROR, false))
+#else
+    if(core_CreateLogger("logs.txt", LOG_TRACE, false))
+#endif
+    {
+        Info("win32: File logger created succesfully");
+    }
+    else
+    {
+        printf("win32: Failed to create logger!\n");
+    }
 
-#if CUDA
     //Get CUDA Device
-    CUDA_DEVICE GPU = {};
-    cuda_DeviceGet(&GPU, 0);
+    i32 DeviceCount = 0;
+    GlobalUseCUDA = (cudaGetDeviceCount(&DeviceCount) == cudaSuccess && DeviceCount != 0);
+    
+    if(GlobalUseCUDA)
+    {
+        CUDA_DEVICE GPU = {};
+        cuda_DeviceGet(&GPU, 0);
+        cuda_DevicePrint(&GPU);
+    }
 
-    printf("%f\n", cuda_Sine(0.63787, 1));
+    //Allocate memory arenas from virtual pages
+    MEMORY_ARENA EngineArena = {};
+    MEMORY_ARENA SourceArena = {};
+    void *EngineBlock = VirtualAlloc(0, Kilobytes(500), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    void *SourceBlock = VirtualAlloc(0, Megabytes(100), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    EngineArena.Init(EngineBlock, Kilobytes(500));    
+    SourceArena.Init(SourceBlock, Megabytes(100));
+    Assert(EngineBlock && SourceBlock, "win32: Failed to create memory arenas!");
 
-    cuda_Multiply(128, 256, 131072);
+    //Create memory pools for component memory
+    MEMORY_POOL SourcePoolNames = {};
+    MEMORY_POOL SourcePoolBuffers = {};
+    MEMORY_POOL SourcePoolBreakpoints = {};
+    SourcePoolNames.Init(SourceArena.Alloc(Megabytes(10), MEMORY_ARENA_ALIGNMENT), Megabytes(10), (sizeof(char) * MAX_STRING_LENGTH), MEMORY_POOL_ALIGNMENT);
+    SourcePoolBuffers.Init(SourceArena.Alloc(Megabytes(10), MEMORY_ARENA_ALIGNMENT), Megabytes(10), (sizeof(f32) * MAX_BUFFER_SIZE), MEMORY_POOL_ALIGNMENT);
+    SourcePoolBreakpoints.Init(SourceArena.Alloc(Megabytes(10), MEMORY_ARENA_ALIGNMENT), Megabytes(10), (sizeof(CMP_BREAKPOINT_POINT) * MAX_BREAKPOINTS), MEMORY_POOL_ALIGNMENT);
+    Assert(SourcePoolNames.Data && SourcePoolBuffers.Data && SourcePoolBreakpoints.Data, "win32: Failed to create source memory pools!");
 
+    //Create memory pool for mixers
+    MEMORY_POOL MixerPool = {};
+    MEMORY_POOL MixerIntermediatePool = {};
+    MixerPool.Init(SourceArena.Alloc(Megabytes(10), MEMORY_ARENA_ALIGNMENT), Megabytes(10), sizeof(SYS_MIX), MEMORY_POOL_ALIGNMENT);
+    MixerIntermediatePool.Init(SourceArena.Alloc(Megabytes(10), MEMORY_ARENA_ALIGNMENT), Megabytes(10), (sizeof(f32) * MAX_BUFFER_SIZE), MEMORY_POOL_ALIGNMENT);
+    Assert(MixerPool.Data && MixerIntermediatePool.Data, "win32: Failed to create mixer memory pools!");
+
+    //Create window and it's rendering handle
+    WNDCLASSEX WindowClass = {sizeof(WNDCLASSEX), 
+                            CS_CLASSDC, WindowProc, 0L, 0L, 
+                            GetModuleHandle(NULL), NULL, NULL, NULL, NULL,
+                            _T("PolarClass"), NULL };
+
+    RegisterClassEx(&WindowClass);
+
+    HWND WindowHandle = CreateWindow(WindowClass.lpszClassName, 
+                        _T("Polar"), WS_OVERLAPPEDWINDOW, 100, 100, 
+                        DEFAULT_WIDTH, DEFAULT_HEIGHT, 
+                        NULL, NULL, WindowClass.hInstance, NULL);
+
+    if(WindowHandle && CreateDeviceD3D(WindowHandle))
+    {
+        //Display window
+        ShowWindow(WindowHandle, SW_SHOWDEFAULT);
+        UpdateWindow(WindowHandle);
+
+        //Get monitor refresh rate
+        HDC RefreshDC = GetDC(WindowHandle);
+        i32 MonitorRefresh = GetDeviceCaps(RefreshDC, VREFRESH);
+        ReleaseDC(WindowHandle, RefreshDC);
+        if(MonitorRefresh < 1)
+        {
+            MonitorRefresh = DEFAULT_HZ;
+        }
+
+        //Start timings
+        LARGE_INTEGER PerformanceCounterFrequencyResult;
+        QueryPerformanceFrequency(&PerformanceCounterFrequencyResult);
+        GlobalPerformanceCounterFrequency = PerformanceCounterFrequencyResult.QuadPart;
+
+        //Request 1ms period for timing functions
+        UINT SchedulerPeriodInMS = 1;
+        bool IsSleepGranular = (timeBeginPeriod(SchedulerPeriodInMS) == TIMERR_NOERROR);
+
+        //Define engine update rate
+        POLAR_ENGINE Engine = {};
+        Engine.UpdateRate = (MonitorRefresh / DEFAULT_LATENCY_FRAMES);
+        f32 TargetSecondsPerFrame = 1.0f / (f32) Engine.UpdateRate;        
+
+#if MICROPROFILE
+        MicroProfileOnThreadCreate("Main");
+        MicroProfileSetEnableAllGroups(true);
+        MicroProfileSetForceMetaCounters(true);
+        MicroProfileStartAutoFlip(Engine.UpdateRate);
+        Info("Microprofiler: Started profiler with autoflip");
 #endif
 
-    if(EngineArena && SourceArena)
-    {
-        //Create window and it's rendering handle
-        WNDCLASSEX WindowClass = {sizeof(WNDCLASSEX), 
-                                CS_CLASSDC, WindowProc, 0L, 0L, 
-                                GetModuleHandle(NULL), NULL, NULL, NULL, NULL,
-                                _T("PolarClass"), NULL };
+        //PCG Random Setup
+        i32 Rounds = 5;
+        pcg32_srandom(time(NULL) ^ (intptr_t) &printf, (intptr_t) &Rounds);
 
-        RegisterClassEx(&WindowClass);
+        //Create GUI context
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        ImGuiIO& io = ImGui::GetIO(); (void)io;
+		io.DisplaySize.x = (f32) DEFAULT_WIDTH;
+		io.DisplaySize.y = (f32) DEFAULT_HEIGHT;
 
-        HWND WindowHandle = CreateWindow(WindowClass.lpszClassName, 
-                            _T("Polar"), WS_OVERLAPPEDWINDOW, 100, 100, 
-                            DEFAULT_WIDTH, DEFAULT_HEIGHT, 
-                            NULL, NULL, WindowClass.hInstance, NULL);
+        //Set GUI style
+        ImGui::StyleColorsDark();
 
-        if(WindowHandle && CreateDeviceD3D(WindowHandle))
+        //Set GUI state
+        ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+
+        //Bind to DX9 renderer
+        ImGui_ImplWin32_Init(WindowHandle);
+        ImGui_ImplDX9_Init(D3Device);
+            
+        //Start WASAPI
+        WASAPI WASAPI = {};
+        WASAPI.Create(&EngineArena, DEFAULT_SAMPLERATE, 2, 16, DEFAULT_SAMPLERATE);
+
+        //Fill out engine properties
+        Engine.NoiseFloor           = DB(-120);
+        Engine.Format.SampleRate    = WASAPI.DeviceFormat->Format.nSamplesPerSec;
+        Engine.Format.Channels      = WASAPI.DeviceFormat->Format.nChannels;
+        Engine.BytesPerSample       = sizeof(i16) * Engine.Format.Channels;
+        Engine.BufferFrames         = WASAPI.BufferFrames;
+        Engine.LatencyFrames        = DEFAULT_LATENCY_FRAMES * (Engine.Format.SampleRate / Engine.UpdateRate);
+
+        //Buffer size:
+        //The max buffer size is 1 second worth of samples
+        //LatencySamples determines how many samples to render at a given frame delay (default is 2)
+        //The sample count to write for each callback is the LatencySamples - any padding from the audio D3Device
+        
+        //Create ringbuffer with a specified block count (default is 3)
+        Engine.CallbackBuffer.Create(&EngineArena, sizeof(i16), 4096, 3);
+        
+        //Create a temporary mixing buffer 
+        Engine.MixBuffer.CreateFromArena(&EngineArena, sizeof(f32), Engine.BufferFrames);
+        Assert(Engine.CallbackBuffer.Data && Engine.MixBuffer.Data, "win32: Failed to create mix and callback buffers!");
+        
+        //Create systems
+        SYS_FADE FadeSystem = {};
+        SYS_ENVELOPE_BREAKPOINT BreakpointSystem = {};
+        SYS_ENVELOPE_ADSR ADSRSystem = {};
+        SYS_PLAY PlaySystem = {};
+        SYS_WAV WavSystem   = {};
+        FadeSystem.Create(&SourceArena, MAX_SOURCES);
+        BreakpointSystem.Create(&SourceArena, MAX_SOURCES);
+        ADSRSystem.Create(&SourceArena, MAX_SOURCES);
+        PlaySystem.Create(&SourceArena, MAX_SOURCES);
+        WavSystem.Create(&SourceArena, MAX_SOURCES);
+
+        //Create oscillator module and subsystems
+        MDL_OSCILLATOR OscillatorModule = {};
+        OscillatorModule.Sine.Create(&SourceArena, MAX_SOURCES);
+        OscillatorModule.Square.Create(&SourceArena, MAX_SOURCES);
+        OscillatorModule.Noise.Create(&SourceArena, MAX_SOURCES);
+
+        
+        //Create mixer - a pool of mix systems
+        POLAR_MIXER GlobalMixer = {};
+        GlobalMixer.Mixes = (SYS_MIX **) SourceArena.Alloc((sizeof(SYS_MIX **) * 256), MEMORY_ARENA_ALIGNMENT);
+        GlobalMixer.Mixes[GlobalMixer.Count] = (SYS_MIX *) MixerPool.Alloc();
+        GlobalMixer.Mixes[GlobalMixer.Count]->Create(&SourceArena, MAX_SOURCES);
+        ++GlobalMixer.Count;
+
+
+        //Create entities
+        ENTITY_SOURCES SoundSources = {};
+        SoundSources.Create(&SourceArena, MAX_SOURCES);
+
+        //!TODO: Fix WAV hash parser
+        // FILE *File = 0;
+        // fopen_s(&File, "data/sourcesWav_HASH.csv", "r");
+        // int done = 0;
+        // int err = 0;
+
+        // for(u32 i = 0; i < MAX_SOURCES && done != 1; ++i)
+        // {
+        //     char *Line = fread_csv_line(File, MAX_STRING_LENGTH, &done, &err);
+        //     if(done != 1)
+        //     {
+        //         char **Values = split_on_unescaped_newlines(Line);
+
+        //         if(!err)
+        //         {
+        //             ID_SOURCE Hash;
+        //             char WAV[MAX_STRING_LENGTH];
+        //             sscanf(*Values, "%llu,%s", &Hash, WAV);
+    
+        //             ID_SOURCE Source = SoundSources.AddByHash(Hash);
+
+        //             //Allocate wav
+        //             SoundSources.WAVs[i].Init(WAV);
+        //             SoundSources.Flags[i] |= ENTITY_SOURCES::WAV;  
+
+        //             //Add to play system
+        //             SoundSources.Buffers[i].CreateFromPool(&SourcePoolBuffers, sizeof(f32), MAX_BUFFER_SIZE);
+        //             SoundSources.Flags[i] |= ENTITY_SOURCES::BUFFER;
+        //             PlaySystem.Add(Source);     
+
+        //             //Add to fade system
+        //             SoundSources.Amplitudes[i].Init(0.1);
+        //             SoundSources.Flags[i] |= ENTITY_SOURCES::AMPLITUDE;
+        //             FadeSystem.Add(Source);
+
+        //             //Add to mixer
+        //             GlobalMixer.Mixes[0]->Add(Source);     
+        //         }
+        //     }
+        // }   
+        // fclose(File);
+
+        //Start timings
+        LARGE_INTEGER LastCounter = win32_WallClock();
+        LARGE_INTEGER FlipWallClock = win32_WallClock();
+        u64 LastCycleCount = __rdtsc();
+
+        //Loop
+        i64 i = 0;
+        GlobalTime = 0;
+        GlobalRunning = true;
+        Info("Polar: Playback\n");
+        while(GlobalRunning)
         {
-            //Display window
-            ShowWindow(WindowHandle, SW_SHOWDEFAULT);
-            UpdateWindow(WindowHandle);
+            //Updates
+            ++i;
 
-            //Get monitor refresh rate
-            HDC RefreshDC = GetDC(WindowHandle);
-            i32 MonitorRefresh = GetDeviceCaps(RefreshDC, VREFRESH);
-            ReleaseDC(WindowHandle, RefreshDC);
-            if(MonitorRefresh < 1)
+            //Process incoming mouse/keyboard messages, check for QUIT command
+            win32_ProcessMessages();
+            if(!GlobalRunning) break;
+
+            //Calculate size of callback sample block
+            i32 SamplesToWrite = 0;
+            i32 MaxSampleCount = 0;
+
+            //Get current padding of the audio D3Device and determine samples to write for this callback
+            if(SUCCEEDED(WASAPI.AudioClient->GetCurrentPadding(&WASAPI.PaddingFrames)))
             {
-                MonitorRefresh = DEFAULT_HZ;
+                MaxSampleCount = (i32) (Engine.BufferFrames - WASAPI.PaddingFrames);
+                SamplesToWrite = (i32) (Engine.LatencyFrames - WASAPI.PaddingFrames);
+
+                //Round the samples to write to the next power of 2
+                MaxSampleCount = UpperPowerOf2(MaxSampleCount);
+                SamplesToWrite = UpperPowerOf2(SamplesToWrite);
+
+                if(SamplesToWrite < 0)
+                {
+                    UINT32 DeviceSampleCount = 0;
+                    if(SUCCEEDED(WASAPI.AudioClient->GetBufferSize(&DeviceSampleCount)))
+                    {
+                        SamplesToWrite = DeviceSampleCount;
+                        // printf("WASAPI: Failed to set SamplesToWrite!\n");
+                    }
+                }
+
+                // Assert(SamplesToWrite <= MaxSampleCount);
+                Engine.MixBuffer.Count = SamplesToWrite;
             }
 
-            //Start timings
-            LARGE_INTEGER PerformanceCounterFrequencyResult;
-            QueryPerformanceFrequency(&PerformanceCounterFrequencyResult);
-            GlobalPerformanceCounterFrequency = PerformanceCounterFrequencyResult.QuadPart;
+            //Check the minimum update period for per-sample stepping states
+            f64 MinPeriod = ((f64) SamplesToWrite / (f64) Engine.Format.SampleRate);
 
-            //Request 1ms period for timing functions
-            UINT SchedulerPeriodInMS = 1;
-            bool IsSleepGranular = (timeBeginPeriod(SchedulerPeriodInMS) == TIMERR_NOERROR);
+            //Get current time for update functions
+            GlobalTime = core_WallTime();
 
-            //Define engine update rate
-            POLAR_ENGINE Engine = {};
-            Engine.UpdateRate = (MonitorRefresh / DEFAULT_LATENCY_FRAMES);
-            f32 TargetSecondsPerFrame = 1.0f / (f32) Engine.UpdateRate;
-
-            //PCG Random Setup
-            i32 Rounds = 5;
-            pcg32_srandom(time(NULL) ^ (intptr_t) &printf, (intptr_t) &Rounds);
-
-            //Create GUI context
-            IMGUI_CHECKVERSION();
-            ImGui::CreateContext();
-            ImGuiIO& io = ImGui::GetIO(); (void)io;
-
-            //Set GUI style
-            ImGui::StyleColorsDark();
-
-            //Set GUI state
-            bool show_demo_window = true;
-            bool show_another_window = false;
-            ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-
-            //Bind to DX9 renderer
-            ImGui_ImplWin32_Init(WindowHandle);
-            ImGui_ImplDX9_Init(D3Device);
-
-            //Start WASAPI
-            WASAPI_DATA *WASAPI = win32_WASAPI_Create(EngineArena, DEFAULT_SAMPLERATE, DEFAULT_SAMPLERATE);
-
-            //Fill out engine properties
-            Engine.NoiseFloor = AMP(-50);
-            Engine.SampleRate = WASAPI->DeviceWaveFormat->Format.nSamplesPerSec;
-            Engine.Channels = WASAPI->DeviceWaveFormat->Format.nChannels;
-            Engine.BytesPerSample = sizeof(i16) * Engine.Channels;
-            Engine.BufferSize = WASAPI->OutputBufferFrames;
-            Engine.LatencySamples = DEFAULT_LATENCY_FRAMES * (Engine.SampleRate / Engine.UpdateRate);
-
-            //Buffer size:
-            //The max buffer size is 1 second worth of samples
-            //LatencySamples determines how many samples to render at a given frame delay (default is 2)
-            //The sample count to write for each callback is the LatencySamples - any padding from the audio D3Device
-
-            //Create ringbuffer with a specified block count (default is 3)
-            POLAR_RINGBUFFER *CallbackBuffer = polar_ringbuffer_Create(EngineArena, Engine.BufferSize, DEFAULT_LATENCY_FRAMES);
-
-            //Create a temporary mixing buffer 
-            POLAR_BUFFER *MixBuffer = 0;
-            MixBuffer = (POLAR_BUFFER *) memory_arena_Push(EngineArena, MixBuffer, (sizeof(POLAR_BUFFER)));
-            MixBuffer->SampleCount = Engine.BufferSize;
-            MixBuffer->Data = (f32 *) memory_arena_Push(EngineArena, MixBuffer, MixBuffer->SampleCount);
-
-            if(WASAPI && CallbackBuffer && MixBuffer)
+            if(i == 25)
             {
-                //OSC setup
-                UdpSocket OSCSocket = polar_OSC_StartServer(4795);
+                ID_SOURCE ID = SoundSources.AddByHash(FastHash("sine1"));
+                size_t Index = SoundSources.RetrieveIndex(ID);
 
-                //Create mixer object that holds all submixes and their containers
-                POLAR_MIXER *Master = polar_mixer_Create(SourceArena, -1);
+                //Add to playback system - set format and allocate buffer
+                SoundSources.Playbacks[Index].Buffer.CreateFromPool(&SourcePoolBuffers, MAX_BUFFER_SIZE);
+                SoundSources.Playbacks[Index].Format.Init(DEFAULT_SAMPLERATE, DEFAULT_CHANNELS);
+                SoundSources.Flags[Index] |= ENTITY_SOURCES::PLAYBACK;
+                PlaySystem.Add(ID);
 
-                //Assign a listener to the mixer
-                polar_listener_Create(Master, "LN_Player");
+                //Add to fade system
+                SoundSources.Flags[Index] |= ENTITY_SOURCES::ADSR;
+                ADSRSystem.Add(ID);
+                ADSRSystem.Edit(&SoundSources, ID, SoundSources.Playbacks[Index].Format.SampleRate, 0.9, 4.0, 1.0, 0.7, 5.0);
 
-                //Sine sources
-                polar_mixer_SubmixCreate(SourceArena, Master, 0, "SM_Trumpet", -1);
-                polar_mixer_SubmixCreate(SourceArena, Master, "SM_Trumpet", "CM_TEST", -1);
-                polar_mixer_ContainerCreate(Master, "SM_Trumpet", "CO_Trumpet14", AMP(-10));
-                polar_mixer_ContainerCreate(Master, "SM_Trumpet", "CO_ES", AMP(-10));
-                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_01", Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_02", Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_03", Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_04", Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_05", Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_06", Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_07", Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_08", Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_09", Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_10", Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_11", Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_12", Mono, SO_OSCILLATOR, WV_SINE, 0);
-                polar_source_Create(SourceArena, Master, Engine, "CO_Trumpet14", "SO_Trumpet14_Partial_13", Mono, SO_OSCILLATOR, WV_SINE, 0);
+                //Add to breakpoint system
+                SoundSources.Breakpoints[Index].CreateFromPool(&SourcePoolBreakpoints, MAX_BUFFER_SIZE);
+                SoundSources.Flags[Index] |= ENTITY_SOURCES::BREAKPOINT;
+                BreakpointSystem.Add(ID);
+                BreakpointSystem.CreateFromFile(&SoundSources, ID, "data/testpoints.csv");
 
-                //File sources
-                polar_mixer_SubmixCreate(SourceArena, Master, 0, "SM_FileMix", -1);
-                polar_mixer_ContainerCreate(Master, "SM_FileMix", "CO_FileContainer", AMP(-1));
-                polar_source_Create(SourceArena, Master, Engine, "CO_FileContainer", "SO_Whiterun", Stereo, SO_FILE, "audio/Whiterun48.wav");
-                polar_source_Create(SourceArena, Master, Engine, "CO_FileContainer", "SO_Orbifold", Stereo, SO_FILE, "audio/LGOrbifold48.wav");
+                //Add to fade system
+                SoundSources.Amplitudes[Index].Init(0.1);
+                SoundSources.Flags[Index] |= ENTITY_SOURCES::AMPLITUDE;
+                FadeSystem.Add(ID);
 
-                //Start timings
-                LARGE_INTEGER LastCounter = win32_WallClock();
-                LARGE_INTEGER FlipWallClock = win32_WallClock();
-                u64 LastCycleCount = __rdtsc();
+                //Add to oscillator system
+                SoundSources.Oscillators[Index].Init(CMP_OSCILLATOR::SINE, SoundSources.Playbacks[Index].Format.SampleRate, 261.63);
+                SoundSources.Flags[Index] |= ENTITY_SOURCES::OSCILLATOR;
+                OscillatorModule.Sine.Add(ID);
 
-                //Loop
-                i64 i = 0;
-                GlobalTime = 0;
-                GlobalRunning = true;
-                Master->Amplitude = DB(-1);
-                printf("Polar: Playback\n");
-                while(GlobalRunning)
+                //Create modulator
+                SoundSources.Modulators[Index].Init(CMP_MODULATOR::TYPE::LFO_OSCILLATOR, CMP_MODULATOR::ASSIGNMENT::FREQUENCY);
+                SoundSources.Flags[Index] |= ENTITY_SOURCES::MODULATOR;
+                if(SoundSources.Modulators[Index].Flag & CMP_MODULATOR::TYPE::LFO_OSCILLATOR)
                 {
-                    //Updates
-                    ++i;
+                    SoundSources.Modulators[Index].Oscillator.Init(CMP_OSCILLATOR::SINE, SoundSources.Playbacks[Index].Format.SampleRate, 40);
+                }
 
-                    //Process incoming mouse/keyboard messages
-                    win32_ProcessMessages();
+                //Play
+                PlaySystem.Start(&SoundSources, ID, 10.0);
+                GlobalMixer.Mixes[0]->Add(ID);
+            }
 
-                    //Calculate size of callback sample block
-                    i32 SamplesToWrite = 0;
-                    i32 MaxSampleCount = 0;
+            //Update & Render
+            //Write data
+            if(Engine.CallbackBuffer.CanWrite())
+            {
+                //Update systems
+                //Sample counts
+                PlaySystem.Update(&SoundSources, GlobalTime, GlobalSamplesWritten, Engine.MixBuffer.Count);
+                
+                //Source types
+                OscillatorModule.Sine.Update(&SoundSources, Engine.MixBuffer.Count);
+                OscillatorModule.Square.Update(&SoundSources, Engine.MixBuffer.Count);
+                OscillatorModule.Noise.Update(&SoundSources, Engine.MixBuffer.Count);
+                WavSystem.Update(&SoundSources, 1.0, Engine.MixBuffer.Count);
+                
+                //Amplitudes
+                BreakpointSystem.Update(&SoundSources, &FadeSystem, GlobalTime);
+                ADSRSystem.Update(&SoundSources, Engine.MixBuffer.Count);
+                FadeSystem.Update(&SoundSources, GlobalTime);
+                
+                //Clear mixer to 0
+                f32 *MixBuffer = Engine.MixBuffer.Write();
+                memset(MixBuffer, 0, (sizeof(f32) * Engine.MixBuffer.Count));
 
-                    //Get current padding of the audio D3Device and determine samples to write for this callback
-                    if(SUCCEEDED(WASAPI->AudioClient->GetCurrentPadding(&WASAPI->PaddingFrames)))
+                //Loop through all active mixes
+                for(size_t MixerIndex = 0; MixerIndex < GlobalMixer.Count; ++MixerIndex)
+                {
+                    //Allocate a temporary buffer from the pool
+                    f32 *IntermediateBuffer = (f32 *) MixerIntermediatePool.Alloc();
+                    memset(IntermediateBuffer, 0, (sizeof(f32) * Engine.MixBuffer.Count));
+
+                    //Render all sources in a mix the temporary buffer
+                    GlobalMixer.Mixes[MixerIndex]->Update(&SoundSources, IntermediateBuffer, Engine.MixBuffer.Count);
+
+                    //Add temporary pool to global mixbuffer
+                    for(size_t i = 0; i < Engine.MixBuffer.Count; ++i)
                     {
-                        MaxSampleCount = (i32) (Engine.BufferSize - WASAPI->PaddingFrames);
-                        SamplesToWrite = (i32) (Engine.LatencySamples - WASAPI->PaddingFrames);
-
-                        //Round the samples to write to the next power of 2
-                        MaxSampleCount = UpperPowerOf2(MaxSampleCount);
-                        SamplesToWrite = UpperPowerOf2(SamplesToWrite);
-
-                        if(SamplesToWrite < 0)
-                        {
-                            UINT32 DeviceSampleCount = 0;
-                            if(SUCCEEDED(WASAPI->AudioClient->GetBufferSize(&DeviceSampleCount)))
-                            {
-                                SamplesToWrite = DeviceSampleCount;
-                                printf("WASAPI: Failed to set SamplesToWrite!\n");
-                            }
-                        }
-
-                        Assert(SamplesToWrite <= MaxSampleCount);
-                        MixBuffer->SampleCount = SamplesToWrite;
+                        MixBuffer[i] += IntermediateBuffer[i];
                     }
 
-                    //Check the minimum update period for per-sample stepping states
-                    f64 MinPeriod = ((f64) SamplesToWrite / (f64) Engine.SampleRate);
+                    //Free temporary buffer
+                    MixerIntermediatePool.Free(IntermediateBuffer);
+                }
 
-                    //Get current time for update functions
-                    GlobalTime = polar_WallTime();
+                //Callback - convert f32 global mixing buffer to i16 output for WASAPI
+                GlobalSamplesWritten = polar_render_Callback(&Engine);
 
-                    //Get OSC messages from Unreal
-                    //!Uses std::vector for message allocation: replace with arena to be realtime safe
-                    polar_OSC_UpdateMessages(Master, GlobalTime, OSCSocket, 1);
+                //Update ringbuffer addresses
+                Engine.CallbackBuffer.FinishWrite();
+            }
 
-                    //Update the amplitudes, durations etc of all playing sources
-                    polar_source_UpdatePlaying(Master, GlobalTime, MinPeriod, Engine.NoiseFloor);
+            //Read data
+            if(Engine.CallbackBuffer.CanRead())
+            {
+                //Fill WASAPI BYTE buffer
+                win32_WASAPI_Callback(&WASAPI, Engine.MixBuffer.Count, Engine.Format.Channels, Engine.CallbackBuffer.Read());
 
-                    if(i == 10)
+                //Update ringbuffer addresses
+                Engine.CallbackBuffer.FinishRead();
+            }
+
+            //Start GUI frame
+            ImGui_ImplDX9_NewFrame();
+            ImGui_ImplWin32_NewFrame();
+            ImGui::NewFrame();
+
+            // Rendering
+            ImGui::EndFrame();
+            D3Device->SetRenderState(D3DRS_ZENABLE, false);
+            D3Device->SetRenderState(D3DRS_ALPHABLENDENABLE, false);
+            D3Device->SetRenderState(D3DRS_SCISSORTESTENABLE, false);
+            D3DCOLOR clear_col_dx = D3DCOLOR_RGBA((int)(clear_color.x*255.0f), (int)(clear_color.y*255.0f), (int)(clear_color.z*255.0f), (int)(clear_color.w*255.0f));
+            D3Device->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, clear_col_dx, 1.0f, 0);
+            if (D3Device->BeginScene() >= 0)
+            {
+                ImGui::Render();
+                ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
+                D3Device->EndScene();
+            }
+            HRESULT result = D3Device->Present(NULL, NULL, NULL, NULL);
+
+            // Handle loss of D3D9 device
+            if (result == D3DERR_DEVICELOST && D3Device->TestCooperativeLevel() == D3DERR_DEVICENOTRESET)
+                ResetDevice();
+
+            //End performance timings
+            FlipWallClock = win32_WallClock();
+            u64 EndCycleCount = __rdtsc();
+            LastCycleCount = EndCycleCount;
+
+            //Check rendering work elapsed and sleep if time remaining
+            LARGE_INTEGER WorkCounter = win32_WallClock();
+            f32 WorkSecondsElapsed = win32_SecondsElapsed(LastCounter, WorkCounter);
+            f32 SecondsElapsedForFrame = WorkSecondsElapsed;
+
+            //If the rendering finished under the target seconds, then sleep until the next update
+            if(SecondsElapsedForFrame < TargetSecondsPerFrame)
+            {                        
+                if(IsSleepGranular)
+                {
+                    DWORD SleepTimeInMS = (DWORD)(1000.0f * (TargetSecondsPerFrame - SecondsElapsedForFrame));
+
+                    if(SleepTimeInMS > 0)
                     {
-                        // polar_container_Play(Master, Hash("CO_FileContainer"), 0, FX_DRY, EN_NONE, AMP(-1));
-
-                        // polar_source_Play(Master, Hash("SO_Whiterun"), 0, FX_DRY, EN_NONE, AMP(-1));
-
-                        // polar_container_Fade(Master, Hash("CO_FileContainer"), GlobalTime, AMP(-65), 12);
-
-
-                        // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_01"), 1, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial1.txt");
-                        // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_02"), 1, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial2.txt");
-                        // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_03"), 1, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial3.txt");
-                        // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_04"), 1, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial4.txt");
-                        // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_05"), 1, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial5.txt");
-                        // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_06"), 1, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial6.txt");
-                        // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_07"), 1, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial7.txt");
-                        // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_08"), 1, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial8.txt");
-                        // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_09"), 1, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial9.txt");
-                        // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_10"), 1, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial10.txt");
-                        // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_11"), 1, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial11.txt");
-                        // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_12"), 1, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial12.txt");
-                        // polar_source_Play(Master, Hash("SO_Trumpet14_Partial_13"), 1, FX_DRY, EN_BREAKPOINT, "breakpoints/trumpet14/Trumpet_14_Partial13.txt");
+                        Sleep(SleepTimeInMS);
                     }
+                }
 
-                    //Render
-                    //Write data
-                    if(polar_ringbuffer_WriteCheck(CallbackBuffer))
-                    {
-                        //Render sources
-                        polar_render_Callback(&Engine, Master, MixBuffer, polar_ringbuffer_WriteData(CallbackBuffer));
-
-                        //Update ringbuffer addresses
-                        polar_ringbuffer_WriteFinish(CallbackBuffer);
-                    }
-
-                    //Read data
-                    if(polar_ringbuffer_ReadCheck(CallbackBuffer))
-                    {
-                        //Fill WASAPI BYTE buffer
-                        win32_WASAPI_Callback(WASAPI, MixBuffer->SampleCount, Engine.Channels, polar_ringbuffer_ReadData(CallbackBuffer));
-                        // printf("Polar: Samples written: %u\n", MixBuffer->SampleCount);
-
-                        //Update ringbuffer addresses
-                        polar_ringbuffer_ReadFinish(CallbackBuffer);
-                    }
-
-                    //Start GUI frame
-                    ImGui_ImplDX9_NewFrame();
-                    ImGui_ImplWin32_NewFrame();
-                    ImGui::NewFrame();
-
-                    //Build GUI
-                    polar_GUI_Construct(Master);
-
-                    // Rendering
-                    ImGui::EndFrame();
-                    D3Device->SetRenderState(D3DRS_ZENABLE, false);
-                    D3Device->SetRenderState(D3DRS_ALPHABLENDENABLE, false);
-                    D3Device->SetRenderState(D3DRS_SCISSORTESTENABLE, false);
-                    D3DCOLOR clear_col_dx = D3DCOLOR_RGBA((int)(clear_color.x*255.0f), (int)(clear_color.y*255.0f), (int)(clear_color.z*255.0f), (int)(clear_color.w*255.0f));
-                    D3Device->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, clear_col_dx, 1.0f, 0);
-                    if (D3Device->BeginScene() >= 0)
-                    {
-                        ImGui::Render();
-                        ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
-                        D3Device->EndScene();
-                    }
-                    HRESULT result = D3Device->Present(NULL, NULL, NULL, NULL);
-
-                    // Handle loss of D3D9 device
-                    if (result == D3DERR_DEVICELOST && D3Device->TestCooperativeLevel() == D3DERR_DEVICENOTRESET)
-                        ResetDevice();
-
-                    //End performance timings
-                    FlipWallClock = win32_WallClock();
-                    u64 EndCycleCount = __rdtsc();
-                    LastCycleCount = EndCycleCount;
-
-                    //Check rendering work elapsed and sleep if time remaining
-                    LARGE_INTEGER WorkCounter = win32_WallClock();
-                    f32 WorkSecondsElapsed = win32_SecondsElapsed(LastCounter, WorkCounter);
-                    f32 SecondsElapsedForFrame = WorkSecondsElapsed;
-
-                    //If the rendering finished under the target seconds, then sleep until the next update
-                    if(SecondsElapsedForFrame < TargetSecondsPerFrame)
-                    {                        
-                        if(IsSleepGranular)
-                        {
-                            DWORD SleepTimeInMS = (DWORD)(1000.0f * (TargetSecondsPerFrame - SecondsElapsedForFrame));
-
-                            if(SleepTimeInMS > 0)
-                            {
-                                Sleep(SleepTimeInMS);
-                                // printf("Sleep\n");
-                            }
-                        }
-
-                        f32 TestSecondsElapsedForFrame = win32_SecondsElapsed(LastCounter, win32_WallClock());
-                        while(SecondsElapsedForFrame < TargetSecondsPerFrame)
-                        {                            
-                            SecondsElapsedForFrame = win32_SecondsElapsed(LastCounter, win32_WallClock());
-                        }
-                    }
-
-                    else
-                    {
-                        //!Missed frame rate!
-                        f32 Difference = (SecondsElapsedForFrame - TargetSecondsPerFrame);
-                        printf("Polar\tERROR: Missed frame rate!\tDifference: %f\t[Current: %f, Target: %f]\n", Difference, SecondsElapsedForFrame, TargetSecondsPerFrame);
-                    } 
-
-                    //Prepare timers before next loop
-                    LARGE_INTEGER EndCounter = win32_WallClock();
-                    LastCounter = EndCounter;
+                f32 TestSecondsElapsedForFrame = win32_SecondsElapsed(LastCounter, win32_WallClock());
+                while(SecondsElapsedForFrame < TargetSecondsPerFrame)
+                {                            
+                    SecondsElapsedForFrame = win32_SecondsElapsed(LastCounter, win32_WallClock());
+#if MICROPROFILE                    
+                    MicroProfileTick();
+#endif
                 }
             }
 
             else
             {
-            }
+                //!Missed frame rate!
+                f32 Difference = (SecondsElapsedForFrame - TargetSecondsPerFrame);
+                Fatal("win32: Missed frame rate!\tDifference: %f\t[Current: %f, Target: %f]", Difference, SecondsElapsedForFrame, TargetSecondsPerFrame);
+            } 
 
-            ImGui_ImplDX9_Shutdown();
-            ImGui_ImplWin32_Shutdown();
-            ImGui::DestroyContext();
-
-            polar_ringbuffer_Destroy(EngineArena, CallbackBuffer);
-            win32_WASAPI_Destroy(EngineArena, WASAPI);
+            //Prepare timers before next loop
+            LARGE_INTEGER EndCounter = win32_WallClock();
+            LastCounter = EndCounter;         
         }
 
-        else
-        {
-        }
+        ImGui_ImplDX9_Shutdown();
+        ImGui_ImplWin32_Shutdown();
+        ImGui::DestroyContext();
+
+        Engine.MixBuffer.Destroy();
+        Engine.CallbackBuffer.Destroy();
+        WASAPI.Destroy();
 
         CleanupDeviceD3D();
         DestroyWindow(WindowHandle);
-        UnregisterClass(WindowClass.lpszClassName, WindowClass.hInstance);
+        UnregisterClass(WindowClass.lpszClassName, WindowClass.hInstance);        
     }
-
     else
     {
+        CleanupDeviceD3D();
+        DestroyWindow(WindowHandle);
+        UnregisterClass(WindowClass.lpszClassName, WindowClass.hInstance);
+        Fatal("win32: Failed to create window!");
     }
 
-    memory_arena_Destroy(EngineArena);
-    memory_arena_Destroy(SourceArena);
+    //Free pools
+    SourcePoolBuffers.FreeAll();
+    SourcePoolNames.FreeAll();
+    SourcePoolBreakpoints.FreeAll();
+    MixerPool.FreeAll();
 
-    return 0;
+    //Free arenas
+    SourceArena.FreeAll();
+    EngineArena.FreeAll();
+    VirtualFree(SourceBlock, 0, MEM_RELEASE);
+    VirtualFree(EngineBlock, 0, MEM_RELEASE);
+
+#if MICROPROFILE
+    MicroProfileStopAutoFlip();
+    Info("Microprofiler: Results @ localhost:%d", MicroProfileWebServerPort());
+    MicroProfileShutdown();
+#endif
+
+    //Destroy logging function - close file
+    core_DestroyLogger();
 }

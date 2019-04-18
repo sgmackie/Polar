@@ -1,505 +1,906 @@
-#ifndef polar_h
-#define polar_h
+//Headers
+#include "core/core.h"
+#include "core/log.cpp"
 
-//Type defines
-#include "polar_typedefs.h"
-
-//Logging function
-#define polar_Log(...) do                                                                                       \
-{                                                                                                               \
-    time_t t = time(0);                                                                                         \
-    printf("%s[%.8s]%s %s:%d: \t", ANSI("\27[36m"), 11+ctime(&t), ANSI("\27[0m"), __FUNCTION__, __LINE__);      \
-    printf(__VA_ARGS__);                                                                                        \
-    }                                                                                                           \
-while(0)                                                                                                        \
-
-
-//TODO: Remove CRT
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h> //memcpy
-#include <time.h>
-#include <stdarg.h>
-#include "math.h"
-
-/*                  */
-/*  Global code  	*/
-/*                  */
-
-//Maximums
-#define MAX_STRING_LENGTH 64
-#define MAX_CHANNELS 4
-#define MAX_CONTAINERS 4
-#define MAX_SOURCES 32
-#define MAX_BREAKPOINTS 1024
-#define MAX_ENVELOPES 4
-
-//Hex defines
-//Sources
-#define SO_NONE                 0x09070232
-#define SO_OSCILLATOR           0x1c5903fe
-#define SO_FILE                 0x08d10222
-
-//Effects
-#define FX_DRY                  0x06a701ed
-#define FX_AM                   0x04af018c
-#define FX_ECHO                 0x0898021d
-
-//Envelopes
-#define EN_NONE                 0x089f0223
-#define EN_ADSR                 0x0861021d
-#define EN_BREAKPOINT           0x1b0903e2
-#define EN_AMPLITUDE            0x178a0398
-#define EN_FREQUENCY            0x17ad03a5
-
-//Random
-#define RN_AMPLITUDE            0x182603a5
-#define RN_FREQUENCY            0x184903b2
-#define RN_PAN                  0x06b401df
-
-//OSC messages
-//Source types
-#define LN_                     9201655152285363179U
-#define SO_                     8744316438972908U
-
-//Events
-#define PLAY                    11120484276852016966U
-#define FADE                    7677966677680727406U
-#define VECTOR                  12143376858605269818U
-#define ROTATION                405295350552126795U
-#define MATRIX                  16755126490873392952U
-
-//General Defines
-#define Mono    1
-#define Stereo  2
-#define Quad    4
-
-//Function macros
-#define Hash(X) math_HashGenerate(X)
-#define DB(X) math_DecibelToLinear(X)
-#define AMP_MIN(X) DB(X)
-#define AMP_MAX(X) DB(X)
-#define AMP(X) DB(X)
-
-
-/*                  */
-/*  Math code  	    */
-/*                  */
-
-typedef struct VECTOR4D
+//Define name of logger here for macro functions
+static LOGGER Logger = {};
+bool core_CreateLogger(char const *Path, int Level, bool IsQuiet)
 {
+    FILE *LogFile = 0;
+    fopen_s(&LogFile, Path, "w+");
+
+    if(!LogFile)
+    {
+        printf("Failed to open file: %s\n", Path);
+        return false;
+    }
+
+    Logger.Init(LogFile, Level, IsQuiet);
+    return true;
+}
+
+void core_DestroyLogger()
+{
+    fclose(Logger.File);
+}
+
+//Assertion with logging
+static bool AssertQuit = true;
+static i64 AssertFailuresCounter = 0;
+
+//Assertion function with optional logging
+//If AssertQuit is set, exists program
+#define Assert(Expression, ...) do {                            \
+  if(!(Expression))                                             \
+  {                                                             \
+    ++AssertFailuresCounter;                                    \
+    Logger.Log(LOG_FATAL,    __FILE__, __LINE__, __VA_ARGS__);  \
+    if(AssertQuit)                                              \
+    {                                                           \
+        abort();                                                \
+    }                                                           \
+  }                                                             \
+} while(0);                                                     \
+
+//CUDA
+#if CUDA
+#include "polar_cuda.h"
+#include "cuda/polar_cuda_error.h"
+#endif
+
+//External functions
+#include "../external/xxhash.c"     //Fast hasing function
+#define FastHash(Name) XXH64(Name, strlen(Name), 0)
+#include "../external/csv_read.c"
+#include "../external/split.c"
+#include "../external/pcg_basic.c"  //Random number generator
+#define DR_WAV_IMPLEMENTATION
+#include "../external/dr_wav.h"
+
+//IMGUI
+#include "../external/imgui/imgui.cpp"
+#include "../external/imgui/imgui_widgets.cpp"
+#include "../external/imgui/imgui_draw.cpp"
+#include "../external/imgui/imgui_demo.cpp"
+
+//Core functions
+#include "core/functions.cpp"       //General functions (alignment checks)
+#include "core/memory/arena.cpp"    //Arena creation (alloc, resize, freeall)
+#include "core/memory/pool.cpp"     //Pool creation (alloc, free, freeall)
+#include "core/math.cpp"            //Math functions
+// #include "core/string.cpp"          //String handling
+
+//Max sizes
+#define MAX_SOURCES         256
+#define MAX_STRING_LENGTH   128
+#define MAX_BUFFER_SIZE     8192
+#define MAX_BREAKPOINTS     64
+
+
+typedef enum STATE_PLAY
+{
+    STOPPED,
+    STOPPING,
+    PLAYING,
+    PAUSED,
+} STATE_PLAY;
+
+typedef struct CMP_DURATION
+{
+    //Data    
+    STATE_PLAY  States;
+    u64         SampleCount;
+} CMP_DURATION;
+
+typedef struct CMP_FORMAT
+{
+    //Data    
+    u32 SampleRate;
+    u32 Channels;
+
+    void Init(u32 InputRate, u32 InputChannels)
+    {
+        SampleRate  = 0;
+        Channels    = 0;
+
+        if(InputRate)
+        {
+            SampleRate = InputRate;
+        }
+        if(InputChannels)
+        {
+            Channels = InputChannels;
+        }
+    }
+
+} CMP_FORMAT;
+
+typedef struct CMP_POSITION
+{
+    //Data    
     f32 X;
     f32 Y;
     f32 Z;
     f32 W;
-} VECTOR4D;
+} CMP_POSITION;
 
-typedef struct ROTATION3D
+
+typedef struct CMP_WAV
 {
-    f32 Roll;
-    f32 Pitch;
-    f32 Yaw;
-} ROTATION3D;
+    f32     *Data;
+    u8      BitRate;
+    u32     SampleRate;
+    u32     Channels;
+    u64     Length;
+    u64     ReadIndex;
 
-typedef struct MATRIX_4x4
+    void Init(char const *Name)
+    {
+        Data = 0;
+        BitRate = 0;
+        SampleRate = 0;
+        Channels = 0;
+        Length = 0;
+        ReadIndex = 0;
+        Data = drwav_open_file_and_read_pcm_frames_f32(Name, &Channels, &SampleRate, &Length);  
+    }
+
+} CMP_WAV;
+
+
+
+
+typedef struct CMP_BUFFER
 {
-    f32 A1, A2, A3, A4;
-    f32 B1, B2, B3, B4;
-    f32 C1, C2, C3, C4;
-    f32 D1, D2, D3, D4;
-} MATRIX_4x4;
+    //Data
+    size_t  Count;
+    f32     *Data;
 
+    void CreateFromArena(MEMORY_ARENA *Arena, size_t Type, size_t InputCount)
+    {
+        Count   = InputCount;
+        Data    = (f32 *) Arena->Alloc((Type * Count), MEMORY_ARENA_ALIGNMENT);
+    }
 
+    void CreateFromPool(MEMORY_POOL *Pool, size_t InputCount)
+    {
+        Count   = InputCount;
+        Data    = (f32 *) Pool->Alloc();
+    }
 
-/*                  */
-/*  Memory code  	*/
-/*                  */
+    void Destroy()
+    {
+        Count = 0;
+        Data = 0;
+    }
 
-//Defines
-//Define maximum alignemt Size fron integral types
-typedef f64 max_align_type;
-global_scope size_t MaxAlignment = alignof(max_align_type);
-#define ARENA_DEFAULT_CHUNK_SIZE 2048
+    f32 *Write()
+    {
+        return Data;
+    }
 
-//Structs
-//Chunks are a linked list of allocated data
-typedef struct MEMORY_ARENA_CHUNK 
-{
-    size_t CurrentSize;
-    size_t TotalSize;
-    MEMORY_ARENA_CHUNK *NextChunk;
-    char Data[sizeof(char)];
-} MEMORY_ARENA_CHUNK;
+    f32 *Read()
+    {
+        return Data;
+    }    
 
-//Arena to access all allocated chunks as a list
-typedef struct MEMORY_ARENA 
-{
-    MEMORY_ARENA_CHUNK *FirstInList;
-    size_t CurrentSize;
-    size_t TotalSize;
-    size_t ChunkCount;
-    size_t UnalignedDataSize;
-} MEMORY_ARENA;
+} CMP_BUFFER;
 
-//Protoypes
-//Chunks
-MEMORY_ARENA_CHUNK *memory_arena_ChunkCreate(size_t Size);                  //Create an aligned chunk at a given size by calling system alloctor (VirtualAlloc / mmap)
-void memory_arena_ChunkDestroy(MEMORY_ARENA_CHUNK *Chunk);                  //Free any created chunk
-
-//Arena
-MEMORY_ARENA *memory_arena_Create(size_t Size);                             //Allocate space for the arena and create the first chunk in the linked list
-void memory_arena_Destroy(MEMORY_ARENA *Arena);                             //Free arena and all linked chunks
-void memory_arena_Reset(MEMORY_ARENA *Arena);                               //Call memset on every chunk in the arena
-void *memory_arena_Push(MEMORY_ARENA *Arena, void *Type, size_t Size);      //Push any data onto the arena by assigning it a specific address from the chunks and return that address
-void memory_arena_Pull(MEMORY_ARENA *Arena);                                //Free any chunks that are currently empty
-void memory_arena_Print(MEMORY_ARENA *Arena, const char *Name);             //Print the contents of a given arena
-
-
-/*                  */
-/*  Buffer code  	*/
-/*                  */
 
 #define RINGBUFFER_DEFAULT_BLOCK_COUNT 3
-
-//Structs
-typedef struct POLAR_BUFFER
+//TODO: Create generic void * buffers to support any type
+typedef struct CMP_RINGBUFFER
 {
-    u32 SampleCount;
-    f32 *Data;
-} POLAR_BUFFER;
+    //Data
+    size_t  Count;
+    size_t  ReadAddress;
+    size_t  WriteAddress;
+    size_t  TotalBlocks;
+    size_t  CurrentBlocks;
+    i16     *Data;
 
-typedef struct POLAR_RINGBUFFER
+    //Functions
+    void Create(MEMORY_ARENA *Arena, size_t Type, size_t InputCount, size_t Blocks)
+    {
+        if(Blocks <= 0)
+        {
+            Blocks = RINGBUFFER_DEFAULT_BLOCK_COUNT;
+            Info("Ringbuffer: Using default block count: %d", RINGBUFFER_DEFAULT_BLOCK_COUNT);
+        }
+
+        Count           = InputCount;
+        TotalBlocks     = Blocks;    
+        CurrentBlocks   = 0;
+        ReadAddress     = 0;
+        WriteAddress    = 0;
+
+        Data = (i16 *)  Arena->Alloc(((Type * Count) * TotalBlocks), MEMORY_ARENA_ALIGNMENT);
+    }
+
+    void Destroy()
+    {
+        Count           = 0;
+        TotalBlocks     = 0;    
+        CurrentBlocks   = 0;
+        ReadAddress     = 0;
+        WriteAddress    = 0;
+        Data            = 0;
+    }
+
+    i16 *Write()
+    {
+        return Data + (WriteAddress * Count);
+    }
+
+    bool CanWrite()
+    {
+        return CurrentBlocks != TotalBlocks;
+    }
+
+    void FinishWrite()
+    {
+        WriteAddress = ((WriteAddress + 1) % TotalBlocks);
+        CurrentBlocks += 1;
+    }
+
+    i16 *Read()
+    {
+        return Data + (ReadAddress * Count);
+    }
+
+    bool CanRead()
+    {
+        return CurrentBlocks != 0;
+    }
+
+    void FinishRead()
+    {
+        ReadAddress = ((ReadAddress + 1) % TotalBlocks);
+        CurrentBlocks -= 1;        
+    }    
+
+} CMP_RINGBUFFER;
+
+typedef struct CMP_FADE
 {
-    u64 Samples;
-    u64 ReadAddress;
-    u64 WriteAddress;
-    u64 TotalBlocks;
-    u64 CurrentBlocks;
-    i16 *Data;
-} POLAR_RINGBUFFER;
+    //Data
+    f64     Current;
+    f64     Previous;
+    f64     StartValue;
+    f64     EndValue;
+    f64     StartTime;
+    f64     Duration;
+    bool    IsFading;
 
-//Prototypes
-POLAR_RINGBUFFER *polar_ringbuffer_Create(MEMORY_ARENA *Arena, u32 Samples, u32 Blocks);        //Allocate buffer that is segemented into blocks of samples, default is 3
-void polar_ringbuffer_Destroy(MEMORY_ARENA *Arena, POLAR_RINGBUFFER *Buffer);                   //Free buffer
+    //Functions
+    void Init(double Amplitude);
 
-//Writing
-i16 *polar_ringbuffer_WriteData(POLAR_RINGBUFFER *Buffer);                                      //Return the address of the next available block to write to
-bool polar_ringbuffer_WriteCheck(POLAR_RINGBUFFER *Buffer);                                     //Check that there is space to write another block of samples
-void polar_ringbuffer_WriteFinish(POLAR_RINGBUFFER *Buffer);                                    //Change the address to point to the next block
-
-//Reading
-i16 *polar_ringbuffer_ReadData(POLAR_RINGBUFFER *Buffer);                                       //Read from the next available block
-bool polar_ringbuffer_ReadCheck(POLAR_RINGBUFFER *Buffer);                                      //Check that there are any written blocks to read from
-void polar_ringbuffer_ReadFinish(POLAR_RINGBUFFER *Buffer);                                     //Change the address to point to the next block
+} CMP_FADE;
 
 
-/*                  */
-/*  Envelope code  	*/
-/*                  */
-
-//Defines
-#define MAX_BREAKPOINT_LINE_LENGTH 64
-
-//Structs
-typedef struct POLAR_ENVELOPE_POINT
+typedef struct CMP_OSCILLATOR
 {
-    f32 Time;
-    f32 Value;
-} POLAR_ENVELOPE_POINT;
+    //Flags
+    typedef enum TYPE
+    {
+        NOISE   = 1 << 0,
+        SQUARE  = 1 << 1,
+        SINE    = 1 << 2,
+    } TYPE;
 
-typedef struct POLAR_ENVELOPE
+    //Data
+    i32         Flag;
+    f64         Phasor;
+    f64         PhaseIncrement;
+    f64         SizeOverSampleRate;
+    f64         Frequency;
+
+    //Functions
+    void Init(i32 Type, u32 SampleRate, f64 InputFrequency, f64 Limit = TWO_PI32)
+    {
+        Flag |= Type;
+        Phasor = 0;
+        PhaseIncrement = 0;
+        SizeOverSampleRate = Limit / SampleRate;
+        Frequency = InputFrequency;
+    }
+
+
+} CMP_OSCILLATOR;
+
+
+
+typedef struct CMP_ADSR
 {
-    u32 Assignment;
-    u32 CurrentPoints;
-    u32 Index;
-    POLAR_ENVELOPE_POINT Points[MAX_BREAKPOINTS];
-} POLAR_ENVELOPE;
+    bool IsActive;
+    f64 MaxAmplitude;
+    f64 Attack;
+    f64 Decay;
+    f64 SustainAmplitude;
+    f64 Release;
+    u64 Index;
+    u64 DurationInSamples;
+} CMP_ADSR;
 
-
-typedef struct POLAR_STATE_FADE
+typedef struct CMP_BREAKPOINT_POINT
 {
-    f32 Current;
-    f32 Previous;
-    f32 StartValue;
-    f32 EndValue;
-    f32 StartTime;
-    f32 Duration;
-    bool IsFading;
-} POLAR_STATE_FADE;
+    f64 Value;
+    f64 Time;
+} CMP_BREAKPOINT_POINT;
 
-
-typedef struct POLAR_STATE_PER_SAMPLE
+typedef struct CMP_BREAKPOINT
 {
-    f32 Current;
-    f32 Target;
-    f32 Delta;
-} POLAR_STATE_PER_SAMPLE;
+    u64 Index;
+    size_t Count;
+    CMP_BREAKPOINT_POINT *Points;
+
+    void Init(size_t PointIndex, f64 InputValue, f64 InputTime)
+    {
+        Index   = 0;
+
+        if(PointIndex)
+        {
+            Points[PointIndex].Value = InputValue;
+            Points[PointIndex].Time = InputTime;
+        }
+    }
+
+    void CreateFromArena(MEMORY_ARENA *Arena, size_t Type, size_t InputCount)
+    {
+        Count   = 0;
+        Points  = (CMP_BREAKPOINT_POINT *) Arena->Alloc((Type * InputCount), MEMORY_ARENA_ALIGNMENT);
+    }
+
+    void CreateFromPool(MEMORY_POOL *Pool, size_t InputCount)
+    {
+        Count   = 0;
+        Points  = (CMP_BREAKPOINT_POINT *) Pool->Alloc();
+    }
+
+    void Destroy()
+    {
+        Index = 0;
+        Count = 0;
+        Points = 0;
+    }
+
+} CMP_BREAKPOINT;
 
 
-/*                  */
-/*  DSP code        */
-/*                  */
-
-//Defines
-#define PI32 3.14159265359f
-#define TWO_PI32 (2.0 * PI32)
-
-#define WV_SINE         0x094f023c
-#define WV_SQUARE       0x0ee802de
-#define WV_SAWDOWN      0x11e50330
-#define WV_SAWUP        0x0bf6029d
-#define WV_TRIANGLE     0x153e0363
-
-//Structs
-//Wave oscillator
-typedef struct POLAR_OSCILLATOR
+typedef struct CMP_MODULATOR
 {
-    u32 Waveform;                                   //Waveform assignment
-    f32 (*Tick) (POLAR_OSCILLATOR *Oscillator);     //Function pointer to the different waveform ticks
-    f32 TwoPiOverSampleRate;                        //2 * Pi / Sample rate is a constant variable
-    f32 PhaseCurrent;
-    f32 PhaseIncrement;                             //Store calculated phase increment
-    POLAR_STATE_PER_SAMPLE Frequency;
-} POLAR_OSCILLATOR;
+    //Flags
+    typedef enum ASSIGNMENT
+    {
+        AMPLITUDE       = 1 << 0,
+        FREQUENCY       = 1 << 1,
+    } ASSIGNMENT;
 
+    typedef enum TYPE
+    {
+        LFO_OSCILLATOR  = 1 << 2,
+        ENV_ADSR        = 1 << 3,
+        ENV_BREAKPOINT  = 1 << 4,
+    } TYPE;
 
-//Prototypes
-POLAR_OSCILLATOR *polar_dsp_OscillatorCreate(MEMORY_ARENA *Arena, u32 SampleRate, u32 WaveformSelect, f32 InitialFrequency);        //Create oscillator object
-void polar_dsp_OscillatorInit(POLAR_OSCILLATOR *Oscillator, u32 SampleRate, u32 WaveformSelect, f32 InitialFrequency);              //Initialise elements of oscillator (can be used to reset)
-f32 polar_dsp_PhaseWrap(f32 &Phase);                                                                                                //Wrap phase 2*Pi as precaution against sin(x) function on different compilers failing to wrap large scale values internally
-f32 polar_dsp_TickSine(POLAR_OSCILLATOR *Oscillator);                                                                               //Calculate sine wave samples
-f32 polar_dsp_TickSquare(POLAR_OSCILLATOR *Oscillator);                                                                             //Calculate square wave samples
-f32 polar_dsp_TickSawDown(POLAR_OSCILLATOR *Oscillator);                                                                            //Calculate downward square wave samples
-f32 polar_dsp_TickSawUp(POLAR_OSCILLATOR *Oscillator);                                                                              //Calculate upward square wave samples
-f32 polar_dsp_TickTriangle(POLAR_OSCILLATOR *Oscillator);    
-
-/*                  */
-/*  File code  	    */
-/*                  */
-
-typedef struct POLAR_FILE
-{
-    u32 Channels;
-    u32 SampleRate;
-    u64 FrameCount;
-    u64 ReadIndex;
-    f32 *Samples;
-} POLAR_FILE;
-
-/*                  */
-/*  Engine code  	*/
-/*                  */
-
-typedef struct POLAR_ENGINE         //Struct to hold platform specific audio API important engine properties
-{
-	u32 BufferSize;			    //Frame count for output buffer
-    u32 LatencySamples;
-	u16 Channels;                   //Engine current channels
-    f32 *OutputChannelPositions;
-	u32 SampleRate;                 //Engine current sampling rate
-    u32 BytesPerSample;
-    f32 UpdateRate;
-    f32 NoiseFloor;                 //Attenuation noise floor
-} POLAR_ENGINE;
-
-
-//Prototypes
-//String handling
-i32 StringLength(const char *String);
-void polar_StringConcatenate(size_t StringALength, const char *StringA, size_t StringBLength, const char *StringB, char *StringC);
-
-/*                  */
-/*  Sources code  	*/
-/*                  */
-
-//Structs
-//Union to select between source types
-typedef struct POLAR_SOURCE_TYPE
-{
-    u32 Flag;
+    i32 Flag;
     union
     {
-        POLAR_OSCILLATOR *Oscillator;
-        POLAR_FILE *File;
+        CMP_OSCILLATOR  Oscillator;
+        CMP_ADSR        ADSR;
+        CMP_BREAKPOINT  Breakpoint;
     };
-} POLAR_SOURCE_TYPE;
 
-typedef enum POLAR_SOURCE_PLAY_STATE
-{
-    Stopped,
-    Stopping,
-    Playing
-} POLAR_SOURCE_PLAY_STATE;
+    void Init(i32 Type, i32 Assignment)
+    {
+        Flag |= Type;
+        Flag |= Assignment;
+    }
 
-//Current state of the source
-typedef struct POLAR_SOURCE_STATE
+} CMP_MODULATOR;
+
+
+typedef struct POLAR_ENGINE
 {
-    f32 *PanPositions;
+    //Data
+    f32                         UpdateRate;
+    f64                         NoiseFloor;
+    size_t                      BytesPerSample;
+    u32                         BufferFrames;
+    u32                         LatencyFrames;
+    CMP_FORMAT     Format;
+    CMP_RINGBUFFER        CallbackBuffer;
+    CMP_BUFFER            MixBuffer;
+
+} POLAR_ENGINE;
+
+typedef struct TPL_PLAYBACK
+{
+    //Data
+    CMP_FORMAT      Format;
+    CMP_BUFFER      Buffer;
+    CMP_DURATION    Duration;
+} TPL_PLAYBACK;
+
+
+typedef u64 ID_SOURCE;
+typedef struct ENTITY_SOURCES
+{
+    //Flags
+    enum FLAG_COMPONENTS
+    {
+        PLAYBACK                = 1 << 0,
+        AMPLITUDE               = 1 << 1,
+        POSITION                = 1 << 2,
+        OSCILLATOR              = 1 << 3,
+        WAV                     = 1 << 4,
+        ADSR                    = 1 << 5,
+        BREAKPOINT              = 1 << 6,
+        MODULATOR               = 1 << 7,
+    };
+
+
+    //Data
+    size_t                      Count;
+    char                        **Names;
+    ID_SOURCE                   *IDs;
+    TPL_PLAYBACK                *Playbacks;
+    CMP_FADE                    *Amplitudes;
+    CMP_POSITION                *Positions;
+    CMP_OSCILLATOR              *Oscillators;
+    CMP_WAV                     *WAVs;
+    CMP_ADSR                    *ADSRs;
+    CMP_BREAKPOINT              *Breakpoints;
+    CMP_MODULATOR               *Modulators;
+    i32                         *Flags;
+
+    //Functions
+    void Create                 (MEMORY_ARENA *Arena, size_t Size);
+    void Destroy                (MEMORY_ARENA *Arena);
+    void Init                   (size_t Index);
+    ID_SOURCE AddByName         (MEMORY_POOL *Pool, char *Name);
+    ID_SOURCE AddByHash         (u64 Hash);
+    bool Remove                 (MEMORY_POOL *Pool, ID_SOURCE ID);
+    size_t RetrieveIndex        (ID_SOURCE ID);
+    ID_SOURCE RetrieveID        (size_t Index);
+
+} ENTITY_SOURCES;
+
+
+
+typedef struct TUPLE_MIX
+{
+    //Data
+    CMP_FORMAT      Format;
+    CMP_BUFFER      Buffer;
+    CMP_FADE        Amplitude;
+} TUPLE_MIX;
+
+
+
+
+
+
+typedef struct SYS_PLAY
+{
+    //Data
+    size_t          SystemCount;    
+    ID_SOURCE       *SystemSources;
     
-    POLAR_STATE_FADE Amplitude;
+    //Functions
+    void Create     (MEMORY_ARENA *Arena, size_t Size);
+    void Destroy    (MEMORY_ARENA *Arena);
+    void Add        (ID_SOURCE ID);
+    bool Remove     (ID_SOURCE ID);
+    bool Start      (ENTITY_SOURCES *Sources, ID_SOURCE ID, f64 InputDuration, bool IsAligned = true);
+    bool Pause      (ENTITY_SOURCES *Sources, ID_SOURCE ID);
+    bool Resume     (ENTITY_SOURCES *Sources, ID_SOURCE ID);
+    void Update     (ENTITY_SOURCES *Sources, f64 Time, u32 PreviousSamplesWritten, u32 SamplesToWrite);
+
+} SYS_PLAY;
 
 
-    VECTOR4D Position;
-    f32 DistanceFromListener;
-    f32 DistanceAttenuation;
-    f32 MinDistance;
-    f32 MaxDistance;
-    f32 Rolloff;
-    f32 RolloffFactor;
-    bool RolloffDirty;
-    bool IsDistanceAttenuated;
-
-
-    f32 Pan;
-
-    u32 CurrentEnvelopes;
-    POLAR_ENVELOPE Envelope[MAX_ENVELOPES];
-} POLAR_SOURCE_STATE;
-
-//Source is a struct of arrays that is accessed by it's unique ID
-typedef struct POLAR_SOURCE
+typedef struct SYS_FADE
 {
-    u8 CurrentSources;
-    char Name[MAX_STRING_LENGTH][MAX_SOURCES];
-    u64 UID[MAX_SOURCES];
-    POLAR_SOURCE_TYPE Type[MAX_SOURCES];
-    POLAR_SOURCE_PLAY_STATE PlayState[MAX_SOURCES];
-    POLAR_SOURCE_STATE States[MAX_SOURCES];
-    u32 FX[MAX_SOURCES];
-    u8 Channels[MAX_SOURCES];
-    u32 SampleRate[MAX_SOURCES];
-    u64 SampleCount[MAX_SOURCES];
-    u32 BufferSize[MAX_SOURCES];
-    f32 *Buffer[MAX_SOURCES];
-} POLAR_SOURCE;
+    //Data
+    size_t          SystemCount;    
+    ID_SOURCE       *SystemSources;
+    
+    //Functions
+    void Create     (MEMORY_ARENA *Arena, size_t Size);
+    void Destroy    (MEMORY_ARENA *Arena);
+    void Add        (ID_SOURCE ID);
+    bool Remove     (ID_SOURCE ID);
+    bool Start      (ENTITY_SOURCES *Sources, ID_SOURCE ID, f64 Time, f64 Amplitude, f64 Duration);
+    void Update     (ENTITY_SOURCES *Sources, f64 Time);
+
+} SYS_FADE;
 
 
-typedef struct POLAR_SOURCE_SOLO
+
+typedef struct SYS_OSCILLATOR_NOISE
+{    
+    //Data
+    size_t                  SystemCount;
+    ID_SOURCE               *SystemSources;
+    
+    //Functions
+    void Create             (MEMORY_ARENA *Arena, size_t Size);
+    void Destroy            (MEMORY_ARENA *Arena);
+    void Add                (ID_SOURCE ID);
+    bool Remove             (ID_SOURCE ID);
+    void RenderToBuffer     (CMP_OSCILLATOR &Oscillator, CMP_BUFFER &Buffer, size_t BufferCount);
+    void Update             (ENTITY_SOURCES *Sources, size_t BufferCount);
+
+} SYS_OSCILLATOR_NOISE;
+
+typedef struct SYS_OSCILLATOR_SINE
+{    
+    //Data
+    size_t                  SystemCount;
+    ID_SOURCE               *SystemSources;
+    
+    //Functions
+    void Create             (MEMORY_ARENA *Arena, size_t Size);
+    void Destroy            (MEMORY_ARENA *Arena);
+    void Add                (ID_SOURCE ID);
+    bool Remove             (ID_SOURCE ID);
+    void RenderToBufferWithModulation(CMP_OSCILLATOR &Oscillator, CMP_MODULATOR &Modulator, CMP_BUFFER &Buffer, size_t BufferCount);
+    void RenderToBuffer     (CMP_OSCILLATOR &Oscillator, CMP_BUFFER &Buffer, size_t BufferCount);
+    void Update             (ENTITY_SOURCES *Sources, size_t BufferCount);
+
+} SYS_OSCILLATOR_SINE;
+
+typedef struct SYS_OSCILLATOR_SQUARE
+{    
+    //Data
+    size_t                  SystemCount;
+    ID_SOURCE               *SystemSources;
+    
+    //Functions
+    void Create             (MEMORY_ARENA *Arena, size_t Size);
+    void Destroy            (MEMORY_ARENA *Arena);
+    void Add                (ID_SOURCE ID);
+    bool Remove             (ID_SOURCE ID);
+    void RenderToBuffer     (CMP_OSCILLATOR &Oscillator, CMP_BUFFER &Buffer, size_t BufferCount);
+    void Update             (ENTITY_SOURCES *Sources, size_t BufferCount);
+
+} SYS_OSCILLATOR_SQUARE;
+
+
+//Module - collection of systems
+typedef struct MDL_OSCILLATOR
 {
-    char Name[MAX_STRING_LENGTH];
-    u64 UID;
-    POLAR_SOURCE_TYPE Type;
-    POLAR_SOURCE_PLAY_STATE PlayState;
-    POLAR_SOURCE_STATE States;
-    u32 FX;
-    u8 Channels;
-    u32 SampleRate;
-    u64 SampleCount;
-    u32 BufferSize;
-    f32 *Buffer;
-} POLAR_SOURCE_SOLO;
+    SYS_OSCILLATOR_NOISE    Noise;
+    SYS_OSCILLATOR_SINE     Sine;
+    SYS_OSCILLATOR_SQUARE   Square;
+} MDL_OSCILLATOR;
 
 
-
-/*                  */
-/*  Listener code   */
-/*                  */
-
-typedef struct POLAR_LISTENER
+typedef struct SYS_WAV
 {
-    char Name[MAX_STRING_LENGTH];
-    u64 UID;
-    VECTOR4D Position;
-    ROTATION3D Rotation;
-} POLAR_LISTENER;
+    //Data
+    size_t                  SystemCount;    
+    ID_SOURCE               *SystemSources;
+    
+    //Functions
+    void Create             (MEMORY_ARENA *Arena, size_t Size);
+    void Destroy            (MEMORY_ARENA *Arena);
+    void Add                (ID_SOURCE ID);
+    bool Remove             (ID_SOURCE ID);
+    void RenderToBuffer     (CMP_WAV &WAV, CMP_BUFFER &Buffer, i32 Rate, size_t BufferCount);
+    void Update             (ENTITY_SOURCES *Sources, f64 Pitch, size_t BufferCount);
 
+} SYS_WAV;
 
-/* =============================================================================
- *
- *                                  Mixer
- *
- * =============================================================================*/
-/*
-/// ### Mixer
-/// Mixers contain a collection of submixes
-/// 
-/// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~c
-/// typedef struct POLAR_MIXER
-/// {
-///     f32 Amplitude;
-///     POLAR_LISTENER *Listener;
-///     u32 SubmixCount;
-///     POLAR_SUBMIX *FirstInList;
-/// } POLAR_MIXER;
-/// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-///
-/// #### Functions
-/// Function            | Description                                                               | Inputs
-/// --------------------|---------------------------------------------------------------------------|---------
-/// polar_mixer_Create  | Create mixing object to hold singly linked list of submixes               | Arena:
-///                     |                                                                           | Amplitude: 
-*/
-
-//Struct
-//Container to hold a static amount of sources
-typedef struct POLAR_CONTAINER
+typedef struct SYS_MIX
 {
-    u8 CurrentContainers;
-    char Name[MAX_STRING_LENGTH][MAX_CONTAINERS];
-    u64 UID[MAX_CONTAINERS];
-    f32 Amplitude[MAX_CONTAINERS];
-    u32 FX[MAX_CONTAINERS];
-    POLAR_SOURCE Sources[MAX_CONTAINERS];
-} POLAR_CONTAINER;
+    //Data
+    size_t                  SystemCount;    
+    ID_SOURCE               *SystemSources;
 
-//Linked list of submixes with their own containers
-typedef struct POLAR_SUBMIX
+    //Functions
+    void Create             (MEMORY_ARENA *Arena, size_t Size);
+    void Destroy            (MEMORY_ARENA *Arena);
+    void Add                (ID_SOURCE ID);
+    bool Remove             (ID_SOURCE ID);
+    void RenderToBuffer     (f32 *MixBuffer, size_t SamplesToWrite, u32 Channels, CMP_BUFFER &SourceBuffer, CMP_FADE &SourceAmplitude, f64 TargetAmplitude); 
+    void Update             (ENTITY_SOURCES *Sources, f32 *MixBuffer, size_t SamplesToWrite); 
+} SYS_MIX;
+
+
+typedef struct SYS_ENVELOPE_ADSR
 {
-    char Name[MAX_STRING_LENGTH];
-    u64 UID;
-    f32 Amplitude;
-    u32 FX;
-    POLAR_CONTAINER Containers;
-    u32 ChildSubmixCount;
-    POLAR_SUBMIX *ChildSubmix;
-    POLAR_SUBMIX *NextSubmix;
-} POLAR_SUBMIX;
+    //Data
+    size_t                  SystemCount;    
+    ID_SOURCE               *SystemSources;
+    
+    //Functions
+    void Create(MEMORY_ARENA *Arena, size_t Size)
+    {
+        SystemSources = (ID_SOURCE *) Arena->Alloc((sizeof(ID_SOURCE) * Size), MEMORY_ARENA_ALIGNMENT);
+        SystemCount = 0;
+    }
 
-//Global mixer that holds all submixes and their child containers
+    void Destroy(MEMORY_ARENA *Arena)
+    {
+        Arena->FreeAll();
+    }
+
+    void Add(ID_SOURCE ID)
+    {
+        SystemSources[SystemCount] = ID;
+        ++SystemCount;
+    }
+
+    bool Remove(ID_SOURCE ID)
+    {
+        for(size_t i = 0; i <= SystemCount; ++i)
+        {
+            if(SystemSources[i] == ID)
+            {
+                SystemSources[i] = 0;
+                --SystemCount;
+                return true;
+            }
+        }
+        //!Log
+        return false;
+    }
+
+    void Edit(ENTITY_SOURCES *Sources, ID_SOURCE ID, f64 ControlRate, f64 MaxAmplitude, f64 Attack, f64 Decay, f64 SustainAmplitude, f64 Release, bool IsAligned = true)
+    {
+        //Loop through every source that was added to the system
+        for(size_t SystemIndex = 0; SystemIndex <= SystemCount; ++SystemIndex)
+        {
+            //Find active sources in the system
+            ID_SOURCE Source = SystemSources[SystemIndex];
+            if(Source == ID)
+            {
+                //Source is valid - get component
+                size_t SourceIndex          = Sources->RetrieveIndex(Source);
+                CMP_ADSR &ADSR              = Sources->ADSRs[SourceIndex];
+
+                //Amplitudes
+                ADSR.MaxAmplitude           = MaxAmplitude;
+                ADSR.SustainAmplitude       = SustainAmplitude;
+
+                //Convert to sample counts for linear ramping
+                ADSR.Attack                 = Attack   * ControlRate;
+                ADSR.Decay                  = Decay    * ControlRate;
+                ADSR.Release                = Release  * ControlRate;
+
+                //Durations
+                ADSR.Index                  = 0;
+                ADSR.DurationInSamples      = ((Attack + Decay + Release) * ControlRate);
+                if(IsAligned)
+                {
+                    ADSR.DurationInSamples  = NearestPowerOf2(ADSR.DurationInSamples);
+                }
+                ADSR.IsActive               = true;                
+            }
+        }
+    }
+
+    void RenderToBuffer(CMP_ADSR &ADSR, CMP_BUFFER &Buffer, size_t BufferCount)
+    {
+        if(ADSR.IsActive)
+        {
+            f64 Sample = 0;
+            for(size_t i = 0; i < BufferCount; ++i)
+            {
+                //ADSR finished
+                if(ADSR.Index == ADSR.DurationInSamples)
+                {
+                    ADSR.IsActive = false;
+                    return;
+                }
+
+                //Attack
+                if(ADSR.Index <= ADSR.Attack)
+                {
+                    Sample = ADSR.Index * (ADSR.MaxAmplitude / ADSR.Attack);
+                }
+
+                //Decay
+                else if(ADSR.Index <= (ADSR.Attack + ADSR.Decay))
+                {
+                    Sample = ((ADSR.SustainAmplitude - ADSR.MaxAmplitude) / ADSR.Decay) * (ADSR.Index - ADSR.Attack) + ADSR.MaxAmplitude;
+                }
+
+                //Sustain
+                else if(ADSR.Index <= (ADSR.DurationInSamples - ADSR.Release))
+                {
+                    Sample = ADSR.SustainAmplitude;
+                }
+
+                //Release
+                else if(ADSR.Index > (ADSR.DurationInSamples - ADSR.Release))
+                {
+                    Sample = -(ADSR.SustainAmplitude / ADSR.Release) * (ADSR.Index - (ADSR.DurationInSamples - ADSR.Release)) + ADSR.SustainAmplitude;
+                }
+
+                ADSR.Index++;
+
+                Buffer.Data[i] *= Sample;
+            }
+        }
+    }
+
+    void Update(ENTITY_SOURCES *Sources, size_t BufferCount)
+    {
+        //Loop through every source that was added to the system
+        for(size_t SystemIndex = 0; SystemIndex <= SystemCount; ++SystemIndex)
+        {
+            //Find active sources in the system
+            ID_SOURCE Source = SystemSources[SystemIndex];
+            if(Source != 0)
+            {
+                //Source is valid - get component
+                size_t SourceIndex = Sources->RetrieveIndex(Source);
+                RenderToBuffer(Sources->ADSRs[SourceIndex], Sources->Playbacks[SourceIndex].Buffer, BufferCount);
+            }
+        }
+    }
+
+
+} SYS_ENVELOPE_ADSR;
+
+typedef struct SYS_ENVELOPE_BREAKPOINT
+{
+    //Data
+    size_t                  SystemCount;    
+    ID_SOURCE               *SystemSources;
+    
+    //Functions
+    void Create(MEMORY_ARENA *Arena, size_t Size)
+    {
+        SystemSources = (ID_SOURCE *) Arena->Alloc((sizeof(ID_SOURCE) * Size), MEMORY_ARENA_ALIGNMENT);
+        SystemCount = 0;
+    }
+
+    void Destroy(MEMORY_ARENA *Arena)
+    {
+        Arena->FreeAll();
+    }
+
+    void Add(ID_SOURCE ID)
+    {
+        SystemSources[SystemCount] = ID;
+        ++SystemCount;
+    }
+
+    bool Remove(ID_SOURCE ID)
+    {
+        for(size_t i = 0; i <= SystemCount; ++i)
+        {
+            if(SystemSources[i] == ID)
+            {
+                SystemSources[i] = 0;
+                --SystemCount;
+                return true;
+            }
+        }
+        //!Log
+        return false;
+    }
+
+    void CreateFromFile(ENTITY_SOURCES *Sources, ID_SOURCE ID, char const *File)
+    {
+        //Loop through every source that was added to the system
+        for(size_t SystemIndex = 0; SystemIndex <= SystemCount; ++SystemIndex)
+        {
+            //Find active sources in the system
+            ID_SOURCE Source = SystemSources[SystemIndex];
+            if(Source == ID)
+            {
+                //Source is valid - get component
+                size_t SourceIndex          = Sources->RetrieveIndex(Source);
+                CMP_BREAKPOINT &Breakpoint  = Sources->Breakpoints[SourceIndex];
+
+                FILE *InputFile = 0;
+                fopen_s(&InputFile, File, "r");
+                int done = 0;
+                int err = 0;
+
+                for(u32 i = 0; i < MAX_BREAKPOINTS && done != 1; ++i)
+                {
+                    char *Line = fread_csv_line(InputFile, MAX_STRING_LENGTH, &done, &err);
+                    if(done != 1)
+                    {
+                        char **Values = split_on_unescaped_newlines(Line);
+
+                        if(!err)
+                        {
+                            sscanf(*Values, "%lf,%lf", &Breakpoint.Points[i].Time, &Breakpoint.Points[i].Value);
+                            ++Breakpoint.Count;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
+
+
+    void EditPoint(ENTITY_SOURCES *Sources, ID_SOURCE ID, size_t PointIndex, f64 Value, f64 Time)
+    {
+        //Loop through every source that was added to the system
+        for(size_t SystemIndex = 0; SystemIndex <= SystemCount; ++SystemIndex)
+        {
+            //Find active sources in the system
+            ID_SOURCE Source = SystemSources[SystemIndex];
+            if(Source == ID)
+            {
+                //Source is valid - get component
+                size_t SourceIndex          = Sources->RetrieveIndex(Source);
+                CMP_BREAKPOINT &Breakpoint  = Sources->Breakpoints[SourceIndex];
+                
+                Breakpoint.Init(PointIndex, Value, Time);
+            }
+        }
+    }
+
+    void Update(ENTITY_SOURCES *Sources, SYS_FADE *FadeSystem, f64 Time)
+    {
+        //Loop through every source that was added to the system
+        for(size_t SystemIndex = 0; SystemIndex <= SystemCount; ++SystemIndex)
+        {
+            //Find active sources in the system
+            ID_SOURCE Source = SystemSources[SystemIndex];
+            if(Source != 0)
+            {
+                //Source is valid - get component
+                size_t SourceIndex = Sources->RetrieveIndex(Source);
+                CMP_BREAKPOINT &Breakpoint = Sources->Breakpoints[SourceIndex];
+                CMP_FADE &Amplitude = Sources->Amplitudes[SourceIndex];
+
+                if(!Amplitude.IsFading)
+                {
+                    bool PointSet = false;
+                    while(Breakpoint.Index < Breakpoint.Count && !PointSet)
+                    {
+                        FadeSystem->Start(Sources, Source, Time, Breakpoint.Points[Breakpoint.Index].Value, Breakpoint.Points[Breakpoint.Index].Time);
+                        ++Breakpoint.Index;
+                        PointSet = true;
+                    }
+                }
+            }
+        }
+    }
+
+
+} SYS_ENVELOPE_BREAKPOINT;
+
 typedef struct POLAR_MIXER
 {
-    f32 Amplitude;
-    POLAR_LISTENER *Listener;
-    u32 SubmixCount;
-    POLAR_SUBMIX *FirstInList;
+    size_t  Count;
+    SYS_MIX **Mixes;
 } POLAR_MIXER;
 
-//Prototypes
-//Mixer
-POLAR_MIXER *polar_mixer_Create(MEMORY_ARENA *Arena, f32 Amplitude);            //Create mixing object to hold singly linked list of submixes
-void polar_mixer_Destroy(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer);              //Free the mixer
 
-//Submixing
-void polar_mixer_SubmixCreate(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, const char ParentUID[MAX_STRING_LENGTH], const char ChildUID[MAX_STRING_LENGTH], f32 Amplitude);     //Create a submix that is either assigned to any free space in the list or is the child of another submix
-void polar_mixer_SubmixDestroy(POLAR_MIXER *Mixer, const char UID[MAX_STRING_LENGTH]);                                                                                      //Remove submix from the list
-
-//Containers
-void polar_mixer_ContainerCreate(POLAR_MIXER *Mixer, const char SubmixUID[MAX_STRING_LENGTH], const char ContainerUID[MAX_STRING_LENGTH], f32 Amplitude);                   //Create a container to hold any audio sources as a single group, then assign it to a submix
-void polar_mixer_ContainerDestroy(POLAR_MIXER *Mixer, const char ContainerUID[MAX_STRING_LENGTH]);                                                                          //Remove container from the array
-
-//Sources
-// POLAR_SOURCE *polar_source_Retrieval(POLAR_MIXER *Mixer, u64 UID, u32 &SourceIndex);                                                              //Find a specific source and return it's struct with a given index
-// void polar_source_Create(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE Engine, const char ContainerUID[MAX_STRING_LENGTH], const char SourceUID[MAX_STRING_LENGTH], u32 Channels, u32 Type, ...);
-// void polar_source_CreateFromFile(MEMORY_ARENA *Arena, POLAR_MIXER *Mixer, POLAR_ENGINE Engine, const char *FileName);                                                       //Read CSV text file to create any sources
-// void polar_source_Update(POLAR_MIXER *Mixer, POLAR_SOURCE *Sources, u32 &SourceIndex, f64 GlobalTime, f32 NoiseFloor);                                                                                                          //Internal update function used by polar_source_UpdatePlaying
-// void polar_source_UpdatePlaying(POLAR_MIXER *Mixer, f64 GlobalTime, f32 NoiseFloor);                                                                                                                        //Update every playing source's current state
-// void polar_source_Play(POLAR_MIXER *Mixer, u64 SourceUID, f64 GlobalTime, f32 Duration, f32 *PanPositions, u32 FX, u32 EnvelopeType, ...);                                          //Mark a source for playback
-// void polar_source_Fade(POLAR_MIXER *Mixer, u64 SourceUID, f64 GlobalTime, f32 NewAmplitude, f32 Duration);                                                           //Change source amplitude with a fade over time in seconds
-
-/*                  */
-/*  Render code     */
-/*                  */
-
-//Prototypes
-
-void polar_render_Source(u32 &SampleRate, u64 &SampleCount, u32 Samples, POLAR_SOURCE_TYPE &Type, u32 &FX, f32 *Buffer);     //Fills a source's buffer and applies any FX
-void polar_render_SumStereo(POLAR_ENGINE PolarEngine, u8 &Channels, f32 *PanPositions, f32 &Amplitude, f32 *Buffer, f32 *SourceOutput);                                                 //Sums source to stereo output buffer
-void polar_render_Container(POLAR_ENGINE PolarEngine, POLAR_SOURCE &ContainerSources, f32 ContainerAmplitude, f32 *ContainerOutput);                                                    //Render every source in a container and mix as a single buffer
-void polar_render_Submix(POLAR_ENGINE PolarEngine, POLAR_SUBMIX *Submix, f32 *SubmixOutput);                                                                                            //Render every container in a submix
-void polar_render_Callback(POLAR_ENGINE PolarEngine, POLAR_MIXER *Mixer, f32 *MixBuffer, i16 *MasterOutput);                                                                                  //Loop through each submix and render their containers/sources  
-
-//Function pointers
-internal_scope void (*Callback)(POLAR_ENGINE, POLAR_MIXER *, f32 *, i16 *);                   //Audio callback function called by the Windows/Linux audio API
+//Utility code
+#include "polar_dsp.cpp"
+#include "polar_render.cpp"
+#include "polar_source.cpp"
 
 
-#endif
+//Components
+#include "component/fade.cpp"
+
+//Entities
+#include "entity/sources.cpp"
+
+//Systems
+#include "system/play.cpp"
+#include "system/fade.cpp"
+
+
+#include "system/oscillator/noise.cpp"
+#include "system/oscillator/sine.cpp"
+#include "system/oscillator/square.cpp"
+
+#include "system/wav.cpp"
+#include "system/mix.cpp"
+

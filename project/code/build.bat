@@ -25,23 +25,31 @@ if not exist %ObjDir% mkdir %ObjDir%
 set CUDAPaths=-I"%CUDA_PATH%\include" -L="%CUDA_PATH%\lib\x64"
 
 :: Set compiler flags:
-:: !Current issue with oscpkt and static/dynamic import of C++ functions, using "-Xclang -flto-visibility-public-std" to supress the warnings
-set CompilerFlags=-g -gcodeview -pedantic -std=c++14 -DCUDA=1 -DOSC_LOG=0 -Xclang -flto-visibility-public-std
+set CompilerFlags=-g -gcodeview -pedantic
 
 :: Set warning labels:
-set CommonWarnings=-Wall -Wextra -Werror -Wno-unused-function -Wno-language-extension-token -Wno-vla-extension -Wno-deprecated-declarations -Wno-sign-compare -Wno-unused-variable
+set CommonWarnings=-Wall -Werror -Wno-language-extension-token -Wno-deprecated-declarations -Wno-unused-variable -Wno-unused-function
 
 :: Set Compiler optimsation level
 set CompilerOpt=-O0
 
+:: Set CUDA flags
+set CUDAFlags=-DCUDA=1
+
+:: Set logging flags
+set LogFlags=-DLOGGER_ERROR=0
+
+:: Set profile flags
+set ProfileFlags=-DMICROPROFILE=0 -DMICROPROFILE_UI=0 -DMICROPROFILE_WEBSERVER=1 -DMICROPROFILE_GPU_TIMERS=0
+
 :: Set win32 libraries
-set Libs=-lUser32.lib -lOle32.lib -lAvrt.lib -lWinmm.lib -ld3d9.lib -lGdi32.lib
+set Libs=-lUser32.lib -lOle32.lib -lAvrt.lib -lWinmm.lib -ld3d9.lib -lGdi32.lib -lShell32.lib -lws2_32.lib -lAdvapi32.lib
 
 :: Set path for CUDA function library
 set CUDAFunctions=-lcudart.lib -lpolar_cuda.lib
 
 :: Run Clang compiler
-clang %CompilerFlags% %CUDAPaths% %CommonWarnings% %CompilerOpt% %Libs% %CUDAFunctions% %PlatformFiles% -o %Platform%.exe
+clang %CompilerFlags% %CUDAPaths% %CommonWarnings% %CompilerOpt% %CUDAFlags% %LogFlags% %ProfileFlags% %Libs% %CUDAFunctions% %PlatformFiles% -o %Platform%.exe
 
 :: Exit
 popd
