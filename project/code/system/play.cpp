@@ -32,7 +32,7 @@ bool SYS_PLAY::Remove(ID_SOURCE ID)
 }
 
 
-bool SYS_PLAY::Start(ENTITY_SOURCES *Sources, ID_SOURCE ID, f64 InputDuration, bool IsAligned)
+bool SYS_PLAY::Start(ENTITY_SOURCES *Sources, ID_SOURCE ID, f64 InputDuration, u32 Delay, bool IsAligned)
 {
     //Grab the component
     for(size_t i = 0; i <= SystemCount; ++i)
@@ -41,6 +41,7 @@ bool SYS_PLAY::Start(ENTITY_SOURCES *Sources, ID_SOURCE ID, f64 InputDuration, b
         {
             TPL_PLAYBACK &Playback              = Sources->Playbacks[i];
             Playback.Duration.SampleCount       = InputDuration * (Playback.Format.SampleRate);
+            Playback.Duration.FrameDelay        = Delay;
             Playback.Duration.States            = PLAYING;
 
             if(IsAligned)
@@ -48,7 +49,7 @@ bool SYS_PLAY::Start(ENTITY_SOURCES *Sources, ID_SOURCE ID, f64 InputDuration, b
                 Playback.Duration.SampleCount = NearestPowerOf2(Playback.Duration.SampleCount);
             }
 
-            Info("Play: Source %llu:\tDuration: %f | SampleCount: %llu", SystemSources[i], InputDuration, Playback.Duration.SampleCount);
+            Info("Play: Source %llu:\tDuration: %f | SampleCount: %llu | FrameDelay: %lu", SystemSources[i], InputDuration, Playback.Duration.SampleCount, Playback.Duration.FrameDelay);
 
             return true;
         }
@@ -111,32 +112,46 @@ void SYS_PLAY::Update(ENTITY_SOURCES *Sources, f64 Time, u32 PreviousSamplesWrit
             size_t SourceIndex			= Sources->RetrieveIndex(Source);
             CMP_DURATION &Duration      = Sources->Playbacks[SourceIndex].Duration;
             
-            if(Duration.States != STOPPED)
+            if(!Duration.FrameDelay)
             {
-                if(Duration.SampleCount <= 0)
+                if(Duration.States != STOPPED)
                 {
-                    Duration.SampleCount = 0;
-                    Duration.States = STOPPED;
-                }
+					Duration.States = PLAYING;
+                    if(Duration.SampleCount <= 0)
+                    {
+                        Duration.SampleCount = 0;
+                        Duration.States = STOPPED;
+                    }
 
-                else if(Duration.SampleCount <= PreviousSamplesWritten)
-                {
-                    Duration.SampleCount = 0;
-                    Duration.States = STOPPED;
-                }
+                    else if(Duration.SampleCount <= PreviousSamplesWritten)
+                    {
+                        Duration.SampleCount = 0;
+                        Duration.States = STOPPED;
+                    }
 
-                //If ending in the next callback, mark as stopping (fade out)
-                else if(Duration.SampleCount <= (SamplesToWrite))
-                {
-                    Duration.SampleCount = SamplesToWrite;
-                    Duration.States = STOPPING;
-                }
+                    //If ending in the next callback, mark as stopping (fade out)
+                    else if(Duration.SampleCount <= (SamplesToWrite))
+                    {
+                        Duration.SampleCount = SamplesToWrite;
+                        Duration.States = STOPPING;
+                    }
 
-				else
-                {
-                    Duration.SampleCount -= PreviousSamplesWritten;
-                    Debug("Play: Source %llu:\tSampleCount: %llu", Source, Duration.SampleCount);
+			    	else
+                    {
+                        Duration.SampleCount -= PreviousSamplesWritten;
+                        Debug("Play: Source %llu:\tSampleCount: %llu", Source, Duration.SampleCount);
+                    }
                 }
+            }
+            else if(Duration.FrameDelay < 0)
+            {
+				Duration.States = PLAYING;
+                Duration.FrameDelay = 0;
+            }
+            else
+            {
+                Duration.States = PAUSED;
+                --Duration.FrameDelay;
             }
         }
     }

@@ -280,29 +280,47 @@ void cuda_DevicePrint(CUDA_DEVICE *GPU)
 
 // }
 
-// void cuda_SineArray(u32 SampleCount, u32 SampleRate, u32 ThreadsPerPartial, POLAR_OSCILLATOR *Oscillator, f32 *HostResult)
-// {
-// 	f32 *DeviceResult;
-//     cudaMalloc(&DeviceResult, (sizeof(f32) * SampleCount));
 
-//     POLAR_OSCILLATOR DeviceOscillator = {};
-//     DeviceOscillator.Waveform                   = Oscillator->Waveform;
-//     DeviceOscillator.TwoPiOverSampleRate        = Oscillator->TwoPiOverSampleRate;
-//     DeviceOscillator.PhaseCurrent               = Oscillator->PhaseCurrent;
-//     DeviceOscillator.PhaseIncrement             = Oscillator->PhaseIncrement;
-//     DeviceOscillator.Frequency                  = Oscillator->Frequency;
+__global__ void cuda_Kernel_SineArray(OSCILLATOR *Oscillator, u32 SampleCount, u32 SampleRate, f32 *DeviceResult)
+{
+    //1D thread index
+    i32 ThreadID = (blockIdx.x * blockDim.x + threadIdx.x);
+    i32 SampleIndex = ThreadID % SampleCount;
+    
+    f32 PhaseIndex = Oscillator->Frequency / SampleRate;
+    f32 CurrentPhase = SampleIndex * PhaseIndex;
 
-//     dim3 ThreadCount(ThreadsPerPartial, 1);
-//     dim3 BlockCount((SampleCount / ThreadsPerPartial), 1);
+    f32 Sample = __sinf((TWO_PI32 * CurrentPhase));
+    printf("%f\n", Sample);
+    atomicAdd(&DeviceResult[SampleIndex], Sample);
+
+}
+
+
+
+void cuda_SineArray(u32 SampleCount, u32 SampleRate, u32 ThreadsPerPartial, f32 *HostResult)
+{
+	f32 *DeviceResult;
+    cudaMalloc(&DeviceResult, (sizeof(f32) * SampleCount));
+
+    OSCILLATOR Test = {};
+
+    Test.Init(OSCILLATOR::SINE, SampleRate, 261.63);
+
+    dim3 ThreadCount(ThreadsPerPartial, 1);
+    dim3 BlockCount((SampleCount / ThreadsPerPartial), 1);
 
     
-//     cuda_Kernel_SineArray<<<BlockCount, ThreadCount>>>(DeviceOscillator, SampleCount, SampleRate, DeviceResult);
-//     cudaDeviceSynchronize(); //Wait for kernel to end
+    cuda_Kernel_SineArray<<<BlockCount, ThreadCount>>>(&Test, SampleCount, SampleRate, DeviceResult);
+    
+    
+    cudaDeviceSynchronize(); //Wait for kernel to end
 
-//     cudaMemcpy(HostResult, DeviceResult, (sizeof(f32) * SampleCount), cudaMemcpyDeviceToHost);
+    cudaMemcpy(HostResult, DeviceResult, (sizeof(f32) * SampleCount), cudaMemcpyDeviceToHost);
 
-//     cudaFree(DeviceResult);
-// }
+    cudaFree(DeviceResult);
+}
+
 
 
 

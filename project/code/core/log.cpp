@@ -49,15 +49,22 @@ void LOGGER::Log(u8 InputLevel, const char *SourceFile, u64 SourceLine, const ch
     //Get system time
     time_t Time = time(0);
     struct tm LocalTime = {};
+#ifdef _WIN32
     localtime_s(&LocalTime, &Time);
-
+#else    
+    localtime_r(&Time, &LocalTime);
+#endif    
     //Log to console
     if(!IsQuiet) 
     {
         va_list args;
         char Buffer[16];
         Buffer[strftime(Buffer, sizeof(Buffer), "%H:%M:%S", &LocalTime)] = '\0';
+#ifdef _WIN32        
         fprintf(stderr, "%s %-5s %s:%llu: ", Buffer, LOG_LEVELS[InputLevel], SourceFile, SourceLine);
+#else       
+        fprintf(stderr, "%s %-5s %s:%lu: ", Buffer, LOG_LEVELS[InputLevel], SourceFile, SourceLine);
+#endif        
         va_start(args, Format);
         vfprintf(stderr, Format, args);
         va_end(args);
@@ -71,7 +78,11 @@ void LOGGER::Log(u8 InputLevel, const char *SourceFile, u64 SourceLine, const ch
         va_list args;
         char Buffer[32];
         Buffer[strftime(Buffer, sizeof(Buffer), "%Y-%m-%d %H:%M:%S", &LocalTime)] = '\0';
+#ifdef _WIN32        
         fprintf(File, "%s %-5s %s:%llu: ", Buffer, LOG_LEVELS[InputLevel], SourceFile, SourceLine);
+#else       
+        fprintf(File, "%s %-5s %s:%lu: ", Buffer, LOG_LEVELS[InputLevel], SourceFile, SourceLine);
+#endif            
         va_start(args, Format);
         vfprintf(File, Format, args);
         va_end(args);

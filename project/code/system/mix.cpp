@@ -31,14 +31,52 @@ bool SYS_MIX::Remove(ID_SOURCE ID)
     return false;
 }
 
-void SYS_MIX::RenderToBuffer(f32 *MixBuffer, size_t SamplesToWrite, u32 Channels, CMP_BUFFER &SourceBuffer, CMP_FADE &SourceAmplitude, f64 TargetAmplitude)
+void SYS_MIX::RenderToBuffer(f32 *Channel0, f32 *Channel1, size_t SamplesToWrite, CMP_BUFFER &SourceBuffer, CMP_FADE &SourceAmplitude, CMP_PAN &SourcePan, f64 TargetAmplitude)
 {
     //Check if amplitude is already at the target
     if(fabsl(SourceAmplitude.Previous - TargetAmplitude) < 0.1e-5)
     {
+        f64 LeftAmplitude   = 0;
+        f64 RightAmplitude  = 0;
+
+        switch(SourcePan.Flag)
+        {
+            case CMP_PAN::MODE::MONO:
+            {
+                LeftAmplitude   = TargetAmplitude * 0.707;
+                RightAmplitude  = TargetAmplitude * 0.707;            
+                break;
+            }
+            case CMP_PAN::MODE::STEREO:
+            {
+                //Calculate constant power values
+                f64 Angle = ((1.0 - SourcePan.Amplitude) * PI32 * 0.25);
+                LeftAmplitude   = TargetAmplitude * sin(Angle);
+                RightAmplitude  = TargetAmplitude * cos(Angle);          
+                break;
+            }
+            case CMP_PAN::MODE::WIDE:
+            {
+                LeftAmplitude   = -TargetAmplitude;
+                RightAmplitude  = TargetAmplitude;         
+                break;
+            }                  
+            default:
+            {
+                LeftAmplitude   = TargetAmplitude;
+                RightAmplitude  = TargetAmplitude;
+                break;
+            }                        
+        }
+
         for(u32 FrameIndex = 0; FrameIndex < SamplesToWrite; ++FrameIndex)
         {
-            MixBuffer[FrameIndex] += SourceBuffer.Data[FrameIndex] * TargetAmplitude;
+            //Get sample
+            f32 Sample = SourceBuffer.Data[FrameIndex];
+
+            //Pan
+            *Channel0++ += Sample * LeftAmplitude;
+            *Channel1++ += Sample * RightAmplitude;
         }
     }
 
@@ -47,18 +85,62 @@ void SYS_MIX::RenderToBuffer(f32 *MixBuffer, size_t SamplesToWrite, u32 Channels
     {
         f64 Current = SourceAmplitude.Previous;
         f64 Step = (TargetAmplitude - Current) * 1.0f / SamplesToWrite;
+        f64 LeftAmplitude   = 0;
+        f64 RightAmplitude  = 0;
+        
         for(u32 FrameIndex = 0; FrameIndex < SamplesToWrite; ++FrameIndex)
         {
+            //Update amplitude
             Current += Step;
-            MixBuffer[FrameIndex] += SourceBuffer.Data[FrameIndex] * Current;
+
+            //Get sample
+            f32 Sample = SourceBuffer.Data[FrameIndex];
+
+            switch(SourcePan.Flag)
+            {
+                case CMP_PAN::MODE::MONO:
+                {
+                    LeftAmplitude   = Current * 0.707;
+                    RightAmplitude  = Current * 0.707;            
+                    break;
+                }
+                case CMP_PAN::MODE::STEREO:
+                {
+                    //Calculate constant power values
+                    f64 Angle = ((1.0 - SourcePan.Amplitude) * PI32 * 0.25);
+                    LeftAmplitude   = Current * sin(Angle);
+                    RightAmplitude  = Current * cos(Angle);          
+                    break;
+                }
+                case CMP_PAN::MODE::WIDE:
+                {
+                    LeftAmplitude   = -Current;
+                    RightAmplitude  = Current;      
+                    break;
+                }                
+                default:
+                {
+                    LeftAmplitude   = Current;
+                    RightAmplitude  = Current;
+                    break;
+                }                        
+            }
+
+            //Pan
+            *Channel0++ += Sample * LeftAmplitude;
+            *Channel1++ += Sample * RightAmplitude;
         }
 
         SourceAmplitude.Previous = TargetAmplitude;
     }
 }   
 
-void SYS_MIX::Update(ENTITY_SOURCES *Sources, f32 *MixBuffer, size_t SamplesToWrite)
+size_t SYS_MIX::Update(ENTITY_SOURCES *Sources, f32 *MixerChannel0, f32 *MixerChannel1, size_t SamplesToWrite)
 {
+    //Assign mixing channels
+    f32 *Channel0 = MixerChannel0;
+    f32 *Channel1 = MixerChannel1;
+
     //Loop through every source that was added to the system
     for(size_t SystemIndex = 0; SystemIndex <= SystemCount; ++SystemIndex)
     {
@@ -78,8 +160,9 @@ void SYS_MIX::Update(ENTITY_SOURCES *Sources, f32 *MixBuffer, size_t SamplesToWr
                     {
                         if(Sources->Flags[SourceIndex] & ENTITY_SOURCES::AMPLITUDE)
                         {
-                            CMP_FADE &SourceAmplitude   = Sources->Amplitudes[SourceIndex];
-                            RenderToBuffer(MixBuffer, SamplesToWrite, Playback.Format.Channels, Playback.Buffer, SourceAmplitude, SourceAmplitude.Current);
+                            CMP_FADE &SourceAmplitude = Sources->Amplitudes[SourceIndex];
+                            CMP_PAN &SourcePan = Sources->Pans[SourceIndex];
+                            RenderToBuffer(Channel0, Channel1, SamplesToWrite, Playback.Buffer, SourceAmplitude, SourcePan, SourceAmplitude.Current);
                         }
                         
                         break;
@@ -92,8 +175,9 @@ void SYS_MIX::Update(ENTITY_SOURCES *Sources, f32 *MixBuffer, size_t SamplesToWr
                     {
                         if(Sources->Flags[SourceIndex] & ENTITY_SOURCES::AMPLITUDE)
                         {
-                            CMP_FADE &SourceAmplitude   = Sources->Amplitudes[SourceIndex];
-                            RenderToBuffer(MixBuffer, SamplesToWrite, Playback.Format.Channels, Playback.Buffer, SourceAmplitude, 0.0f);
+                            CMP_FADE &SourceAmplitude = Sources->Amplitudes[SourceIndex];
+                            CMP_PAN &SourcePan = Sources->Pans[SourceIndex];
+                            RenderToBuffer(Channel0, Channel1, SamplesToWrite, Playback.Buffer, SourceAmplitude, SourcePan, 0.0f);
                         }
 
                         break;
@@ -109,5 +193,7 @@ void SYS_MIX::Update(ENTITY_SOURCES *Sources, f32 *MixBuffer, size_t SamplesToWr
                 }  
             }
         }
-    }    
+    }
+
+    return SamplesToWrite;
 }

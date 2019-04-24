@@ -1,22 +1,22 @@
 
-void SYS_OSCILLATOR_NOISE::Create(MEMORY_ARENA *Arena, size_t Size)
+void SYS_NOISE_WHITE::Create(MEMORY_ARENA *Arena, size_t Size)
 {
     SystemSources = (ID_SOURCE *) Arena->Alloc((sizeof(ID_SOURCE) * Size), MEMORY_ARENA_ALIGNMENT);
     SystemCount = 0;
 }
 
-void SYS_OSCILLATOR_NOISE::Destroy(MEMORY_ARENA *Arena)
+void SYS_NOISE_WHITE::Destroy(MEMORY_ARENA *Arena)
 {
     Arena->FreeAll();
 }
 
-void SYS_OSCILLATOR_NOISE::Add(ID_SOURCE ID)
+void SYS_NOISE_WHITE::Add(ID_SOURCE ID)
 {
     SystemSources[SystemCount] = ID;
     ++SystemCount;
 }
 
-bool SYS_OSCILLATOR_NOISE::Remove(ID_SOURCE ID)
+bool SYS_NOISE_WHITE::Remove(ID_SOURCE ID)
 {
     for(size_t i = 0; i <= SystemCount; ++i)
     {
@@ -31,17 +31,17 @@ bool SYS_OSCILLATOR_NOISE::Remove(ID_SOURCE ID)
     return false;
 }
 
-void SYS_OSCILLATOR_NOISE::RenderToBuffer(CMP_OSCILLATOR &Oscillator, CMP_BUFFER &Buffer, size_t BufferCount)
+void SYS_NOISE_WHITE::RenderToBuffer(f64 Amplitude, CMP_BUFFER &Buffer, size_t BufferCount)
 {
     f64 Sample = 0;
     for(size_t i = 0; i < BufferCount; ++i)
     {
-        Sample = RandomFloat64(-1.0, 1.0);
+        Sample = RandomFloat64(-Amplitude, Amplitude);
         Buffer.Data[i] = Sample;
     }
 }
 
-void SYS_OSCILLATOR_NOISE::Update(ENTITY_SOURCES *Sources, size_t BufferCount)
+void SYS_NOISE_WHITE::Update(ENTITY_SOURCES *Sources, size_t BufferCount)
 {
     //Loop through every source that was added to the system
     for(size_t SystemIndex = 0; SystemIndex <= SystemCount; ++SystemIndex)
@@ -52,7 +52,8 @@ void SYS_OSCILLATOR_NOISE::Update(ENTITY_SOURCES *Sources, size_t BufferCount)
         {
             //Source is valid - get component
             size_t SourceIndex = Sources->RetrieveIndex(Source);
-            RenderToBuffer(Sources->Oscillators[SourceIndex], Sources->Playbacks[SourceIndex].Buffer, BufferCount);
+            CMP_FADE &Ampliutde = Sources->Amplitudes[SourceIndex];
+            RenderToBuffer(Ampliutde.Current, Sources->Playbacks[SourceIndex].Buffer, BufferCount);
         }
     }
 }

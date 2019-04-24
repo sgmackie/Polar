@@ -8,7 +8,9 @@ void ENTITY_SOURCES::Create(MEMORY_ARENA *Arena, size_t Size)
     Playbacks       = (TPL_PLAYBACK *)          Arena->Alloc((sizeof(TPL_PLAYBACK) * Size), MEMORY_ARENA_ALIGNMENT);
     Positions       = (CMP_POSITION *)          Arena->Alloc((sizeof(CMP_POSITION) * Size), MEMORY_ARENA_ALIGNMENT);
     Amplitudes      = (CMP_FADE *)              Arena->Alloc((sizeof(CMP_FADE) * Size), MEMORY_ARENA_ALIGNMENT);
+    Pans            = (CMP_PAN *)               Arena->Alloc((sizeof(CMP_PAN) * Size), MEMORY_ARENA_ALIGNMENT);
     Oscillators     = (CMP_OSCILLATOR *)        Arena->Alloc((sizeof(CMP_OSCILLATOR) * Size), MEMORY_ARENA_ALIGNMENT);
+    Noises          = (CMP_NOISE *)             Arena->Alloc((sizeof(CMP_NOISE) * Size), MEMORY_ARENA_ALIGNMENT);    
     WAVs            = (CMP_WAV *)               Arena->Alloc((sizeof(CMP_WAV) * Size), MEMORY_ARENA_ALIGNMENT);
     ADSRs           = (CMP_ADSR *)              Arena->Alloc((sizeof(CMP_ADSR) * Size), MEMORY_ARENA_ALIGNMENT);
     Breakpoints     = (CMP_BREAKPOINT *)        Arena->Alloc((sizeof(CMP_BREAKPOINT) * Size), MEMORY_ARENA_ALIGNMENT);

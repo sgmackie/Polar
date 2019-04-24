@@ -7,7 +7,11 @@ static LOGGER Logger = {};
 bool core_CreateLogger(char const *Path, int Level, bool IsQuiet)
 {
     FILE *LogFile = 0;
+#ifdef _WIN32        
     fopen_s(&LogFile, Path, "w+");
+#else       
+    LogFile = fopen(Path, "w+");
+#endif        
 
     if(!LogFile)
     {
@@ -57,6 +61,9 @@ static i64 AssertFailuresCounter = 0;
 #define DR_WAV_IMPLEMENTATION
 #include "../external/dr_wav.h"
 
+#include "../external/udp.hh"
+#include "../external/oscpkt.hh"
+
 //IMGUI
 #include "../external/imgui/imgui.cpp"
 #include "../external/imgui/imgui_widgets.cpp"
@@ -90,6 +97,7 @@ typedef struct CMP_DURATION
     //Data    
     STATE_PLAY  States;
     u64         SampleCount;
+    u32         FrameDelay;
 } CMP_DURATION;
 
 typedef struct CMP_FORMAT
@@ -273,19 +281,41 @@ typedef struct CMP_FADE
     bool    IsFading;
 
     //Functions
-    void Init(double Amplitude);
+    void Init(f64 Amplitude);
 
 } CMP_FADE;
 
+
+typedef struct CMP_PAN
+{
+    typedef enum MODE
+    {
+        MONO        = 1 << 0,
+        STEREO      = 1 << 1,
+        WIDE        = 1 << 2,
+
+    } MODE;
+
+    i32             Flag;
+    f64             Amplitude;
+
+    void Init(i32 Mode, f64 Pan)
+    {
+        Flag |= Mode;
+        Amplitude = CLAMP(Pan, -1.0, 1.0);
+    }
+
+} CMP_PAN;
 
 typedef struct CMP_OSCILLATOR
 {
     //Flags
     typedef enum TYPE
     {
-        NOISE   = 1 << 0,
-        SQUARE  = 1 << 1,
-        SINE    = 1 << 2,
+        SQUARE      = 1 << 0,
+        SINE        = 1 << 1,
+        TRIANGLE    = 1 << 2,
+        SAWTOOTH    = 1 << 3,
     } TYPE;
 
     //Data
@@ -308,6 +338,29 @@ typedef struct CMP_OSCILLATOR
 
 } CMP_OSCILLATOR;
 
+
+typedef struct CMP_NOISE
+{
+    //Flags
+    typedef enum TYPE
+    {
+        WHITE   = 1 << 0,
+        BROWN   = 1 << 1,
+    } TYPE;
+
+    //Data
+    i32         Flag;
+    f64         Accumulator;
+
+    //Functions
+    void Init(i32 Type)
+    {
+        Flag |= Type;
+        Accumulator = 0;
+    }
+
+
+} CMP_NOISE;
 
 
 typedef struct CMP_ADSR
@@ -400,17 +453,45 @@ typedef struct CMP_MODULATOR
 } CMP_MODULATOR;
 
 
+typedef struct CMP_BIQUAD
+{
+    typedef enum TYPE
+    {
+        LOWPASS     = 1 << 0,
+        HIGHPASS    = 1 << 1,
+    } TYPE;
+
+    //Coefficients 
+    f64 A0;
+    f64 A1;
+    f64 A2;
+    
+    f64 B1;
+    f64 B2;
+
+    f64 C0;
+    f64 D0;
+
+    //Delay
+    f64 DelayInput1;
+    f64 DelayInput2;
+    f64 DelayOutput1;
+    f64 DelayOutput2;
+
+} CMP_BIQUAD;
+
+
+
 typedef struct POLAR_ENGINE
 {
     //Data
-    f32                         UpdateRate;
-    f64                         NoiseFloor;
-    size_t                      BytesPerSample;
-    u32                         BufferFrames;
-    u32                         LatencyFrames;
-    CMP_FORMAT     Format;
-    CMP_RINGBUFFER        CallbackBuffer;
-    CMP_BUFFER            MixBuffer;
+    f32             UpdateRate;
+    f64             NoiseFloor;
+    size_t          BytesPerSample;
+    u32             BufferFrames;
+    u32             LatencyFrames;
+    CMP_FORMAT      Format;
+    CMP_RINGBUFFER  CallbackBuffer;
 
 } POLAR_ENGINE;
 
@@ -431,12 +512,14 @@ typedef struct ENTITY_SOURCES
     {
         PLAYBACK                = 1 << 0,
         AMPLITUDE               = 1 << 1,
-        POSITION                = 1 << 2,
-        OSCILLATOR              = 1 << 3,
-        WAV                     = 1 << 4,
-        ADSR                    = 1 << 5,
-        BREAKPOINT              = 1 << 6,
-        MODULATOR               = 1 << 7,
+        PAN                     = 1 << 2,
+        POSITION                = 1 << 3,
+        OSCILLATOR              = 1 << 4,
+        NOISE                   = 1 << 5,        
+        WAV                     = 1 << 6,
+        ADSR                    = 1 << 7,
+        BREAKPOINT              = 1 << 8,
+        MODULATOR               = 1 << 9,
     };
 
 
@@ -446,8 +529,10 @@ typedef struct ENTITY_SOURCES
     ID_SOURCE                   *IDs;
     TPL_PLAYBACK                *Playbacks;
     CMP_FADE                    *Amplitudes;
+    CMP_PAN                     *Pans;
     CMP_POSITION                *Positions;
     CMP_OSCILLATOR              *Oscillators;
+    CMP_NOISE                   *Noises;
     CMP_WAV                     *WAVs;
     CMP_ADSR                    *ADSRs;
     CMP_BREAKPOINT              *Breakpoints;
@@ -492,7 +577,7 @@ typedef struct SYS_PLAY
     void Destroy    (MEMORY_ARENA *Arena);
     void Add        (ID_SOURCE ID);
     bool Remove     (ID_SOURCE ID);
-    bool Start      (ENTITY_SOURCES *Sources, ID_SOURCE ID, f64 InputDuration, bool IsAligned = true);
+    bool Start      (ENTITY_SOURCES *Sources, ID_SOURCE ID, f64 InputDuration, u32 Delay = 0, bool IsAligned = true);
     bool Pause      (ENTITY_SOURCES *Sources, ID_SOURCE ID);
     bool Resume     (ENTITY_SOURCES *Sources, ID_SOURCE ID);
     void Update     (ENTITY_SOURCES *Sources, f64 Time, u32 PreviousSamplesWritten, u32 SamplesToWrite);
@@ -517,22 +602,6 @@ typedef struct SYS_FADE
 } SYS_FADE;
 
 
-
-typedef struct SYS_OSCILLATOR_NOISE
-{    
-    //Data
-    size_t                  SystemCount;
-    ID_SOURCE               *SystemSources;
-    
-    //Functions
-    void Create             (MEMORY_ARENA *Arena, size_t Size);
-    void Destroy            (MEMORY_ARENA *Arena);
-    void Add                (ID_SOURCE ID);
-    bool Remove             (ID_SOURCE ID);
-    void RenderToBuffer     (CMP_OSCILLATOR &Oscillator, CMP_BUFFER &Buffer, size_t BufferCount);
-    void Update             (ENTITY_SOURCES *Sources, size_t BufferCount);
-
-} SYS_OSCILLATOR_NOISE;
 
 typedef struct SYS_OSCILLATOR_SINE
 {    
@@ -568,13 +637,92 @@ typedef struct SYS_OSCILLATOR_SQUARE
 } SYS_OSCILLATOR_SQUARE;
 
 
+typedef struct SYS_OSCILLATOR_TRIANGLE
+{    
+    //Data
+    size_t                  SystemCount;
+    ID_SOURCE               *SystemSources;
+    
+    //Functions
+    void Create             (MEMORY_ARENA *Arena, size_t Size);
+    void Destroy            (MEMORY_ARENA *Arena);
+    void Add                (ID_SOURCE ID);
+    bool Remove             (ID_SOURCE ID);
+    void RenderToBuffer     (CMP_OSCILLATOR &Oscillator, CMP_BUFFER &Buffer, size_t BufferCount);
+    void Update             (ENTITY_SOURCES *Sources, size_t BufferCount);
+
+} SYS_OSCILLATOR_TRIANGLE;
+
+typedef struct SYS_OSCILLATOR_SAWTOOTH
+{    
+    //Data
+    size_t                  SystemCount;
+    ID_SOURCE               *SystemSources;
+    
+    //Functions
+    void Create             (MEMORY_ARENA *Arena, size_t Size);
+    void Destroy            (MEMORY_ARENA *Arena);
+    void Add                (ID_SOURCE ID);
+    bool Remove             (ID_SOURCE ID);
+    void RenderToBuffer     (CMP_OSCILLATOR &Oscillator, CMP_BUFFER &Buffer, size_t BufferCount);
+    void Update             (ENTITY_SOURCES *Sources, size_t BufferCount);
+
+} SYS_OSCILLATOR_SAWTOOTH;
+
+
 //Module - collection of systems
 typedef struct MDL_OSCILLATOR
 {
-    SYS_OSCILLATOR_NOISE    Noise;
-    SYS_OSCILLATOR_SINE     Sine;
-    SYS_OSCILLATOR_SQUARE   Square;
+    SYS_OSCILLATOR_SINE         Sine;
+    SYS_OSCILLATOR_SQUARE       Square;
+    SYS_OSCILLATOR_TRIANGLE     Triangle;
+    SYS_OSCILLATOR_SAWTOOTH     Sawtooth;
 } MDL_OSCILLATOR;
+
+
+
+
+typedef struct SYS_NOISE_WHITE
+{    
+    //Data
+    size_t                  SystemCount;
+    ID_SOURCE               *SystemSources;
+    
+    //Functions
+    void Create             (MEMORY_ARENA *Arena, size_t Size);
+    void Destroy            (MEMORY_ARENA *Arena);
+    void Add                (ID_SOURCE ID);
+    bool Remove             (ID_SOURCE ID);
+    void RenderToBuffer     (f64 Amplitude, CMP_BUFFER &Buffer, size_t BufferCount);
+    void Update             (ENTITY_SOURCES *Sources, size_t BufferCount);
+
+} SYS_NOISE_WHITE;
+
+typedef struct SYS_NOISE_BROWN
+{    
+    //Data
+    size_t                  SystemCount;
+    ID_SOURCE               *SystemSources;
+    
+    //Functions
+    void Create             (MEMORY_ARENA *Arena, size_t Size);
+    void Destroy            (MEMORY_ARENA *Arena);
+    void Add                (ID_SOURCE ID);
+    bool Remove             (ID_SOURCE ID);
+    void RenderToBuffer     (CMP_NOISE &Noise, f64 Amplitude, CMP_BUFFER &Buffer, size_t BufferCount);
+    void Update             (ENTITY_SOURCES *Sources, size_t BufferCount);
+
+} SYS_NOISE_BROWN;
+
+
+typedef struct MDL_NOISE
+{
+    SYS_NOISE_WHITE     White;
+    SYS_NOISE_BROWN     Brown;
+} MDL_NOISE;
+
+
+
 
 
 typedef struct SYS_WAV
@@ -604,8 +752,8 @@ typedef struct SYS_MIX
     void Destroy            (MEMORY_ARENA *Arena);
     void Add                (ID_SOURCE ID);
     bool Remove             (ID_SOURCE ID);
-    void RenderToBuffer     (f32 *MixBuffer, size_t SamplesToWrite, u32 Channels, CMP_BUFFER &SourceBuffer, CMP_FADE &SourceAmplitude, f64 TargetAmplitude); 
-    void Update             (ENTITY_SOURCES *Sources, f32 *MixBuffer, size_t SamplesToWrite); 
+    void RenderToBuffer     (f32 *Channel0, f32 *Channel1, size_t SamplesToWrite, CMP_BUFFER &SourceBuffer, CMP_FADE &SourceAmplitude, CMP_PAN &SourcePan, f64 TargetAmplitude);
+    size_t Update           (ENTITY_SOURCES *Sources, f32 *MixerChannel0, f32 *MixerChannel1, size_t SamplesToWrite);
 } SYS_MIX;
 
 
@@ -799,7 +947,11 @@ typedef struct SYS_ENVELOPE_BREAKPOINT
                 CMP_BREAKPOINT &Breakpoint  = Sources->Breakpoints[SourceIndex];
 
                 FILE *InputFile = 0;
+#ifdef _WIN32        
                 fopen_s(&InputFile, File, "r");
+#else       
+                InputFile = fopen(File, "r");
+#endif        
                 int done = 0;
                 int err = 0;
 
@@ -882,8 +1034,8 @@ typedef struct POLAR_MIXER
 
 //Utility code
 #include "polar_dsp.cpp"
-#include "polar_render.cpp"
 #include "polar_source.cpp"
+#include "polar_OSC.cpp"
 
 
 //Components
@@ -897,9 +1049,13 @@ typedef struct POLAR_MIXER
 #include "system/fade.cpp"
 
 
-#include "system/oscillator/noise.cpp"
 #include "system/oscillator/sine.cpp"
 #include "system/oscillator/square.cpp"
+#include "system/oscillator/triangle.cpp"
+#include "system/oscillator/sawtooth.cpp"
+
+#include "system/noise/white.cpp"
+#include "system/noise/brown.cpp"
 
 #include "system/wav.cpp"
 #include "system/mix.cpp"

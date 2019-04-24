@@ -354,9 +354,15 @@ void win32_WASAPI_Callback(WASAPI *WASAPI, u32 SampleCount, u32 Channels, i16 *O
     
     if(SUCCEEDED(WASAPI->AudioRenderClient->GetBuffer((UINT32) SampleCount, &BYTEBuffer)))
     {
-        //memcopy the output buffer * output channels into BYTEs for WASAPI to read
-        size_t CopySize = ((sizeof(* OutputBuffer) * SampleCount) * Channels);
-        memcpy(BYTEBuffer, OutputBuffer, CopySize);
+        int16* SourceSample = OutputBuffer;
+        int16* DestSample = (int16*) BYTEBuffer;
+        for(size_t SampleIndex = 0; SampleIndex < SampleCount; ++SampleIndex)
+        {
+            for(u32 ChannelIndex = 0; ChannelIndex < Channels; ++ChannelIndex)
+            {
+                *DestSample++ = *SourceSample++;
+            }
+        }
 
         WASAPI->AudioRenderClient->ReleaseBuffer((UINT32) SampleCount, 0);
     }
@@ -388,6 +394,13 @@ int main()
         cuda_DeviceGet(&GPU, 0);
         cuda_DevicePrint(&GPU);
     }
+
+    // f32 *Buffer = (f32 *) malloc(sizeof(f32) * 4096);
+    // u32 ThreadBlock = 512;
+    // cuda_SineArray(4096, 48000, ThreadBlock, Buffer);
+    // printf("\n");
+    // free(Buffer);
+    // return 0;
 
     //Allocate memory arenas from virtual pages
     MEMORY_ARENA EngineArena = {};
@@ -504,11 +517,12 @@ int main()
         
         //Create ringbuffer with a specified block count (default is 3)
         Engine.CallbackBuffer.Create(&EngineArena, sizeof(i16), 4096, 3);
+        Assert(Engine.CallbackBuffer.Data, "win32: Failed to create callback buffer!");
         
-        //Create a temporary mixing buffer 
-        Engine.MixBuffer.CreateFromArena(&EngineArena, sizeof(f32), Engine.BufferFrames);
-        Assert(Engine.CallbackBuffer.Data && Engine.MixBuffer.Data, "win32: Failed to create mix and callback buffers!");
-        
+        //OSC setup
+        //!Replace with vanilla C version
+        UdpSocket OSCSocket = polar_OSC_StartServer(4795);
+
         //Create systems
         SYS_FADE FadeSystem = {};
         SYS_ENVELOPE_BREAKPOINT BreakpointSystem = {};
@@ -525,8 +539,13 @@ int main()
         MDL_OSCILLATOR OscillatorModule = {};
         OscillatorModule.Sine.Create(&SourceArena, MAX_SOURCES);
         OscillatorModule.Square.Create(&SourceArena, MAX_SOURCES);
-        OscillatorModule.Noise.Create(&SourceArena, MAX_SOURCES);
+        OscillatorModule.Triangle.Create(&SourceArena, MAX_SOURCES);
+        OscillatorModule.Sawtooth.Create(&SourceArena, MAX_SOURCES);
 
+        //Create noise module and subsystems
+        MDL_NOISE NoiseModule = {};
+        NoiseModule.White.Create(&SourceArena, MAX_SOURCES);
+        NoiseModule.Brown.Create(&SourceArena, MAX_SOURCES);
         
         //Create mixer - a pool of mix systems
         POLAR_MIXER GlobalMixer = {};
@@ -621,12 +640,10 @@ int main()
                     if(SUCCEEDED(WASAPI.AudioClient->GetBufferSize(&DeviceSampleCount)))
                     {
                         SamplesToWrite = DeviceSampleCount;
-                        // printf("WASAPI: Failed to set SamplesToWrite!\n");
                     }
                 }
 
-                // Assert(SamplesToWrite <= MaxSampleCount);
-                Engine.MixBuffer.Count = SamplesToWrite;
+                Assert(SamplesToWrite <= MaxSampleCount, "win32: Samples to write is bigger than the maximum!");
             }
 
             //Check the minimum update period for per-sample stepping states
@@ -634,6 +651,10 @@ int main()
 
             //Get current time for update functions
             GlobalTime = core_WallTime();
+
+            //Get OSC messages from Unreal
+            //!Uses std::vector for message allocation: replace with pool allocations
+            polar_OSC_UpdateMessages(GlobalTime, OSCSocket, 1);
 
             if(i == 25)
             {
@@ -662,8 +683,12 @@ int main()
                 SoundSources.Flags[Index] |= ENTITY_SOURCES::AMPLITUDE;
                 FadeSystem.Add(ID);
 
+                //Add to pan system
+                SoundSources.Pans[Index].Init(CMP_PAN::MODE::WIDE, 0.0);
+                SoundSources.Flags[Index] |= ENTITY_SOURCES::PAN;                
+
                 //Add to oscillator system
-                SoundSources.Oscillators[Index].Init(CMP_OSCILLATOR::SINE, SoundSources.Playbacks[Index].Format.SampleRate, 261.63);
+                SoundSources.Oscillators[Index].Init(CMP_OSCILLATOR::SINE, SoundSources.Playbacks[Index].Format.SampleRate, 440);
                 SoundSources.Flags[Index] |= ENTITY_SOURCES::OSCILLATOR;
                 OscillatorModule.Sine.Add(ID);
 
@@ -676,7 +701,7 @@ int main()
                 }
 
                 //Play
-                PlaySystem.Start(&SoundSources, ID, 10.0);
+                PlaySystem.Start(&SoundSources, ID, 5.0, 30);
                 GlobalMixer.Mixes[0]->Add(ID);
             }
 
@@ -686,45 +711,61 @@ int main()
             {
                 //Update systems
                 //Sample counts
-                PlaySystem.Update(&SoundSources, GlobalTime, GlobalSamplesWritten, Engine.MixBuffer.Count);
+                PlaySystem.Update(&SoundSources, GlobalTime, GlobalSamplesWritten, SamplesToWrite);
                 
                 //Source types
-                OscillatorModule.Sine.Update(&SoundSources, Engine.MixBuffer.Count);
-                OscillatorModule.Square.Update(&SoundSources, Engine.MixBuffer.Count);
-                OscillatorModule.Noise.Update(&SoundSources, Engine.MixBuffer.Count);
-                WavSystem.Update(&SoundSources, 1.0, Engine.MixBuffer.Count);
+                //Oscillators
+                OscillatorModule.Sine.Update(&SoundSources, SamplesToWrite);
+                OscillatorModule.Square.Update(&SoundSources, SamplesToWrite);
+                OscillatorModule.Triangle.Update(&SoundSources, SamplesToWrite);
+                OscillatorModule.Sawtooth.Update(&SoundSources, SamplesToWrite);
+                
+                //Noise generators
+                NoiseModule.White.Update(&SoundSources, SamplesToWrite);
+                NoiseModule.Brown.Update(&SoundSources, SamplesToWrite);
+                
+                //Files
+                WavSystem.Update(&SoundSources, 1.0, SamplesToWrite);
                 
                 //Amplitudes
-                BreakpointSystem.Update(&SoundSources, &FadeSystem, GlobalTime);
-                ADSRSystem.Update(&SoundSources, Engine.MixBuffer.Count);
+                // BreakpointSystem.Update(&SoundSources, &FadeSystem, GlobalTime);
+                // ADSRSystem.Update(&SoundSources, SamplesToWrite);
                 FadeSystem.Update(&SoundSources, GlobalTime);
                 
-                //Clear mixer to 0
-                f32 *MixBuffer = Engine.MixBuffer.Write();
-                memset(MixBuffer, 0, (sizeof(f32) * Engine.MixBuffer.Count));
+                //Clear mixer channels to 0
+                f32 *MixerChannel0 = (f32 *) MixerIntermediatePool.Alloc();
+                f32 *MixerChannel1 = (f32 *) MixerIntermediatePool.Alloc();
+                memset(MixerChannel0, 0, (sizeof(f32) * SamplesToWrite));
+                memset(MixerChannel1, 0, (sizeof(f32) * SamplesToWrite));
 
-                //Loop through all active mixes
-                for(size_t MixerIndex = 0; MixerIndex < GlobalMixer.Count; ++MixerIndex)
+                //Render all sources in a mix the temporary buffer
+                GlobalSamplesWritten = GlobalMixer.Mixes[0]->Update(&SoundSources, MixerChannel0, MixerChannel1, SamplesToWrite);
+                
+                //Int16 conversion
+                //Copy over mixer channels
+                f32 *FloatChannel0 = MixerChannel0;
+                f32 *FloatChannel1 = MixerChannel1;
+
+                //Get callback buffer
+                int16 *ConvertedSamples = Engine.CallbackBuffer.Write();
+                memset(ConvertedSamples, 0, (sizeof(i16) * SamplesToWrite));
+
+                for(size_t SampleIndex = 0; SampleIndex < SamplesToWrite; ++SampleIndex)
                 {
-                    //Allocate a temporary buffer from the pool
-                    f32 *IntermediateBuffer = (f32 *) MixerIntermediatePool.Alloc();
-                    memset(IntermediateBuffer, 0, (sizeof(f32) * Engine.MixBuffer.Count));
+                    //Channel 1
+                    f32 FloatSample     = FloatChannel0[SampleIndex];
+                    i16 IntSample       = FloatToInt16(FloatSample);     
+                    *ConvertedSamples++ = IntSample;
 
-                    //Render all sources in a mix the temporary buffer
-                    GlobalMixer.Mixes[MixerIndex]->Update(&SoundSources, IntermediateBuffer, Engine.MixBuffer.Count);
-
-                    //Add temporary pool to global mixbuffer
-                    for(size_t i = 0; i < Engine.MixBuffer.Count; ++i)
-                    {
-                        MixBuffer[i] += IntermediateBuffer[i];
-                    }
-
-                    //Free temporary buffer
-                    MixerIntermediatePool.Free(IntermediateBuffer);
+                    //Channel 2
+                    FloatSample         = FloatChannel1[SampleIndex];
+                    IntSample           = FloatToInt16(FloatSample);     
+                    *ConvertedSamples++ = IntSample;        
                 }
 
-                //Callback - convert f32 global mixing buffer to i16 output for WASAPI
-                GlobalSamplesWritten = polar_render_Callback(&Engine);
+                //Free mixer channels
+                MixerIntermediatePool.Free(MixerChannel0);
+                MixerIntermediatePool.Free(MixerChannel1);
 
                 //Update ringbuffer addresses
                 Engine.CallbackBuffer.FinishWrite();
@@ -734,7 +775,7 @@ int main()
             if(Engine.CallbackBuffer.CanRead())
             {
                 //Fill WASAPI BYTE buffer
-                win32_WASAPI_Callback(&WASAPI, Engine.MixBuffer.Count, Engine.Format.Channels, Engine.CallbackBuffer.Read());
+                win32_WASAPI_Callback(&WASAPI, SamplesToWrite, Engine.Format.Channels, Engine.CallbackBuffer.Read());
 
                 //Update ringbuffer addresses
                 Engine.CallbackBuffer.FinishRead();
@@ -813,7 +854,6 @@ int main()
         ImGui_ImplWin32_Shutdown();
         ImGui::DestroyContext();
 
-        Engine.MixBuffer.Destroy();
         Engine.CallbackBuffer.Destroy();
         WASAPI.Destroy();
 
