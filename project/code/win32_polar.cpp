@@ -368,6 +368,7 @@ void win32_WASAPI_Callback(WASAPI *WASAPI, u32 SampleCount, u32 Channels, i16 *O
     }
 }
 
+
 int main()
 {
     //Create logging function
@@ -411,21 +412,17 @@ int main()
     SourceArena.Init(SourceBlock, Megabytes(100));
     Assert(EngineBlock && SourceBlock, "win32: Failed to create memory arenas!");
 
-    //Create memory pools for component memory
-    MEMORY_POOL SourcePoolNames = {};
-    MEMORY_POOL SourcePoolBuffers = {};
-    MEMORY_POOL SourcePoolBreakpoints = {};
-    SourcePoolNames.Init(SourceArena.Alloc(Megabytes(10), MEMORY_ARENA_ALIGNMENT), Megabytes(10), (sizeof(char) * MAX_STRING_LENGTH), MEMORY_POOL_ALIGNMENT);
-    SourcePoolBuffers.Init(SourceArena.Alloc(Megabytes(10), MEMORY_ARENA_ALIGNMENT), Megabytes(10), (sizeof(f32) * MAX_BUFFER_SIZE), MEMORY_POOL_ALIGNMENT);
-    SourcePoolBreakpoints.Init(SourceArena.Alloc(Megabytes(10), MEMORY_ARENA_ALIGNMENT), Megabytes(10), (sizeof(CMP_BREAKPOINT_POINT) * MAX_BREAKPOINTS), MEMORY_POOL_ALIGNMENT);
-    Assert(SourcePoolNames.Data && SourcePoolBuffers.Data && SourcePoolBreakpoints.Data, "win32: Failed to create source memory pools!");
+    //Create memory pools for voice memory
+    POLAR_POOL Pools = {};
+    Pools.Names.Init(SourceArena.Alloc(Megabytes(10), MEMORY_ARENA_ALIGNMENT), Megabytes(10), (sizeof(char) * MAX_STRING_LENGTH), MEMORY_POOL_ALIGNMENT);
+    Pools.Buffers.Init(SourceArena.Alloc(Megabytes(10), MEMORY_ARENA_ALIGNMENT), Megabytes(10), (sizeof(f32) * MAX_BUFFER_SIZE), MEMORY_POOL_ALIGNMENT);
+    Pools.Breakpoints.Init(SourceArena.Alloc(Megabytes(10), MEMORY_ARENA_ALIGNMENT), Megabytes(10), (sizeof(CMP_BREAKPOINT_POINT) * MAX_BREAKPOINTS), MEMORY_POOL_ALIGNMENT);
+    Assert(Pools.Names.Data && Pools.Buffers.Data && Pools.Breakpoints.Data, "win32: Failed to create source memory pools!");
 
     //Create memory pool for mixers
-    MEMORY_POOL MixerPool = {};
     MEMORY_POOL MixerIntermediatePool = {};
-    MixerPool.Init(SourceArena.Alloc(Megabytes(10), MEMORY_ARENA_ALIGNMENT), Megabytes(10), sizeof(SYS_MIX), MEMORY_POOL_ALIGNMENT);
     MixerIntermediatePool.Init(SourceArena.Alloc(Megabytes(10), MEMORY_ARENA_ALIGNMENT), Megabytes(10), (sizeof(f32) * MAX_BUFFER_SIZE), MEMORY_POOL_ALIGNMENT);
-    Assert(MixerPool.Data && MixerIntermediatePool.Data, "win32: Failed to create mixer memory pools!");
+    Assert(MixerIntermediatePool.Data, "win32: Failed to create mixer memory pools!");
 
     //Create window and it's rendering handle
     WNDCLASSEX WindowClass = {sizeof(WNDCLASSEX), 
@@ -524,40 +521,27 @@ int main()
         UdpSocket OSCSocket = polar_OSC_StartServer(4795);
 
         //Create systems
-        SYS_FADE FadeSystem = {};
-        SYS_ENVELOPE_BREAKPOINT BreakpointSystem = {};
-        SYS_ENVELOPE_ADSR ADSRSystem = {};
-        SYS_PLAY PlaySystem = {};
-        SYS_WAV WavSystem   = {};
-        FadeSystem.Create(&SourceArena, MAX_SOURCES);
-        BreakpointSystem.Create(&SourceArena, MAX_SOURCES);
-        ADSRSystem.Create(&SourceArena, MAX_SOURCES);
-        PlaySystem.Create(&SourceArena, MAX_SOURCES);
-        WavSystem.Create(&SourceArena, MAX_SOURCES);
+        Engine.VoiceSystem.Create(&SourceArena, MAX_SOURCES);
+        Engine.Systems.Play.Create(&SourceArena, MAX_SOURCES);
+        Engine.Systems.Mix.Create(&SourceArena, MAX_SOURCES);
+        Engine.Systems.Fade.Create(&SourceArena, MAX_SOURCES);
+        Engine.Systems.Breakpoint.Create(&SourceArena, MAX_SOURCES);
+        Engine.Systems.ADSR.Create(&SourceArena, MAX_SOURCES);
 
-        //Create oscillator module and subsystems
-        MDL_OSCILLATOR OscillatorModule = {};
-        OscillatorModule.Sine.Create(&SourceArena, MAX_SOURCES);
-        OscillatorModule.Square.Create(&SourceArena, MAX_SOURCES);
-        OscillatorModule.Triangle.Create(&SourceArena, MAX_SOURCES);
-        OscillatorModule.Sawtooth.Create(&SourceArena, MAX_SOURCES);
-
-        //Create noise module and subsystems
-        MDL_NOISE NoiseModule = {};
-        NoiseModule.White.Create(&SourceArena, MAX_SOURCES);
-        NoiseModule.Brown.Create(&SourceArena, MAX_SOURCES);
-        
-        //Create mixer - a pool of mix systems
-        POLAR_MIXER GlobalMixer = {};
-        GlobalMixer.Mixes = (SYS_MIX **) SourceArena.Alloc((sizeof(SYS_MIX **) * 256), MEMORY_ARENA_ALIGNMENT);
-        GlobalMixer.Mixes[GlobalMixer.Count] = (SYS_MIX *) MixerPool.Alloc();
-        GlobalMixer.Mixes[GlobalMixer.Count]->Create(&SourceArena, MAX_SOURCES);
-        ++GlobalMixer.Count;
-
+        Engine.Systems.Oscillator.Sine.Create(&SourceArena, MAX_SOURCES);
+        Engine.Systems.Oscillator.Square.Create(&SourceArena, MAX_SOURCES);
+        Engine.Systems.Oscillator.Triangle.Create(&SourceArena, MAX_SOURCES);
+        Engine.Systems.Oscillator.Sawtooth.Create(&SourceArena, MAX_SOURCES);
+        Engine.Systems.Noise.White.Create(&SourceArena, MAX_SOURCES);
+        Engine.Systems.Noise.Brown.Create(&SourceArena, MAX_SOURCES);
 
         //Create entities
         ENTITY_SOURCES SoundSources = {};
         SoundSources.Create(&SourceArena, MAX_SOURCES);
+
+        //Create voices
+        ENTITY_VOICES SoundVoices = {};
+        SoundVoices.Create(&SourceArena, MAX_VOICES);
 
         //!TODO: Fix WAV hash parser
         // FILE *File = 0;
@@ -658,80 +642,96 @@ int main()
 
             if(i == 25)
             {
-                ID_SOURCE ID = SoundSources.AddByHash(FastHash("sine1"));
-                size_t Index = SoundSources.RetrieveIndex(ID);
+                //Create source
+                HANDLE_SOURCE Source = SoundSources.AddByHash(FastHash("sine1"));
 
-                //Add to playback system - set format and allocate buffer
-                SoundSources.Playbacks[Index].Buffer.CreateFromPool(&SourcePoolBuffers, MAX_BUFFER_SIZE);
-                SoundSources.Playbacks[Index].Format.Init(DEFAULT_SAMPLERATE, DEFAULT_CHANNELS);
-                SoundSources.Flags[Index] |= ENTITY_SOURCES::PLAYBACK;
-                PlaySystem.Add(ID);
+                //Add to playback system - set format then add to the voice system to spawn future voices 
+                SoundSources.Formats[Source.Index].Init(DEFAULT_SAMPLERATE, DEFAULT_CHANNELS);
+                SoundSources.Flags[Source.Index] |= ENTITY_SOURCES::PLAYBACK;
+                Engine.VoiceSystem.Add(Source.ID);
 
-                //Add to fade system
-                SoundSources.Flags[Index] |= ENTITY_SOURCES::ADSR;
-                ADSRSystem.Add(ID);
-                ADSRSystem.Edit(&SoundSources, ID, SoundSources.Playbacks[Index].Format.SampleRate, 0.9, 4.0, 1.0, 0.7, 5.0);
+                //Add to ADSR system
+                SoundSources.Flags[Source.Index] |= ENTITY_SOURCES::ADSR;
 
                 //Add to breakpoint system
-                SoundSources.Breakpoints[Index].CreateFromPool(&SourcePoolBreakpoints, MAX_BUFFER_SIZE);
-                SoundSources.Flags[Index] |= ENTITY_SOURCES::BREAKPOINT;
-                BreakpointSystem.Add(ID);
-                BreakpointSystem.CreateFromFile(&SoundSources, ID, "data/testpoints.csv");
+                SoundSources.Flags[Source.Index] |= ENTITY_SOURCES::BREAKPOINT;
 
                 //Add to fade system
-                SoundSources.Amplitudes[Index].Init(0.1);
-                SoundSources.Flags[Index] |= ENTITY_SOURCES::AMPLITUDE;
-                FadeSystem.Add(ID);
+                SoundSources.Flags[Source.Index] |= ENTITY_SOURCES::AMPLITUDE;
+                SoundSources.Amplitudes[Source.Index].Init(0.5);
 
                 //Add to pan system
-                SoundSources.Pans[Index].Init(CMP_PAN::MODE::WIDE, 0.0);
-                SoundSources.Flags[Index] |= ENTITY_SOURCES::PAN;                
+                SoundSources.Flags[Source.Index] |= ENTITY_SOURCES::PAN;
+                SoundSources.Pans[Source.Index].Init(CMP_PAN::MODE::WIDE, 0.0);           
 
                 //Add to oscillator system
-                SoundSources.Oscillators[Index].Init(CMP_OSCILLATOR::SINE, SoundSources.Playbacks[Index].Format.SampleRate, 440);
-                SoundSources.Flags[Index] |= ENTITY_SOURCES::OSCILLATOR;
-                OscillatorModule.Sine.Add(ID);
+                SoundSources.Flags[Source.Index] |= ENTITY_SOURCES::OSCILLATOR;
+                SoundSources.Types[Source.Index].Oscillator.Init(CMP_OSCILLATOR::SINE, SoundSources.Formats[Source.Index].SampleRate, 440);
 
-                //Create modulator
-                SoundSources.Modulators[Index].Init(CMP_MODULATOR::TYPE::LFO_OSCILLATOR, CMP_MODULATOR::ASSIGNMENT::FREQUENCY);
-                SoundSources.Flags[Index] |= ENTITY_SOURCES::MODULATOR;
-                if(SoundSources.Modulators[Index].Flag & CMP_MODULATOR::TYPE::LFO_OSCILLATOR)
-                {
-                    SoundSources.Modulators[Index].Oscillator.Init(CMP_OSCILLATOR::SINE, SoundSources.Playbacks[Index].Format.SampleRate, 40);
-                }
+                //Add to noise system
+                // SoundSources.Flags[Source.Index] |= ENTITY_SOURCES::NOISE;
+                // SoundSources.Types[Source.Index].Noise.Init(CMP_NOISE::WHITE);
+
+                // //Create modulator
+                // SoundSources.Modulators[Source.Index].Init(CMP_MODULATOR::TYPE::LFO_OSCILLATOR, CMP_MODULATOR::ASSIGNMENT::FREQUENCY);
+                // SoundSources.Flags[Source.Index] |= ENTITY_SOURCES::MODULATOR;
+                // if(SoundSources.Modulators[Source.Index].Flag & CMP_MODULATOR::TYPE::LFO_OSCILLATOR)
+                // {
+                //     SoundSources.Modulators[Source.Index].Oscillator.Init(CMP_OSCILLATOR::SINE, SoundSources.Playbacks[Source.Index].Format.SampleRate, 40);
+                // }
 
                 //Play
-                PlaySystem.Start(&SoundSources, ID, 5.0, 30);
-                GlobalMixer.Mixes[0]->Add(ID);
+                ID_VOICE Voice = Engine.VoiceSystem.Spawn(&SoundSources, &SoundVoices, Source.ID, false, &Engine.Systems, &Pools);
+                Engine.Systems.Play.Start(&SoundVoices, Voice, 2.0, 0);
+                // Engine.Systems.Fade.Start(&SoundVoices, Voice, GlobalTime, 0.1, 2.0);
+                // Engine.Systems.Breakpoint.CreateFromFile(&SoundVoices, Voice, "data/testpoints.csv");
+                Engine.Systems.ADSR.Edit(&SoundVoices, Voice, 48000, 0.9, 4.0, 1.0, 0.7, 5.0);
             }
+
+
+            if(i == 300)
+            {
+                HANDLE_SOURCE Source = SoundSources.RetrieveHandle(FastHash("sine1"));
+                ID_VOICE Voice = Engine.VoiceSystem.Spawn(&SoundSources, &SoundVoices, Source.ID, false, &Engine.Systems, &Pools);
+                Engine.Systems.Play.Start(&SoundVoices, Voice, 2.0, 0);
+                // Engine.Systems.Fade.Start(&SoundVoices, Voice, GlobalTime, 0.1, 2.0);
+                Engine.Systems.Breakpoint.CreateFromFile(&SoundVoices, Voice, "data/testpoints.csv");
+            }
+
 
             //Update & Render
             //Write data
             if(Engine.CallbackBuffer.CanWrite())
             {
                 //Update systems
+                //Voices
+                //Check for voices that need to be spawned as a result of the play system update, add any to the mixer system
+                Engine.VoiceSystem.Update(&SoundSources, &SoundVoices, &Engine.Systems, &Pools);
+
                 //Sample counts
-                PlaySystem.Update(&SoundSources, GlobalTime, GlobalSamplesWritten, SamplesToWrite);
+                Engine.Systems.Play.Update(&SoundVoices, GlobalTime, GlobalSamplesWritten, SamplesToWrite);
                 
                 //Source types
                 //Oscillators
-                OscillatorModule.Sine.Update(&SoundSources, SamplesToWrite);
-                OscillatorModule.Square.Update(&SoundSources, SamplesToWrite);
-                OscillatorModule.Triangle.Update(&SoundSources, SamplesToWrite);
-                OscillatorModule.Sawtooth.Update(&SoundSources, SamplesToWrite);
+                Engine.Systems.Oscillator.Sine.Update(&SoundVoices, SamplesToWrite);
+                Engine.Systems.Oscillator.Square.Update(&SoundVoices, SamplesToWrite);
+                Engine.Systems.Oscillator.Triangle.Update(&SoundVoices, SamplesToWrite);
+                Engine.Systems.Oscillator.Sawtooth.Update(&SoundVoices, SamplesToWrite);
                 
                 //Noise generators
-                NoiseModule.White.Update(&SoundSources, SamplesToWrite);
-                NoiseModule.Brown.Update(&SoundSources, SamplesToWrite);
+                Engine.Systems.Noise.White.Update(&SoundVoices, SamplesToWrite);
+                Engine.Systems.Noise.Brown.Update(&SoundVoices, SamplesToWrite);           
                 
-                //Files
-                WavSystem.Update(&SoundSources, 1.0, SamplesToWrite);
+                // //Files
+                // WavSystem.Update(&SoundSources, 1.0, SamplesToWrite);
                 
                 //Amplitudes
-                // BreakpointSystem.Update(&SoundSources, &FadeSystem, GlobalTime);
-                // ADSRSystem.Update(&SoundSources, SamplesToWrite);
-                FadeSystem.Update(&SoundSources, GlobalTime);
+                Engine.Systems.Breakpoint.Update(&SoundVoices, &Engine.Systems.Fade, GlobalTime);
+                Engine.Systems.ADSR.Update(&SoundVoices, SamplesToWrite);
+                Engine.Systems.Fade.Update(&SoundVoices, GlobalTime);
+                // Engine.Systems.Parameter.Update(&SoundVoices, GlobalTime);
                 
+
                 //Clear mixer channels to 0
                 f32 *MixerChannel0 = (f32 *) MixerIntermediatePool.Alloc();
                 f32 *MixerChannel1 = (f32 *) MixerIntermediatePool.Alloc();
@@ -739,8 +739,8 @@ int main()
                 memset(MixerChannel1, 0, (sizeof(f32) * SamplesToWrite));
 
                 //Render all sources in a mix the temporary buffer
-                GlobalSamplesWritten = GlobalMixer.Mixes[0]->Update(&SoundSources, MixerChannel0, MixerChannel1, SamplesToWrite);
-                
+                GlobalSamplesWritten = Engine.Systems.Mix.Update(&SoundSources, &SoundVoices, MixerChannel0, MixerChannel1, SamplesToWrite);
+
                 //Int16 conversion
                 //Copy over mixer channels
                 f32 *FloatChannel0 = MixerChannel0;
@@ -870,10 +870,9 @@ int main()
     }
 
     //Free pools
-    SourcePoolBuffers.FreeAll();
-    SourcePoolNames.FreeAll();
-    SourcePoolBreakpoints.FreeAll();
-    MixerPool.FreeAll();
+    Pools.Names.FreeAll();
+    Pools.Buffers.FreeAll();
+    Pools.Breakpoints.FreeAll();
 
     //Free arenas
     SourceArena.FreeAll();

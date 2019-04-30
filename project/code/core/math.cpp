@@ -1,9 +1,21 @@
 
-
-
 #define CLAMP(x, a, b)    ((x) < (a) ? (a) : (x) > (b) ? (b) : (x))
 #define MIN(a, b)         ((a) < (b) ? (a) : (b))
 #define MAX(a, b)         ((a) > (b) ? (a) : (b))
+
+f64 InterpLinear(f64 A, f64 B, f64 Delta)
+{
+    f64 Result = ((1.0 - Delta) * A + Delta * B);
+    return Result;
+}
+
+f64 InterpLog(f64 A, f64 B, f64 Delta)
+{
+    f64 Result = ((log(Delta - 0.2) + A) * B);
+    return Result;
+}
+
+
 
 
 f64 DecibelToLinear(f64 X)

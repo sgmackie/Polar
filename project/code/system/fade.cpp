@@ -1,7 +1,7 @@
 
 void SYS_FADE::Create(MEMORY_ARENA *Arena, size_t Size)
 {
-    SystemSources = (ID_SOURCE *) Arena->Alloc((sizeof(ID_SOURCE) * Size), MEMORY_ARENA_ALIGNMENT);
+    SystemVoices = (ID_SOURCE *) Arena->Alloc((sizeof(ID_SOURCE) * Size), MEMORY_ARENA_ALIGNMENT);
     SystemCount = 0;
 }
 
@@ -12,7 +12,7 @@ void SYS_FADE::Destroy(MEMORY_ARENA *Arena)
 
 void SYS_FADE::Add(ID_SOURCE ID)
 {
-    SystemSources[SystemCount] = ID;
+    SystemVoices[SystemCount] = ID;
     ++SystemCount;
 }
 
@@ -20,9 +20,9 @@ bool SYS_FADE::Remove(ID_SOURCE ID)
 {
     for(size_t i = 0; i <= SystemCount; ++i)
     {
-        if(SystemSources[i] == ID)
+        if(SystemVoices[i] == ID)
         {
-            SystemSources[i] = 0;
+            SystemVoices[i] = 0;
             --SystemCount;
             return true;
         }
@@ -31,14 +31,14 @@ bool SYS_FADE::Remove(ID_SOURCE ID)
     return false;
 }
 
-bool SYS_FADE::Start(ENTITY_SOURCES *Sources, ID_SOURCE ID, f64 Time, f64 Amplitude, f64 Duration)
+bool SYS_FADE::Start(ENTITY_VOICES *Voices, ID_VOICE ID, f64 Time, f64 Amplitude, f64 Duration)
 {
     //Grab the component
     for(size_t i = 0; i <= SystemCount; ++i)
     {
-        if(SystemSources[i] == ID)
+        if(SystemVoices[i] == ID)
         {
-            CMP_FADE &Fade          = Sources->Amplitudes[i];
+            CMP_FADE &Fade          = Voices->Amplitudes[i];
             Fade.StartValue         = Fade.Current;
             Fade.EndValue           = CLAMP(Amplitude, 0.0, 1.0);
             Fade.Duration           = MAX(Duration, 0.0);
@@ -51,17 +51,17 @@ bool SYS_FADE::Start(ENTITY_SOURCES *Sources, ID_SOURCE ID, f64 Time, f64 Amplit
     return false;
 }
 
-void SYS_FADE::Update(ENTITY_SOURCES *Sources, f64 Time)
+void SYS_FADE::Update(ENTITY_VOICES *Voices, f64 Time)
 {
     //Loop through every source that was added to the system
     for(size_t i = 0; i <= SystemCount; ++i)
     {
         //Find active sources in the system
-        ID_SOURCE Source = SystemSources[i];
-        if(Source != 0 && Sources->Flags[i] & ENTITY_SOURCES::AMPLITUDE)
+        ID_VOICE Voice = SystemVoices[i];
+        if(Voice != 0)
         {
             //Grab the component
-            CMP_FADE &Fade = Sources->Amplitudes[i];
+            CMP_FADE &Fade = Voices->Amplitudes[i];
 
             if(Fade.Current == Fade.EndValue)
             {
@@ -82,7 +82,7 @@ void SYS_FADE::Update(ENTITY_SOURCES *Sources, f64 Time)
                     Fade.IsFading   = false;
                 }
 
-                Debug("Fade: Source %llu:\tCurrent: %f | Previous: %f | Duration: %f", Source, Fade.Current, Fade.Previous, Fade.Duration);
+                Debug("Fade: Voice %llu:\tCurrent: %f | Previous: %f | Duration: %f", Voice, Fade.Current, Fade.Previous, Fade.Duration);
             }
         }
     }

@@ -79,23 +79,14 @@ static i64 AssertFailuresCounter = 0;
 
 //Max sizes
 #define MAX_SOURCES         256
+#define MAX_VOICES          16
 #define MAX_STRING_LENGTH   128
 #define MAX_BUFFER_SIZE     8192
 #define MAX_BREAKPOINTS     64
 
-
-typedef enum STATE_PLAY
-{
-    STOPPED,
-    STOPPING,
-    PLAYING,
-    PAUSED,
-} STATE_PLAY;
-
 typedef struct CMP_DURATION
 {
     //Data    
-    STATE_PLAY  States;
     u64         SampleCount;
     u32         FrameDelay;
 } CMP_DURATION;
@@ -106,20 +97,8 @@ typedef struct CMP_FORMAT
     u32 SampleRate;
     u32 Channels;
 
-    void Init(u32 InputRate, u32 InputChannels)
-    {
-        SampleRate  = 0;
-        Channels    = 0;
-
-        if(InputRate)
-        {
-            SampleRate = InputRate;
-        }
-        if(InputChannels)
-        {
-            Channels = InputChannels;
-        }
-    }
+    //Functions
+    void Init(u32 InputRate, u32 InputChannels);
 
 } CMP_FORMAT;
 
@@ -142,61 +121,30 @@ typedef struct CMP_WAV
     u64     Length;
     u64     ReadIndex;
 
-    void Init(char const *Name)
-    {
-        Data = 0;
-        BitRate = 0;
-        SampleRate = 0;
-        Channels = 0;
-        Length = 0;
-        ReadIndex = 0;
-        Data = drwav_open_file_and_read_pcm_frames_f32(Name, &Channels, &SampleRate, &Length);  
-    }
+    //Functions
+    void Init(char const *Name);
 
 } CMP_WAV;
 
 
-
-
+//TODO: Create generic void * buffers to support any type
 typedef struct CMP_BUFFER
 {
     //Data
     size_t  Count;
     f32     *Data;
 
-    void CreateFromArena(MEMORY_ARENA *Arena, size_t Type, size_t InputCount)
-    {
-        Count   = InputCount;
-        Data    = (f32 *) Arena->Alloc((Type * Count), MEMORY_ARENA_ALIGNMENT);
-    }
-
-    void CreateFromPool(MEMORY_POOL *Pool, size_t InputCount)
-    {
-        Count   = InputCount;
-        Data    = (f32 *) Pool->Alloc();
-    }
-
-    void Destroy()
-    {
-        Count = 0;
-        Data = 0;
-    }
-
-    f32 *Write()
-    {
-        return Data;
-    }
-
-    f32 *Read()
-    {
-        return Data;
-    }    
+    //Functions
+    void CreateFromArena(MEMORY_ARENA *Arena, size_t Type, size_t InputCount);
+    void CreateFromPool(MEMORY_POOL *Pool, size_t InputCount);
+    void Destroy();
+    f32 *Write();
+    f32 *Read();
 
 } CMP_BUFFER;
 
 
 #define RINGBUFFER_DEFAULT_BLOCK_COUNT 3
-//TODO: Create generic void * buffers to support any type
 typedef struct CMP_RINGBUFFER
 {
     //Data
@@ -208,64 +156,14 @@ typedef struct CMP_RINGBUFFER
     i16     *Data;
 
     //Functions
-    void Create(MEMORY_ARENA *Arena, size_t Type, size_t InputCount, size_t Blocks)
-    {
-        if(Blocks <= 0)
-        {
-            Blocks = RINGBUFFER_DEFAULT_BLOCK_COUNT;
-            Info("Ringbuffer: Using default block count: %d", RINGBUFFER_DEFAULT_BLOCK_COUNT);
-        }
-
-        Count           = InputCount;
-        TotalBlocks     = Blocks;    
-        CurrentBlocks   = 0;
-        ReadAddress     = 0;
-        WriteAddress    = 0;
-
-        Data = (i16 *)  Arena->Alloc(((Type * Count) * TotalBlocks), MEMORY_ARENA_ALIGNMENT);
-    }
-
-    void Destroy()
-    {
-        Count           = 0;
-        TotalBlocks     = 0;    
-        CurrentBlocks   = 0;
-        ReadAddress     = 0;
-        WriteAddress    = 0;
-        Data            = 0;
-    }
-
-    i16 *Write()
-    {
-        return Data + (WriteAddress * Count);
-    }
-
-    bool CanWrite()
-    {
-        return CurrentBlocks != TotalBlocks;
-    }
-
-    void FinishWrite()
-    {
-        WriteAddress = ((WriteAddress + 1) % TotalBlocks);
-        CurrentBlocks += 1;
-    }
-
-    i16 *Read()
-    {
-        return Data + (ReadAddress * Count);
-    }
-
-    bool CanRead()
-    {
-        return CurrentBlocks != 0;
-    }
-
-    void FinishRead()
-    {
-        ReadAddress = ((ReadAddress + 1) % TotalBlocks);
-        CurrentBlocks -= 1;        
-    }    
+    void Create(MEMORY_ARENA *Arena, size_t Type, size_t InputCount, size_t Blocks);
+    void Destroy();
+    i16 *Write();
+    bool CanWrite();
+    void FinishWrite();
+    i16 *Read();
+    bool CanRead();
+    void FinishRead();
 
 } CMP_RINGBUFFER;
 
@@ -286,8 +184,41 @@ typedef struct CMP_FADE
 } CMP_FADE;
 
 
+typedef struct CMP_PARAMETER
+{
+    //Flags
+    typedef enum TYPE
+    {
+        LINEAR          = 1 << 0,
+        LOGARITHMIC     = 1 << 1,
+    } TYPE;
+
+    //Data
+    i32 Type;
+    f64 CurrentValue;
+	f64 StartValue;
+	f64 EndValue;
+	f64 StartTime;
+	f64 DeltaTime;
+	bool IsDone;
+
+    void Init(f64 Value = 0, i32 Flag = CMP_PARAMETER::TYPE::LINEAR)
+    {
+        Type            |= Flag;
+        CurrentValue    = Value;
+		StartValue      = CurrentValue;
+		EndValue        = CurrentValue;
+		StartTime       = 0;
+		DeltaTime       = 0;
+		IsDone          = true;
+    }
+
+} CMP_PARAMETER;
+
+
 typedef struct CMP_PAN
 {
+    //Flags
     typedef enum MODE
     {
         MONO        = 1 << 0,
@@ -296,14 +227,12 @@ typedef struct CMP_PAN
 
     } MODE;
 
+    //Data
     i32             Flag;
     f64             Amplitude;
 
-    void Init(i32 Mode, f64 Pan)
-    {
-        Flag |= Mode;
-        Amplitude = CLAMP(Pan, -1.0, 1.0);
-    }
+    //Functions
+    void Init(i32 Mode, f64 Pan);
 
 } CMP_PAN;
 
@@ -326,15 +255,7 @@ typedef struct CMP_OSCILLATOR
     f64         Frequency;
 
     //Functions
-    void Init(i32 Type, u32 SampleRate, f64 InputFrequency, f64 Limit = TWO_PI32)
-    {
-        Flag |= Type;
-        Phasor = 0;
-        PhaseIncrement = 0;
-        SizeOverSampleRate = Limit / SampleRate;
-        Frequency = InputFrequency;
-    }
-
+    void Init(i32 Type, u32 SampleRate, f64 InputFrequency, f64 Limit = TWO_PI32);
 
 } CMP_OSCILLATOR;
 
@@ -353,12 +274,7 @@ typedef struct CMP_NOISE
     f64         Accumulator;
 
     //Functions
-    void Init(i32 Type)
-    {
-        Flag |= Type;
-        Accumulator = 0;
-    }
-
+    void Init(i32 Type);
 
 } CMP_NOISE;
 
@@ -383,39 +299,16 @@ typedef struct CMP_BREAKPOINT_POINT
 
 typedef struct CMP_BREAKPOINT
 {
+    //Data
     u64 Index;
     size_t Count;
     CMP_BREAKPOINT_POINT *Points;
 
-    void Init(size_t PointIndex, f64 InputValue, f64 InputTime)
-    {
-        Index   = 0;
-
-        if(PointIndex)
-        {
-            Points[PointIndex].Value = InputValue;
-            Points[PointIndex].Time = InputTime;
-        }
-    }
-
-    void CreateFromArena(MEMORY_ARENA *Arena, size_t Type, size_t InputCount)
-    {
-        Count   = 0;
-        Points  = (CMP_BREAKPOINT_POINT *) Arena->Alloc((Type * InputCount), MEMORY_ARENA_ALIGNMENT);
-    }
-
-    void CreateFromPool(MEMORY_POOL *Pool, size_t InputCount)
-    {
-        Count   = 0;
-        Points  = (CMP_BREAKPOINT_POINT *) Pool->Alloc();
-    }
-
-    void Destroy()
-    {
-        Index = 0;
-        Count = 0;
-        Points = 0;
-    }
+    //Functions
+    void Init(size_t PointIndex, f64 InputValue, f64 InputTime);
+    void CreateFromArena(MEMORY_ARENA *Arena, size_t Type, size_t InputCount);
+    void CreateFromPool(MEMORY_POOL *Pool, size_t InputCount);
+    void Destroy();
 
 } CMP_BREAKPOINT;
 
@@ -481,30 +374,34 @@ typedef struct CMP_BIQUAD
 } CMP_BIQUAD;
 
 
-
-typedef struct POLAR_ENGINE
-{
-    //Data
-    f32             UpdateRate;
-    f64             NoiseFloor;
-    size_t          BytesPerSample;
-    u32             BufferFrames;
-    u32             LatencyFrames;
-    CMP_FORMAT      Format;
-    CMP_RINGBUFFER  CallbackBuffer;
-
-} POLAR_ENGINE;
-
-typedef struct TPL_PLAYBACK
-{
-    //Data
-    CMP_FORMAT      Format;
-    CMP_BUFFER      Buffer;
-    CMP_DURATION    Duration;
-} TPL_PLAYBACK;
-
-
 typedef u64 ID_SOURCE;
+typedef u64 ID_VOICE;
+typedef struct HANDLE_SOURCE
+{
+    ID_SOURCE   ID;
+    size_t      Index;
+} HANDLE_SOURCE;
+
+typedef struct HANDLE_VOICE
+{
+    ID_VOICE    ID;
+    size_t      Index;
+} HANDLE_VOICE;
+
+typedef struct CMP_VOICEMAP
+{
+    //!Make dynamic
+    HANDLE_VOICE Handles[MAX_VOICES];
+    size_t Count;
+} CMP_VOICEMAP;
+
+typedef union TPL_TYPE
+{
+    CMP_OSCILLATOR  Oscillator;
+    CMP_NOISE       Noise;
+    CMP_WAV         WAV;
+} TPL_TYPE;
+
 typedef struct ENTITY_SOURCES
 {
     //Flags
@@ -515,25 +412,24 @@ typedef struct ENTITY_SOURCES
         PAN                     = 1 << 2,
         POSITION                = 1 << 3,
         OSCILLATOR              = 1 << 4,
-        NOISE                   = 1 << 5,        
+        NOISE                   = 1 << 5,
         WAV                     = 1 << 6,
         ADSR                    = 1 << 7,
         BREAKPOINT              = 1 << 8,
         MODULATOR               = 1 << 9,
     };
 
-
     //Data
     size_t                      Count;
     char                        **Names;
     ID_SOURCE                   *IDs;
-    TPL_PLAYBACK                *Playbacks;
+    CMP_VOICEMAP                *Voices;
+    CMP_FORMAT                  *Formats;
     CMP_FADE                    *Amplitudes;
+    CMP_PARAMETER               *Amps;
     CMP_PAN                     *Pans;
     CMP_POSITION                *Positions;
-    CMP_OSCILLATOR              *Oscillators;
-    CMP_NOISE                   *Noises;
-    CMP_WAV                     *WAVs;
+    TPL_TYPE                    *Types;
     CMP_ADSR                    *ADSRs;
     CMP_BREAKPOINT              *Breakpoints;
     CMP_MODULATOR               *Modulators;
@@ -544,25 +440,69 @@ typedef struct ENTITY_SOURCES
     void Destroy                (MEMORY_ARENA *Arena);
     void Init                   (size_t Index);
     ID_SOURCE AddByName         (MEMORY_POOL *Pool, char *Name);
-    ID_SOURCE AddByHash         (u64 Hash);
+    HANDLE_SOURCE AddByHash     (u64 Hash);
     bool Remove                 (MEMORY_POOL *Pool, ID_SOURCE ID);
     size_t RetrieveIndex        (ID_SOURCE ID);
     ID_SOURCE RetrieveID        (size_t Index);
+    HANDLE_SOURCE RetrieveHandle(ID_SOURCE ID);
 
 } ENTITY_SOURCES;
 
+typedef enum STATE_PLAY
+{
+    STOPPED,
+    STOPPING,
+    PLAYING,
+    PAUSED,
+} STATE_PLAY;
+
+typedef enum STATE_VOICE
+{
+    INACTIVE,
+    ACTIVE,
+    SPAWNING,
+} STATE_VOICE;
+
+typedef struct CMP_STATE
+{
+    STATE_VOICE Voice;
+    STATE_PLAY Play;
+} CMP_STATE;
 
 
-typedef struct TUPLE_MIX
+typedef struct TPL_PLAYBACK
 {
     //Data
     CMP_FORMAT      Format;
     CMP_BUFFER      Buffer;
-    CMP_FADE        Amplitude;
-} TUPLE_MIX;
+    CMP_DURATION    Duration;
+} TPL_PLAYBACK;
 
 
+typedef struct ENTITY_VOICES
+{
+    //Data
+    size_t              Count;
+    ID_VOICE            *IDs;
+    TPL_PLAYBACK        *Playbacks;
+    CMP_STATE         *States;
+    HANDLE_SOURCE       *Sources;
+    TPL_TYPE            *Types;
+    CMP_FADE            *Amplitudes;
+    CMP_PAN             *Pans;
+    CMP_BREAKPOINT      *Breakpoints;
+    CMP_ADSR            *ADSRs;
+    i32                 *Flags;
 
+    //Functions
+    void Create(MEMORY_ARENA *Arena, size_t Size);
+    void Destroy(MEMORY_ARENA *Arena);
+    void Init(size_t Index);
+    ID_VOICE Add(HANDLE_SOURCE Source);
+    ID_VOICE RetrieveID(size_t Index);
+    size_t RetrieveIndex(ID_VOICE ID);
+
+} ENTITY_VOICES;
 
 
 
@@ -570,17 +510,15 @@ typedef struct SYS_PLAY
 {
     //Data
     size_t          SystemCount;    
-    ID_SOURCE       *SystemSources;
+    ID_VOICE        *SystemVoices;
     
     //Functions
-    void Create     (MEMORY_ARENA *Arena, size_t Size);
-    void Destroy    (MEMORY_ARENA *Arena);
-    void Add        (ID_SOURCE ID);
-    bool Remove     (ID_SOURCE ID);
-    bool Start      (ENTITY_SOURCES *Sources, ID_SOURCE ID, f64 InputDuration, u32 Delay = 0, bool IsAligned = true);
-    bool Pause      (ENTITY_SOURCES *Sources, ID_SOURCE ID);
-    bool Resume     (ENTITY_SOURCES *Sources, ID_SOURCE ID);
-    void Update     (ENTITY_SOURCES *Sources, f64 Time, u32 PreviousSamplesWritten, u32 SamplesToWrite);
+    void Create(MEMORY_ARENA *Arena, size_t Size);
+    void Destroy(MEMORY_ARENA *Arena);
+    void Add(ID_VOICE ID);
+    bool Remove(ID_VOICE ID);
+    bool Start(ENTITY_VOICES *Voices, ID_VOICE ID, f64 InputDuration, u32 Delay = 0, bool IsAligned = true);
+    void Update(ENTITY_VOICES *Voices, f64 Time, u32 PreviousSamplesWritten, u32 SamplesToWrite);
 
 } SYS_PLAY;
 
@@ -589,50 +527,51 @@ typedef struct SYS_FADE
 {
     //Data
     size_t          SystemCount;    
-    ID_SOURCE       *SystemSources;
+    ID_VOICE        *SystemVoices;
     
     //Functions
     void Create     (MEMORY_ARENA *Arena, size_t Size);
     void Destroy    (MEMORY_ARENA *Arena);
-    void Add        (ID_SOURCE ID);
-    bool Remove     (ID_SOURCE ID);
-    bool Start      (ENTITY_SOURCES *Sources, ID_SOURCE ID, f64 Time, f64 Amplitude, f64 Duration);
-    void Update     (ENTITY_SOURCES *Sources, f64 Time);
+    void Add        (ID_VOICE ID);
+    bool Remove     (ID_VOICE ID);
+    bool Start      (ENTITY_VOICES *Voices, ID_VOICE ID, f64 Time, f64 Amplitude, f64 Duration);
+    void Update     (ENTITY_VOICES *Voices, f64 Time);
 
 } SYS_FADE;
-
 
 
 typedef struct SYS_OSCILLATOR_SINE
 {    
     //Data
     size_t                  SystemCount;
-    ID_SOURCE               *SystemSources;
+    ID_VOICE                *SystemVoices;
     
     //Functions
     void Create             (MEMORY_ARENA *Arena, size_t Size);
     void Destroy            (MEMORY_ARENA *Arena);
-    void Add                (ID_SOURCE ID);
-    bool Remove             (ID_SOURCE ID);
+    void Add                (ID_VOICE ID);
+    bool Remove             (ID_VOICE ID);
     void RenderToBufferWithModulation(CMP_OSCILLATOR &Oscillator, CMP_MODULATOR &Modulator, CMP_BUFFER &Buffer, size_t BufferCount);
     void RenderToBuffer     (CMP_OSCILLATOR &Oscillator, CMP_BUFFER &Buffer, size_t BufferCount);
-    void Update             (ENTITY_SOURCES *Sources, size_t BufferCount);
+    void Update             (ENTITY_VOICES *Voices, size_t BufferCount);
 
 } SYS_OSCILLATOR_SINE;
+
+
 
 typedef struct SYS_OSCILLATOR_SQUARE
 {    
     //Data
     size_t                  SystemCount;
-    ID_SOURCE               *SystemSources;
+    ID_VOICE                *SystemVoices;
     
     //Functions
     void Create             (MEMORY_ARENA *Arena, size_t Size);
     void Destroy            (MEMORY_ARENA *Arena);
-    void Add                (ID_SOURCE ID);
-    bool Remove             (ID_SOURCE ID);
+    void Add                (ID_VOICE ID);
+    bool Remove             (ID_VOICE ID);
     void RenderToBuffer     (CMP_OSCILLATOR &Oscillator, CMP_BUFFER &Buffer, size_t BufferCount);
-    void Update             (ENTITY_SOURCES *Sources, size_t BufferCount);
+    void Update             (ENTITY_VOICES *Voices, size_t BufferCount);
 
 } SYS_OSCILLATOR_SQUARE;
 
@@ -641,31 +580,32 @@ typedef struct SYS_OSCILLATOR_TRIANGLE
 {    
     //Data
     size_t                  SystemCount;
-    ID_SOURCE               *SystemSources;
+    ID_VOICE                *SystemVoices;
     
     //Functions
     void Create             (MEMORY_ARENA *Arena, size_t Size);
     void Destroy            (MEMORY_ARENA *Arena);
-    void Add                (ID_SOURCE ID);
-    bool Remove             (ID_SOURCE ID);
+    void Add                (ID_VOICE ID);
+    bool Remove             (ID_VOICE ID);
     void RenderToBuffer     (CMP_OSCILLATOR &Oscillator, CMP_BUFFER &Buffer, size_t BufferCount);
-    void Update             (ENTITY_SOURCES *Sources, size_t BufferCount);
+    void Update             (ENTITY_VOICES *Voices, size_t BufferCount);
 
 } SYS_OSCILLATOR_TRIANGLE;
+
 
 typedef struct SYS_OSCILLATOR_SAWTOOTH
 {    
     //Data
     size_t                  SystemCount;
-    ID_SOURCE               *SystemSources;
+    ID_VOICE                *SystemVoices;
     
     //Functions
     void Create             (MEMORY_ARENA *Arena, size_t Size);
     void Destroy            (MEMORY_ARENA *Arena);
-    void Add                (ID_SOURCE ID);
-    bool Remove             (ID_SOURCE ID);
+    void Add                (ID_VOICE ID);
+    bool Remove             (ID_VOICE ID);
     void RenderToBuffer     (CMP_OSCILLATOR &Oscillator, CMP_BUFFER &Buffer, size_t BufferCount);
-    void Update             (ENTITY_SOURCES *Sources, size_t BufferCount);
+    void Update             (ENTITY_VOICES *Voices, size_t BufferCount);
 
 } SYS_OSCILLATOR_SAWTOOTH;
 
@@ -680,37 +620,36 @@ typedef struct MDL_OSCILLATOR
 } MDL_OSCILLATOR;
 
 
-
-
 typedef struct SYS_NOISE_WHITE
 {    
     //Data
     size_t                  SystemCount;
-    ID_SOURCE               *SystemSources;
+    ID_VOICE                *SystemVoices;
     
     //Functions
     void Create             (MEMORY_ARENA *Arena, size_t Size);
     void Destroy            (MEMORY_ARENA *Arena);
-    void Add                (ID_SOURCE ID);
-    bool Remove             (ID_SOURCE ID);
+    void Add                (ID_VOICE ID);
+    bool Remove             (ID_VOICE ID);
     void RenderToBuffer     (f64 Amplitude, CMP_BUFFER &Buffer, size_t BufferCount);
-    void Update             (ENTITY_SOURCES *Sources, size_t BufferCount);
+    void Update             (ENTITY_VOICES *Voices, size_t BufferCount);
 
 } SYS_NOISE_WHITE;
+
 
 typedef struct SYS_NOISE_BROWN
 {    
     //Data
     size_t                  SystemCount;
-    ID_SOURCE               *SystemSources;
+    ID_VOICE                *SystemVoices;
     
     //Functions
     void Create             (MEMORY_ARENA *Arena, size_t Size);
     void Destroy            (MEMORY_ARENA *Arena);
-    void Add                (ID_SOURCE ID);
-    bool Remove             (ID_SOURCE ID);
+    void Add                (ID_VOICE ID);
+    bool Remove             (ID_VOICE ID);
     void RenderToBuffer     (CMP_NOISE &Noise, f64 Amplitude, CMP_BUFFER &Buffer, size_t BufferCount);
-    void Update             (ENTITY_SOURCES *Sources, size_t BufferCount);
+    void Update             (ENTITY_VOICES *Voices, size_t BufferCount);
 
 } SYS_NOISE_BROWN;
 
@@ -720,9 +659,6 @@ typedef struct MDL_NOISE
     SYS_NOISE_WHITE     White;
     SYS_NOISE_BROWN     Brown;
 } MDL_NOISE;
-
-
-
 
 
 typedef struct SYS_WAV
@@ -741,19 +677,20 @@ typedef struct SYS_WAV
 
 } SYS_WAV;
 
+
 typedef struct SYS_MIX
 {
     //Data
     size_t                  SystemCount;    
-    ID_SOURCE               *SystemSources;
+    ID_VOICE                *SystemSources;
 
-    //Functions
-    void Create             (MEMORY_ARENA *Arena, size_t Size);
-    void Destroy            (MEMORY_ARENA *Arena);
-    void Add                (ID_SOURCE ID);
-    bool Remove             (ID_SOURCE ID);
-    void RenderToBuffer     (f32 *Channel0, f32 *Channel1, size_t SamplesToWrite, CMP_BUFFER &SourceBuffer, CMP_FADE &SourceAmplitude, CMP_PAN &SourcePan, f64 TargetAmplitude);
-    size_t Update           (ENTITY_SOURCES *Sources, f32 *MixerChannel0, f32 *MixerChannel1, size_t SamplesToWrite);
+    void Create(MEMORY_ARENA *Arena, size_t Size);
+    void Destroy(MEMORY_ARENA *Arena);
+    void Add(ID_VOICE Voice);
+    bool Remove(ID_VOICE ID);
+    void RenderToBuffer(f32 *Channel0, f32 *Channel1, size_t SamplesToWrite, CMP_BUFFER &SourceBuffer, CMP_FADE &Amplitude, CMP_PAN &SourcePan, f64 TargetAmplitude);
+    size_t Update(ENTITY_SOURCES *Sources, ENTITY_VOICES *Voices, f32 *MixerChannel0, f32 *MixerChannel1, size_t SamplesToWrite);
+
 } SYS_MIX;
 
 
@@ -761,136 +698,16 @@ typedef struct SYS_ENVELOPE_ADSR
 {
     //Data
     size_t                  SystemCount;    
-    ID_SOURCE               *SystemSources;
+    ID_VOICE                *SystemVoices;
     
     //Functions
-    void Create(MEMORY_ARENA *Arena, size_t Size)
-    {
-        SystemSources = (ID_SOURCE *) Arena->Alloc((sizeof(ID_SOURCE) * Size), MEMORY_ARENA_ALIGNMENT);
-        SystemCount = 0;
-    }
-
-    void Destroy(MEMORY_ARENA *Arena)
-    {
-        Arena->FreeAll();
-    }
-
-    void Add(ID_SOURCE ID)
-    {
-        SystemSources[SystemCount] = ID;
-        ++SystemCount;
-    }
-
-    bool Remove(ID_SOURCE ID)
-    {
-        for(size_t i = 0; i <= SystemCount; ++i)
-        {
-            if(SystemSources[i] == ID)
-            {
-                SystemSources[i] = 0;
-                --SystemCount;
-                return true;
-            }
-        }
-        //!Log
-        return false;
-    }
-
-    void Edit(ENTITY_SOURCES *Sources, ID_SOURCE ID, f64 ControlRate, f64 MaxAmplitude, f64 Attack, f64 Decay, f64 SustainAmplitude, f64 Release, bool IsAligned = true)
-    {
-        //Loop through every source that was added to the system
-        for(size_t SystemIndex = 0; SystemIndex <= SystemCount; ++SystemIndex)
-        {
-            //Find active sources in the system
-            ID_SOURCE Source = SystemSources[SystemIndex];
-            if(Source == ID)
-            {
-                //Source is valid - get component
-                size_t SourceIndex          = Sources->RetrieveIndex(Source);
-                CMP_ADSR &ADSR              = Sources->ADSRs[SourceIndex];
-
-                //Amplitudes
-                ADSR.MaxAmplitude           = MaxAmplitude;
-                ADSR.SustainAmplitude       = SustainAmplitude;
-
-                //Convert to sample counts for linear ramping
-                ADSR.Attack                 = Attack   * ControlRate;
-                ADSR.Decay                  = Decay    * ControlRate;
-                ADSR.Release                = Release  * ControlRate;
-
-                //Durations
-                ADSR.Index                  = 0;
-                ADSR.DurationInSamples      = ((Attack + Decay + Release) * ControlRate);
-                if(IsAligned)
-                {
-                    ADSR.DurationInSamples  = NearestPowerOf2(ADSR.DurationInSamples);
-                }
-                ADSR.IsActive               = true;                
-            }
-        }
-    }
-
-    void RenderToBuffer(CMP_ADSR &ADSR, CMP_BUFFER &Buffer, size_t BufferCount)
-    {
-        if(ADSR.IsActive)
-        {
-            f64 Sample = 0;
-            for(size_t i = 0; i < BufferCount; ++i)
-            {
-                //ADSR finished
-                if(ADSR.Index == ADSR.DurationInSamples)
-                {
-                    ADSR.IsActive = false;
-                    return;
-                }
-
-                //Attack
-                if(ADSR.Index <= ADSR.Attack)
-                {
-                    Sample = ADSR.Index * (ADSR.MaxAmplitude / ADSR.Attack);
-                }
-
-                //Decay
-                else if(ADSR.Index <= (ADSR.Attack + ADSR.Decay))
-                {
-                    Sample = ((ADSR.SustainAmplitude - ADSR.MaxAmplitude) / ADSR.Decay) * (ADSR.Index - ADSR.Attack) + ADSR.MaxAmplitude;
-                }
-
-                //Sustain
-                else if(ADSR.Index <= (ADSR.DurationInSamples - ADSR.Release))
-                {
-                    Sample = ADSR.SustainAmplitude;
-                }
-
-                //Release
-                else if(ADSR.Index > (ADSR.DurationInSamples - ADSR.Release))
-                {
-                    Sample = -(ADSR.SustainAmplitude / ADSR.Release) * (ADSR.Index - (ADSR.DurationInSamples - ADSR.Release)) + ADSR.SustainAmplitude;
-                }
-
-                ADSR.Index++;
-
-                Buffer.Data[i] *= Sample;
-            }
-        }
-    }
-
-    void Update(ENTITY_SOURCES *Sources, size_t BufferCount)
-    {
-        //Loop through every source that was added to the system
-        for(size_t SystemIndex = 0; SystemIndex <= SystemCount; ++SystemIndex)
-        {
-            //Find active sources in the system
-            ID_SOURCE Source = SystemSources[SystemIndex];
-            if(Source != 0)
-            {
-                //Source is valid - get component
-                size_t SourceIndex = Sources->RetrieveIndex(Source);
-                RenderToBuffer(Sources->ADSRs[SourceIndex], Sources->Playbacks[SourceIndex].Buffer, BufferCount);
-            }
-        }
-    }
-
+    void Create(MEMORY_ARENA *Arena, size_t Size);
+    void Destroy(MEMORY_ARENA *Arena);
+    void Add(ID_VOICE ID);
+    bool Remove(ID_VOICE ID);
+    void Edit(ENTITY_VOICES *Voices, ID_VOICE ID, f64 ControlRate, f64 MaxAmplitude, f64 Attack, f64 Decay, f64 SustainAmplitude, f64 Release, bool IsAligned = true);
+    void RenderToBuffer(CMP_ADSR &ADSR, CMP_BUFFER &Buffer, size_t BufferCount);
+    void Update(ENTITY_VOICES *Voices, size_t BufferCount);
 
 } SYS_ENVELOPE_ADSR;
 
@@ -898,12 +715,31 @@ typedef struct SYS_ENVELOPE_BREAKPOINT
 {
     //Data
     size_t                  SystemCount;    
-    ID_SOURCE               *SystemSources;
+    ID_VOICE                *SystemVoices;
+    
+    //Functions
+    void Create             (MEMORY_ARENA *Arena, size_t Size);
+    void Destroy            (MEMORY_ARENA *Arena);
+    void Add                (ID_VOICE ID);
+    bool Remove             (ID_VOICE ID);
+    void CreateFromFile     (ENTITY_VOICES *Voices, ID_VOICE ID, char const *File);
+    void EditPoint          (ENTITY_VOICES *Voices, ID_VOICE ID, size_t PointIndex, f64 Value, f64 Time);
+    void Update             (ENTITY_VOICES *Voices, SYS_FADE *Fade, f64 Time);
+
+
+} SYS_ENVELOPE_BREAKPOINT;
+
+
+typedef struct SYS_PARAMETER
+{    
+    //Data
+    size_t                  SystemCount;
+    ID_VOICE                *SystemVoices;
     
     //Functions
     void Create(MEMORY_ARENA *Arena, size_t Size)
     {
-        SystemSources = (ID_SOURCE *) Arena->Alloc((sizeof(ID_SOURCE) * Size), MEMORY_ARENA_ALIGNMENT);
+        SystemVoices = (ID_VOICE *) Arena->Alloc((sizeof(ID_VOICE) * Size), MEMORY_ARENA_ALIGNMENT);
         SystemCount = 0;
     }
 
@@ -912,19 +748,19 @@ typedef struct SYS_ENVELOPE_BREAKPOINT
         Arena->FreeAll();
     }
 
-    void Add(ID_SOURCE ID)
+    void Add(ID_VOICE ID)
     {
-        SystemSources[SystemCount] = ID;
+        SystemVoices[SystemCount] = ID;
         ++SystemCount;
     }
 
-    bool Remove(ID_SOURCE ID)
+    bool Remove(ID_VOICE ID)
     {
         for(size_t i = 0; i <= SystemCount; ++i)
         {
-            if(SystemSources[i] == ID)
+            if(SystemVoices[i] == ID)
             {
-                SystemSources[i] = 0;
+                SystemVoices[i] = 0;
                 --SystemCount;
                 return true;
             }
@@ -932,104 +768,144 @@ typedef struct SYS_ENVELOPE_BREAKPOINT
         //!Log
         return false;
     }
+    
+    void Edit(ENTITY_VOICES *Voices, ID_VOICE ID, f64 Time, f64 Value, f64 Duration)
+    {
+        //Loop through every voice that was added to the system
+        for(size_t SystemIndex = 0; SystemIndex <= SystemCount; ++SystemIndex)
+        {
+            //Find active voice in the system
+            ID_VOICE Voice = SystemVoices[SystemIndex];
+            if(Voice == ID)
+            {
+                //voice is valid - get component
+                size_t Index = Voices->RetrieveIndex(Voice);
+                // CMP_PARAMETER &Parameter = Voices->Amplitudes[Index];
 
-    void CreateFromFile(ENTITY_SOURCES *Sources, ID_SOURCE ID, char const *File)
+                // if(Value != Parameter.CurrentValue)
+	            // {
+	            // 	Parameter.StartValue    = Parameter.CurrentValue;
+	            // 	Parameter.EndValue      = Value;
+	            // 	Parameter.StartTime     = Duration;
+	            // 	Parameter.DeltaTime     = Time;
+	            // 	Parameter.IsDone        = false;
+	            // }
+            }
+        }
+    }
+
+    void Update(ENTITY_VOICES *Voices, f64 Time)
     {
         //Loop through every source that was added to the system
         for(size_t SystemIndex = 0; SystemIndex <= SystemCount; ++SystemIndex)
         {
             //Find active sources in the system
-            ID_SOURCE Source = SystemSources[SystemIndex];
-            if(Source == ID)
+            ID_VOICE Voice = SystemVoices[SystemIndex];
+            if(Voice != 0)
             {
                 //Source is valid - get component
-                size_t SourceIndex          = Sources->RetrieveIndex(Source);
-                CMP_BREAKPOINT &Breakpoint  = Sources->Breakpoints[SourceIndex];
+                size_t Index = Voices->RetrieveIndex(Voice);
+                // CMP_PARAMETER &Parameter = Voices->Amplitudes[Index];
 
-                FILE *InputFile = 0;
-#ifdef _WIN32        
-                fopen_s(&InputFile, File, "r");
-#else       
-                InputFile = fopen(File, "r");
-#endif        
-                int done = 0;
-                int err = 0;
+	            // if(Parameter.CurrentValue == Parameter.EndValue)
+	            // {
+                //     Parameter.IsDone = true;
+                //     // Info("Done");
+	            // }
+	            // else
+	            // {
+	            // 	f64 Step = (f64) MIN((Time - Parameter.StartTime) / Parameter.DeltaTime, 1.0);
+	            // 	Parameter.IsDone = Step >= 1.0f;
 
-                for(u32 i = 0; i < MAX_BREAKPOINTS && done != 1; ++i)
-                {
-                    char *Line = fread_csv_line(InputFile, MAX_STRING_LENGTH, &done, &err);
-                    if(done != 1)
-                    {
-                        char **Values = split_on_unescaped_newlines(Line);
-
-                        if(!err)
-                        {
-                            sscanf(*Values, "%lf,%lf", &Breakpoint.Points[i].Time, &Breakpoint.Points[i].Value);
-                            ++Breakpoint.Count;
-                        }
-                    }
-                }
+                //     switch(Parameter.Type)
+                //     {
+                //         case CMP_PARAMETER::TYPE::LINEAR:
+                //         {
+                //             Parameter.CurrentValue = InterpLinear(Parameter.StartValue, Parameter.EndValue, Step);
+                //             printf("Linear %f\t", Parameter.CurrentValue);
+                //             break;
+                //         }
+                //         case CMP_PARAMETER::TYPE::LOGARITHMIC:
+                //         {
+                //             Parameter.CurrentValue = InterpLog(Parameter.StartValue, Parameter.EndValue, Step);
+                //             printf("Log %f\n", Parameter.CurrentValue);
+                //             break;
+                //         }            
+                //     }
+                //     // Linear, Square, Smooth, Fast Start, Fast End and Bezier
+	            // }
             }
         }
     }
 
 
+} SYS_PARAMETER;
 
 
-    void EditPoint(ENTITY_SOURCES *Sources, ID_SOURCE ID, size_t PointIndex, f64 Value, f64 Time)
-    {
-        //Loop through every source that was added to the system
-        for(size_t SystemIndex = 0; SystemIndex <= SystemCount; ++SystemIndex)
-        {
-            //Find active sources in the system
-            ID_SOURCE Source = SystemSources[SystemIndex];
-            if(Source == ID)
-            {
-                //Source is valid - get component
-                size_t SourceIndex          = Sources->RetrieveIndex(Source);
-                CMP_BREAKPOINT &Breakpoint  = Sources->Breakpoints[SourceIndex];
-                
-                Breakpoint.Init(PointIndex, Value, Time);
-            }
-        }
-    }
-
-    void Update(ENTITY_SOURCES *Sources, SYS_FADE *FadeSystem, f64 Time)
-    {
-        //Loop through every source that was added to the system
-        for(size_t SystemIndex = 0; SystemIndex <= SystemCount; ++SystemIndex)
-        {
-            //Find active sources in the system
-            ID_SOURCE Source = SystemSources[SystemIndex];
-            if(Source != 0)
-            {
-                //Source is valid - get component
-                size_t SourceIndex = Sources->RetrieveIndex(Source);
-                CMP_BREAKPOINT &Breakpoint = Sources->Breakpoints[SourceIndex];
-                CMP_FADE &Amplitude = Sources->Amplitudes[SourceIndex];
-
-                if(!Amplitude.IsFading)
-                {
-                    bool PointSet = false;
-                    while(Breakpoint.Index < Breakpoint.Count && !PointSet)
-                    {
-                        FadeSystem->Start(Sources, Source, Time, Breakpoint.Points[Breakpoint.Index].Value, Breakpoint.Points[Breakpoint.Index].Time);
-                        ++Breakpoint.Index;
-                        PointSet = true;
-                    }
-                }
-            }
-        }
-    }
-
-
-} SYS_ENVELOPE_BREAKPOINT;
 
 typedef struct POLAR_MIXER
 {
     size_t  Count;
     SYS_MIX **Mixes;
 } POLAR_MIXER;
+
+typedef struct MDL_SYSTEMS
+{
+    //Individual
+    SYS_FADE                Fade;
+    SYS_PARAMETER           Parameter;
+    SYS_ENVELOPE_BREAKPOINT Breakpoint;
+    SYS_ENVELOPE_ADSR       ADSR;
+    SYS_PLAY                Play;
+    SYS_WAV                 WAV;
+    SYS_MIX                 Mix;  
+
+    //Modules
+    MDL_OSCILLATOR          Oscillator;
+    MDL_NOISE               Noise;
+} MDL_SYSTEMS;
+
+
+typedef struct POLAR_POOL
+{
+    MEMORY_POOL Names;
+    MEMORY_POOL Buffers;
+    MEMORY_POOL Breakpoints;
+} POLAR_POOL;
+
+
+typedef struct SYS_VOICES
+{
+    //Data
+    size_t                  SystemCount;    
+    ID_SOURCE               *SystemSources;
+    
+    //Functions
+    void Create(MEMORY_ARENA *Arena, size_t Size);
+    void Destroy(MEMORY_ARENA *Arena);
+    void Add(ID_SOURCE ID);
+    bool Remove(ID_SOURCE ID);
+    ID_VOICE Spawn(ENTITY_SOURCES *Sources, ENTITY_VOICES *Voices, ID_SOURCE ID, size_t DeferCounter = 0, MDL_SYSTEMS *Systems = 0, POLAR_POOL *Pools = 0);
+    void Update(ENTITY_SOURCES *Sources, ENTITY_VOICES *Voices, MDL_SYSTEMS *Systems, POLAR_POOL *Pools);
+
+} SYS_VOICES;
+
+
+
+typedef struct POLAR_ENGINE
+{
+    //Data
+    f32             UpdateRate;
+    f64             NoiseFloor;
+    size_t          BytesPerSample;
+    u32             BufferFrames;
+    u32             LatencyFrames;
+    CMP_FORMAT      Format;
+    CMP_RINGBUFFER  CallbackBuffer;
+    SYS_VOICES      VoiceSystem;
+    MDL_SYSTEMS     Systems;
+
+} POLAR_ENGINE;
 
 
 //Utility code
@@ -1039,24 +915,31 @@ typedef struct POLAR_MIXER
 
 
 //Components
+#include "component/buffer.cpp"
+#include "component/ringbuffer.cpp"
 #include "component/fade.cpp"
+#include "component/breakpoint.cpp"
+#include "component/pan.cpp"
+#include "component/format.cpp"
+#include "component/oscillator.cpp"
+#include "component/noise.cpp"
+#include "component/wav.cpp"
 
 //Entities
 #include "entity/sources.cpp"
+#include "entity/voices.cpp"
 
 //Systems
 #include "system/play.cpp"
 #include "system/fade.cpp"
-
-
+#include "system/breakpoint.cpp"
+#include "system/adsr.cpp"
 #include "system/oscillator/sine.cpp"
 #include "system/oscillator/square.cpp"
 #include "system/oscillator/triangle.cpp"
 #include "system/oscillator/sawtooth.cpp"
-
 #include "system/noise/white.cpp"
 #include "system/noise/brown.cpp"
-
 #include "system/wav.cpp"
+#include "system/voices.cpp"
 #include "system/mix.cpp"
-

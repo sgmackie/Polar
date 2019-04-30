@@ -5,13 +5,13 @@ void ENTITY_SOURCES::Create(MEMORY_ARENA *Arena, size_t Size)
     //Allocate space for components
     Names           = (char **)                 Arena->Alloc((sizeof(char **) * Size), MEMORY_ARENA_ALIGNMENT);
     IDs             = (ID_SOURCE *)             Arena->Alloc((sizeof(ID_SOURCE) * Size), MEMORY_ARENA_ALIGNMENT);
-    Playbacks       = (TPL_PLAYBACK *)          Arena->Alloc((sizeof(TPL_PLAYBACK) * Size), MEMORY_ARENA_ALIGNMENT);
+    Voices          = (CMP_VOICEMAP *)          Arena->Alloc((sizeof(CMP_VOICEMAP) * Size), MEMORY_ARENA_ALIGNMENT);
+    Formats         = (CMP_FORMAT *)            Arena->Alloc((sizeof(CMP_FORMAT) * Size), MEMORY_ARENA_ALIGNMENT);
     Positions       = (CMP_POSITION *)          Arena->Alloc((sizeof(CMP_POSITION) * Size), MEMORY_ARENA_ALIGNMENT);
     Amplitudes      = (CMP_FADE *)              Arena->Alloc((sizeof(CMP_FADE) * Size), MEMORY_ARENA_ALIGNMENT);
+    Amps            = (CMP_PARAMETER *)         Arena->Alloc((sizeof(CMP_PARAMETER) * Size), MEMORY_ARENA_ALIGNMENT);
     Pans            = (CMP_PAN *)               Arena->Alloc((sizeof(CMP_PAN) * Size), MEMORY_ARENA_ALIGNMENT);
-    Oscillators     = (CMP_OSCILLATOR *)        Arena->Alloc((sizeof(CMP_OSCILLATOR) * Size), MEMORY_ARENA_ALIGNMENT);
-    Noises          = (CMP_NOISE *)             Arena->Alloc((sizeof(CMP_NOISE) * Size), MEMORY_ARENA_ALIGNMENT);    
-    WAVs            = (CMP_WAV *)               Arena->Alloc((sizeof(CMP_WAV) * Size), MEMORY_ARENA_ALIGNMENT);
+    Types           = (TPL_TYPE *)              Arena->Alloc((sizeof(TPL_TYPE) * Size), MEMORY_ARENA_ALIGNMENT);
     ADSRs           = (CMP_ADSR *)              Arena->Alloc((sizeof(CMP_ADSR) * Size), MEMORY_ARENA_ALIGNMENT);
     Breakpoints     = (CMP_BREAKPOINT *)        Arena->Alloc((sizeof(CMP_BREAKPOINT) * Size), MEMORY_ARENA_ALIGNMENT);
     Modulators      = (CMP_MODULATOR *)         Arena->Alloc((sizeof(CMP_MODULATOR) * Size), MEMORY_ARENA_ALIGNMENT);
@@ -54,7 +54,7 @@ ID_SOURCE ENTITY_SOURCES::AddByName(MEMORY_POOL *Pool, char *Name)
     return ID;
 }
 
-ID_SOURCE ENTITY_SOURCES::AddByHash(u64 Hash)
+HANDLE_SOURCE ENTITY_SOURCES::AddByHash(u64 Hash)
 {
     //Initialise
     Init(Count);
@@ -66,9 +66,10 @@ ID_SOURCE ENTITY_SOURCES::AddByHash(u64 Hash)
     //Initialise
     Flags[Count]    = 0;
     
-    //Increment and return ID
+    //Increment and return handle
+    HANDLE_SOURCE Source = {ID, Count};
 	++Count;
-    return ID;
+    return Source;
 }
 
 
@@ -122,4 +123,18 @@ ID_SOURCE ENTITY_SOURCES::RetrieveID(size_t Index)
 
 	Fatal("Sources: Couldn't find entity! Index: %zu", Index);
     return -1;
+}
+
+HANDLE_SOURCE ENTITY_SOURCES::RetrieveHandle(ID_SOURCE ID)
+{
+    HANDLE_SOURCE Source = {};
+    for(size_t i = 0; i < Count; ++i)
+    {
+        if(ID == IDs[i])
+        {
+            Source.ID       = ID;
+            Source.Index    = i;
+        }
+    }
+    return Source;
 }

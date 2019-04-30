@@ -1,22 +1,23 @@
 
+
 void SYS_MIX::Create(MEMORY_ARENA *Arena, size_t Size)
 {
-    SystemSources = (ID_SOURCE *) Arena->Alloc((sizeof(ID_SOURCE) * Size), MEMORY_ARENA_ALIGNMENT);
+    SystemSources = (ID_VOICE *) Arena->Alloc((sizeof(ID_VOICE) * Size), MEMORY_ARENA_ALIGNMENT);
     SystemCount = 0;
 }
 
-void SYS_MIX::Destroy(MEMORY_ARENA *Arena)
+ void SYS_MIX::Destroy(MEMORY_ARENA *Arena)
 {
     Arena->FreeAll();
 }
 
-void SYS_MIX::Add(ID_SOURCE ID)
+ void SYS_MIX::Add(ID_VOICE Voice)
 {
-    SystemSources[SystemCount] = ID;
+    SystemSources[SystemCount] = Voice;
     ++SystemCount;
 }
 
-bool SYS_MIX::Remove(ID_SOURCE ID)
+ bool SYS_MIX::Remove(ID_VOICE ID)
 {
     for(size_t i = 0; i <= SystemCount; ++i)
     {
@@ -31,10 +32,10 @@ bool SYS_MIX::Remove(ID_SOURCE ID)
     return false;
 }
 
-void SYS_MIX::RenderToBuffer(f32 *Channel0, f32 *Channel1, size_t SamplesToWrite, CMP_BUFFER &SourceBuffer, CMP_FADE &SourceAmplitude, CMP_PAN &SourcePan, f64 TargetAmplitude)
+ void SYS_MIX::RenderToBuffer(f32 *Channel0, f32 *Channel1, size_t SamplesToWrite, CMP_BUFFER &SourceBuffer, CMP_FADE &Amplitude, CMP_PAN &SourcePan, f64 TargetAmplitude)
 {
     //Check if amplitude is already at the target
-    if(fabsl(SourceAmplitude.Previous - TargetAmplitude) < 0.1e-5)
+    if(fabsl(Amplitude.Previous - TargetAmplitude) < 0.1e-5)
     {
         f64 LeftAmplitude   = 0;
         f64 RightAmplitude  = 0;
@@ -74,7 +75,7 @@ void SYS_MIX::RenderToBuffer(f32 *Channel0, f32 *Channel1, size_t SamplesToWrite
             //Get sample
             f32 Sample = SourceBuffer.Data[FrameIndex];
 
-            //Pan
+             //Pan
             *Channel0++ += Sample * LeftAmplitude;
             *Channel1++ += Sample * RightAmplitude;
         }
@@ -83,11 +84,11 @@ void SYS_MIX::RenderToBuffer(f32 *Channel0, f32 *Channel1, size_t SamplesToWrite
     //If not then increment to target
     else
     {
-        f64 Current = SourceAmplitude.Previous;
+        f64 Current = Amplitude.Previous;
         f64 Step = (TargetAmplitude - Current) * 1.0f / SamplesToWrite;
         f64 LeftAmplitude   = 0;
         f64 RightAmplitude  = 0;
-        
+
         for(u32 FrameIndex = 0; FrameIndex < SamplesToWrite; ++FrameIndex)
         {
             //Update amplitude
@@ -126,74 +127,75 @@ void SYS_MIX::RenderToBuffer(f32 *Channel0, f32 *Channel1, size_t SamplesToWrite
                 }                        
             }
 
-            //Pan
+             //Pan
             *Channel0++ += Sample * LeftAmplitude;
             *Channel1++ += Sample * RightAmplitude;
         }
 
-        SourceAmplitude.Previous = TargetAmplitude;
+        Amplitude.Previous = TargetAmplitude;
     }
 }   
 
-size_t SYS_MIX::Update(ENTITY_SOURCES *Sources, f32 *MixerChannel0, f32 *MixerChannel1, size_t SamplesToWrite)
+ size_t SYS_MIX::Update(ENTITY_SOURCES *Sources, ENTITY_VOICES *Voices, f32 *MixerChannel0, f32 *MixerChannel1, size_t SamplesToWrite)
 {
     //Assign mixing channels
     f32 *Channel0 = MixerChannel0;
     f32 *Channel1 = MixerChannel1;
 
     //Loop through every source that was added to the system
-    for(size_t SystemIndex = 0; SystemIndex <= SystemCount; ++SystemIndex)
+    for(size_t SystemIndex = 0; SystemIndex < SystemCount; ++SystemIndex)
     {
-        //Find active sources in the system
-        ID_SOURCE Source = SystemSources[SystemIndex];
-        if(Source != 0)
+        //Find active voices
+        ID_VOICE Voice = SystemSources[SystemIndex];
+        if(Voice != 0)
         {
-            //Source is valid - check for component
-            size_t SourceIndex = Sources->RetrieveIndex(Source);
-            if(Sources->Flags[SourceIndex] & ENTITY_SOURCES::PLAYBACK)
-            {
-                TPL_PLAYBACK &Playback      = Sources->Playbacks[SourceIndex];
-                
-                switch(Playback.Duration.States)
-                {
-                    case PLAYING:
-                    {
-                        if(Sources->Flags[SourceIndex] & ENTITY_SOURCES::AMPLITUDE)
-                        {
-                            CMP_FADE &SourceAmplitude = Sources->Amplitudes[SourceIndex];
-                            CMP_PAN &SourcePan = Sources->Pans[SourceIndex];
-                            RenderToBuffer(Channel0, Channel1, SamplesToWrite, Playback.Buffer, SourceAmplitude, SourcePan, SourceAmplitude.Current);
-                        }
-                        
-                        break;
-                    }
-                    case STOPPED:
-                    {
-                        break;
-                    }
-                    case STOPPING:
-                    {
-                        if(Sources->Flags[SourceIndex] & ENTITY_SOURCES::AMPLITUDE)
-                        {
-                            CMP_FADE &SourceAmplitude = Sources->Amplitudes[SourceIndex];
-                            CMP_PAN &SourcePan = Sources->Pans[SourceIndex];
-                            RenderToBuffer(Channel0, Channel1, SamplesToWrite, Playback.Buffer, SourceAmplitude, SourcePan, 0.0f);
-                        }
+            //Get voice buffer
+            size_t VoiceIndex = Voices->RetrieveIndex(Voice);
+            CMP_BUFFER &VoicePlayback = Voices->Playbacks[VoiceIndex].Buffer;
+            CMP_STATE &State = Voices->States[VoiceIndex];
 
-                        break;
-                    }                
-                    case PAUSED:
+            //Get handle to associated source
+            HANDLE_SOURCE Source = Voices->Sources[VoiceIndex];
+
+            //Check playback state
+            switch(State.Play)
+            {
+                case PLAYING:
+                {
+                    if(Sources->Flags[Source.Index] & ENTITY_SOURCES::AMPLITUDE)
                     {
-                        break;
+                        CMP_FADE &Amplitude = Voices->Amplitudes[VoiceIndex];
+                        CMP_PAN &SourcePan = Sources->Pans[Source.Index];
+                        RenderToBuffer(Channel0, Channel1, SamplesToWrite, VoicePlayback, Amplitude, SourcePan, Amplitude.Current);
                     }
-                    default:
+                    break;
+                }
+                case STOPPED:
+                {
+                    break;
+                }
+                case STOPPING:
+                {
+                    //Fade to 0
+                    if(Sources->Flags[Source.Index] & ENTITY_SOURCES::AMPLITUDE)
                     {
-                        break;
+                        CMP_FADE &Amplitude = Voices->Amplitudes[VoiceIndex];
+                        CMP_PAN &SourcePan = Sources->Pans[Source.Index];
+                        RenderToBuffer(Channel0, Channel1, SamplesToWrite, VoicePlayback, Amplitude, SourcePan, 0.0f);
                     }
-                }  
-            }
+                    break;
+                }                
+                case PAUSED:
+                {
+                    break;
+                }
+                default:
+                {
+                    break;
+                }
+            }  
         }
     }
 
-    return SamplesToWrite;
+     return SamplesToWrite;
 }

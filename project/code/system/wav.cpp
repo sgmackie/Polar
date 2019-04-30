@@ -83,7 +83,7 @@ void SYS_WAV::Update(ENTITY_SOURCES *Sources, f64 Pitch, size_t BufferCount)
                     Rate = 1;
                 }
 
-                RenderToBuffer(Sources->WAVs[SourceIndex], Sources->Playbacks[SourceIndex].Buffer, Rate, BufferCount);
+                // RenderToBuffer(Sources->WAVs[SourceIndex], Sources->Playbacks[SourceIndex].Buffer, Rate, BufferCount);
             }
         }
     }

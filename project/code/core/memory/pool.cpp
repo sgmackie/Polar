@@ -57,7 +57,7 @@ void *MEMORY_POOL::Alloc()
 	Head = Head->Next;
 
 	//Clear to zero
-    Info("Pool: Allocated chunk %zu bytes", ChunkSize);
+    // Info("Pool: Allocated chunk %zu bytes", ChunkSize);
 	return memset(Node, 0, ChunkSize);
 }
 
@@ -87,5 +87,5 @@ void MEMORY_POOL::Free(void *Pointer)
 	Node->Next = Head;
 	Head = Node;
 
-    Info("Pool: Free");
+    // Info("Pool: Free");
 }
