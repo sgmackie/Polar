@@ -1,0 +1,3 @@
+[submodule "project/code/co"]
+	path = project/code/co
+	url = https://github.com/sgmackie/core.git
