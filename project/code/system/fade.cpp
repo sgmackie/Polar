@@ -1,13 +1,13 @@
 
-void SYS_FADE::Create(MEMORY_ARENA *Arena, size_t Size)
+void SYS_FADE::Create(MEMORY_ALLOCATOR *Allocator, size_t Size)
 {
-    SystemVoices = (ID_SOURCE *) Arena->Alloc((sizeof(ID_SOURCE) * Size), MEMORY_ARENA_ALIGNMENT);
+    SystemVoices = (ID_SOURCE *) Allocator->Alloc((sizeof(ID_SOURCE) * Size), HEAP_TAG_SYSTEM_FADE);
     SystemCount = 0;
 }
 
-void SYS_FADE::Destroy(MEMORY_ARENA *Arena)
+void SYS_FADE::Destroy(MEMORY_ALLOCATOR *Allocator)
 {
-    Arena->FreeAll();
+    Allocator->Free(0, HEAP_TAG_SYSTEM_FADE);
 }
 
 void SYS_FADE::Add(ID_SOURCE ID)

@@ -32,8 +32,6 @@ CUDA kernels built using NVCC (10.1):       https://docs.nvidia.com/cuda/cuda-co
     - xxHash:       https://cyan4973.github.io/xxHash/
 - File code:
     - dr_wav:       https://mackron.github.io/
-- Random number generator:
-    - PCG:          http://www.pcg-random.org/
 - Open Sound Control:
     - oscpkt:       http://gruntthepeon.free.fr/oscpkt/
 - CUDA Errors:

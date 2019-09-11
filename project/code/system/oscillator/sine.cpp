@@ -1,13 +1,13 @@
 
-void SYS_OSCILLATOR_SINE::Create(MEMORY_ARENA *Arena, size_t Size)
+void SYS_OSCILLATOR_SINE::Create(MEMORY_ALLOCATOR *Allocator, size_t Size)
 {
-    SystemVoices = (ID_VOICE *) Arena->Alloc((sizeof(ID_VOICE) * Size), MEMORY_ARENA_ALIGNMENT);
+    SystemVoices = (ID_VOICE *) Allocator->Alloc((sizeof(ID_VOICE) * Size), HEAP_TAG_SYSTEM_OSC_SINE);
     SystemCount = 0;
 }
 
-void SYS_OSCILLATOR_SINE::Destroy(MEMORY_ARENA *Arena)
+void SYS_OSCILLATOR_SINE::Destroy(MEMORY_ALLOCATOR *Allocator)
 {
-    Arena->FreeAll();
+    Allocator->Free(0, HEAP_TAG_SYSTEM_OSC_SINE);
 }
 
 void SYS_OSCILLATOR_SINE::Add(ID_VOICE ID)

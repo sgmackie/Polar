@@ -1,5 +1,5 @@
 
-void CMP_RINGBUFFER::Create(MEMORY_ARENA *Arena, size_t Type, size_t InputCount, size_t Blocks)
+void CMP_RINGBUFFER::Create(MEMORY_ALLOCATOR *Allocator, size_t Type, size_t InputCount, size_t Blocks)
 {
     if(Blocks <= 0)
     {
@@ -13,7 +13,7 @@ void CMP_RINGBUFFER::Create(MEMORY_ARENA *Arena, size_t Type, size_t InputCount,
     ReadAddress     = 0;
     WriteAddress    = 0;
 
-    Data = (i16 *)  Arena->Alloc(((Type * Count) * TotalBlocks), MEMORY_ARENA_ALIGNMENT);
+    Data = (i16 *)  Allocator->Alloc(((Type * Count) * TotalBlocks));
 }
 
 void CMP_RINGBUFFER::Destroy()

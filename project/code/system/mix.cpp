@@ -1,14 +1,14 @@
 
 
-void SYS_MIX::Create(MEMORY_ARENA *Arena, size_t Size)
+void SYS_MIX::Create(MEMORY_ALLOCATOR *Allocator, size_t Size)
 {
-    SystemSources = (ID_VOICE *) Arena->Alloc((sizeof(ID_VOICE) * Size), MEMORY_ARENA_ALIGNMENT);
+    SystemSources = (ID_VOICE *) Allocator->Alloc((sizeof(ID_VOICE) * Size), HEAP_TAG_SYSTEM_MIX);
     SystemCount = 0;
 }
 
- void SYS_MIX::Destroy(MEMORY_ARENA *Arena)
+ void SYS_MIX::Destroy(MEMORY_ALLOCATOR *Allocator)
 {
-    Arena->FreeAll();
+    Allocator->Free(0, HEAP_TAG_SYSTEM_MIX);
 }
 
  void SYS_MIX::Add(ID_VOICE Voice)
@@ -165,8 +165,12 @@ void SYS_MIX::Create(MEMORY_ARENA *Arena, size_t Size)
                     if(Sources->Flags[Source.Index] & ENTITY_SOURCES::AMPLITUDE)
                     {
                         CMP_FADE &Amplitude = Voices->Amplitudes[VoiceIndex];
+                        CMP_DISTANCE &Distance = Voices->Distances[VoiceIndex];                        
                         CMP_PAN &SourcePan = Sources->Pans[Source.Index];
-                        RenderToBuffer(Channel0, Channel1, SamplesToWrite, VoicePlayback, Amplitude, SourcePan, Amplitude.Current);
+
+                        f64 FinalAmplitude = Amplitude.Current - Distance.Attenuation;
+
+                        RenderToBuffer(Channel0, Channel1, SamplesToWrite, VoicePlayback, Amplitude, SourcePan, FinalAmplitude);
                     }
                     break;
                 }

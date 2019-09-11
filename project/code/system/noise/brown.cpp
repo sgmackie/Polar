@@ -1,13 +1,13 @@
 
-void SYS_NOISE_BROWN::Create(MEMORY_ARENA *Arena, size_t Size)
+void SYS_NOISE_BROWN::Create(MEMORY_ALLOCATOR *Allocator, size_t Size)
 {
-    SystemVoices = (ID_VOICE *) Arena->Alloc((sizeof(ID_VOICE) * Size), MEMORY_ARENA_ALIGNMENT);
+    SystemVoices = (ID_VOICE *) Allocator->Alloc((sizeof(ID_VOICE) * Size), HEAP_TAG_SYSTEM_NSE_BROWN);
     SystemCount = 0;
 }
 
-void SYS_NOISE_BROWN::Destroy(MEMORY_ARENA *Arena)
+void SYS_NOISE_BROWN::Destroy(MEMORY_ALLOCATOR *Allocator)
 {
-    Arena->FreeAll();
+    Allocator->Free(0, HEAP_TAG_SYSTEM_NSE_BROWN);
 }
 
 void SYS_NOISE_BROWN::Add(ID_VOICE ID)
@@ -31,7 +31,7 @@ bool SYS_NOISE_BROWN::Remove(ID_VOICE ID)
     return false;
 }
 
-void SYS_NOISE_BROWN::RenderToBuffer(CMP_NOISE &Noise, f64 Amplitude, CMP_BUFFER &Buffer, size_t BufferCount)
+void SYS_NOISE_BROWN::RenderToBuffer(CMP_NOISE &Noise, RANDOM_PCG *RNG, f64 Amplitude, CMP_BUFFER &Buffer, size_t BufferCount)
 {
 	if(!Buffer.Data)
 	{
@@ -43,7 +43,7 @@ void SYS_NOISE_BROWN::RenderToBuffer(CMP_NOISE &Noise, f64 Amplitude, CMP_BUFFER
 	f64 Sample = 0;
 	for(size_t i = 0; i < BufferCount; ++i)
 	{
-        Sample = RandomFloat64(-Amplitude, Amplitude);
+        Sample = RandomF32Range(RNG, -Amplitude, Amplitude);
         Noise.Accumulator += Sample;
         
         //Normalise to max amplitude
@@ -56,7 +56,7 @@ void SYS_NOISE_BROWN::RenderToBuffer(CMP_NOISE &Noise, f64 Amplitude, CMP_BUFFER
 	}    
 }
 
-void SYS_NOISE_BROWN::Update(ENTITY_VOICES *Voices, size_t BufferCount)
+void SYS_NOISE_BROWN::Update(ENTITY_VOICES *Voices, RANDOM_PCG *RNG, size_t BufferCount)
 {
     //Loop through every source that was added to the system
     for(size_t SystemIndex = 0; SystemIndex <= SystemCount; ++SystemIndex)
@@ -68,7 +68,7 @@ void SYS_NOISE_BROWN::Update(ENTITY_VOICES *Voices, size_t BufferCount)
             //Source is valid - get component
             size_t VoiceIndex = Voices->RetrieveIndex(Voice);
             CMP_FADE &Amplitude = Voices->Amplitudes[VoiceIndex];
-            RenderToBuffer(Voices->Types[VoiceIndex].Noise, Amplitude.Current, Voices->Playbacks[VoiceIndex].Buffer, BufferCount);
+            RenderToBuffer(Voices->Types[VoiceIndex].Noise, RNG, Amplitude.Current, Voices->Playbacks[VoiceIndex].Buffer, BufferCount);
         }
     }
 }

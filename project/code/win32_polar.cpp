@@ -3,7 +3,7 @@
 
 #define DEFAULT_WIDTH 1280
 #define DEFAULT_HEIGHT 720
-#define DEFAULT_HZ 60
+#define DEFAULT_HZ 120
 
 #define DEFAULT_SAMPLERATE 48000
 #define DEFAULT_CHANNELS 2
@@ -11,18 +11,6 @@
 #define DEFAULT_LATENCY_FRAMES 4
 
 //Latency frames determines update rate - 4 @ 120HZ = 30FPS
-
-#if MICROPROFILE
-#define MICROPROFILE_MAX_FRAME_HISTORY (2<<10)
-#include "../external/microprofile/microprofile.h"
-#include "../external/microprofile/microprofile_html.h"
-#include "../external/microprofile/microprofile.cpp"
-#endif
-
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
-#include <timeapi.h>
-#define ANSI(code) ""
 
 //IMGUI implementation - DirectX9
 #include <d3d9.h>
@@ -42,35 +30,23 @@ static u32                      GlobalSamplesWritten = 0;
 static bool                     GlobalRunning = false;
 static i64                      GlobalPerformanceCounterFrequency = 0;
 static bool                     GlobalUseCUDA = false;
+static LISTENER                 GlobalListener = {};
+static bool                     GlobalFireEvent = false;
+static u32                      GlobalEventCount = 0;
+
+static bool                     GlobalEditEvent = false;
+static ID_VOICE                 GlobalBubbleVoice = 0;
+static i32                      GlobalBubbleCount = 4;
+static f32                      GlobalBubblesPerSec = 100;
+static f32                      GlobalRadius = 10;
+static f32                      GlobalAmplitude = 0.9;
+static f32                      GlobalProbability = 1.0;
+static f32                      GlobalRiseCutoff = 0.5;
 
 //D3D9 contexts for GUI rendering
 static LPDIRECT3D9              D3D9 = NULL;
 static LPDIRECT3DDEVICE9        D3Device = NULL;
 static D3DPRESENT_PARAMETERS    D3DeviceParamters = {};
-
-f64 core_WallTime()
-{
-#ifdef _WIN32
-    LARGE_INTEGER time,freq;
-    if (!QueryPerformanceFrequency(&freq)){
-        //  Handle error
-        return 0;
-    }
-    if (!QueryPerformanceCounter(&time)){
-        //  Handle error
-        return 0;
-    }
-    return (double)time.QuadPart / freq.QuadPart;
-
-#elif __linux__
-    struct timeval time;
-    if (gettimeofday(&time,NULL)){
-        //  Handle error
-        return 0;
-    }
-    return (double)time.tv_sec + (double)time.tv_usec * .000001;
-#endif
-}
 
 LARGE_INTEGER win32_WallClock()
 {    
@@ -141,7 +117,13 @@ LRESULT CALLBACK WindowProc(HWND Window, UINT Message, WPARAM WParam, LPARAM LPa
         break;
     case WM_DESTROY:
         ::PostQuitMessage(0);
+        GlobalRunning = false;
         return 0;
+    case WM_CLOSE:
+    {
+        GlobalRunning = false;
+        return 0;
+    }
     }
     return ::DefWindowProc(Window, Message, WParam, LParam);
 }
@@ -152,9 +134,38 @@ void win32_ProcessMessages()
 
     while(PeekMessageW(&Queue, NULL, 0, 0, PM_REMOVE)) 
     {
-        if(Queue.message == WM_QUIT)
+        switch(Queue.message)
         {
-            GlobalRunning = false;
+            case WM_CLOSE:
+            {
+                GlobalRunning = false;
+
+                break;
+            }
+            case WM_DESTROY:
+            {
+                GlobalRunning = false;
+                break;
+            }     
+            // Virtual Keycode parsing
+            case WM_KEYUP:
+            {
+                // Check key state
+                u32 VKCode              = Queue.wParam;
+                bool WasDown            = ((Queue.lParam & (1 << 30)) != 0);
+                bool IsDown             = ((Queue.lParam & (1UL << 31)) == 0);
+
+                // Switch
+                if(WasDown != IsDown)
+                {       
+                    if(VKCode == 'P')
+                    {
+                        GlobalFireEvent = true;
+                    }
+                }
+
+                break;
+            } 
         }
 
         TranslateMessage(&Queue);
@@ -259,7 +270,7 @@ typedef struct WASAPI
 	    u32 BufferFrames = 0;
     }
 
-    void Create(MEMORY_ARENA *Arena, u32 InputSampleRate, u32 InputChannelCount, u32 InputBitRate, size_t InputBufferSize)
+    void Create(MEMORY_ALLOCATOR *Allocator, u32 InputSampleRate, u32 InputChannelCount, u32 InputBitRate, size_t InputBufferSize)
     {
         Init();
 
@@ -287,7 +298,7 @@ typedef struct WASAPI
 
         //Create output format
         DeviceFormat = 0;
-        DeviceFormat = (WAVEFORMATEXTENSIBLE *) Arena->Alloc(sizeof(WAVEFORMATEXTENSIBLE), MEMORY_ARENA_ALIGNMENT);
+        DeviceFormat = (WAVEFORMATEXTENSIBLE *) Allocator->Alloc(sizeof(WAVEFORMATEXTENSIBLE), HEAP_TAG_PLATFORM);
         DeviceFormat->Format.cbSize = sizeof(WAVEFORMATEXTENSIBLE);
         DeviceFormat->Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
         DeviceFormat->Format.wBitsPerSample = InputBitRate;
@@ -372,7 +383,9 @@ void win32_WASAPI_Callback(WASAPI *WASAPI, u32 SampleCount, u32 Channels, i16 *O
 int main()
 {
     //Create logging function
-#if LOGGER_ERROR    
+#if LOGGER_PROFILE
+    if(core_CreateLogger("logs.txt", LOG_FATAL, false))
+#elif LOGGER_ERROR    
     if(core_CreateLogger("logs.txt", LOG_ERROR, false))
 #else
     if(core_CreateLogger("logs.txt", LOG_TRACE, false))
@@ -385,6 +398,7 @@ int main()
         printf("win32: Failed to create logger!\n");
     }
 
+#if CUDA
     //Get CUDA Device
     i32 DeviceCount = 0;
     GlobalUseCUDA = (cudaGetDeviceCount(&DeviceCount) == cudaSuccess && DeviceCount != 0);
@@ -395,34 +409,51 @@ int main()
         cuda_DeviceGet(&GPU, 0);
         cuda_DevicePrint(&GPU);
     }
+#endif
 
-    // f32 *Buffer = (f32 *) malloc(sizeof(f32) * 4096);
-    // u32 ThreadBlock = 512;
-    // cuda_SineArray(4096, 48000, ThreadBlock, Buffer);
-    // printf("\n");
-    // free(Buffer);
-    // return 0;
 
-    //Allocate memory arenas from virtual pages
-    MEMORY_ARENA EngineArena = {};
+    // Create allocators
+    // Platform allocator for getting the fixed blocks
+    MEMORY_ALLOCATOR Win32Allocator = {};
+    Win32Allocator.Create(MEMORY_ALLOCATOR_VIRTUAL, "Win32 Virtual Allocator", 0, Gigabytes(1));
+    void *EngineBlock = Win32Allocator.Alloc(Megabytes(100));
+    void *SourceBlock = Win32Allocator.Alloc(Megabytes(900));
+
+    // General heap allocator used for systems
+    MEMORY_ALLOCATOR EngineHeap = {};
+    EngineHeap.Create(MEMORY_ALLOCATOR_HEAP, "Engine Heap Allocator", MEMORY_TAGGED_HEAP_FIXED_SIZE, Megabytes(2), EngineBlock, Megabytes(100));
+
+    // Allocate fixed arena for source memory (pools, large data allocations)
     MEMORY_ARENA SourceArena = {};
-    void *EngineBlock = VirtualAlloc(0, Kilobytes(500), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    void *SourceBlock = VirtualAlloc(0, Megabytes(100), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    EngineArena.Init(EngineBlock, Kilobytes(500));    
-    SourceArena.Init(SourceBlock, Megabytes(100));
-    Assert(EngineBlock && SourceBlock, "win32: Failed to create memory arenas!");
+    SourceArena.CreateFixedSize("Source Fixed Arena", MEMORY_ARENA_FIXED_SIZE, SourceBlock, Megabytes(900));
+
+    // Create debug profiler info
+#if CORE_PROFILE
+    // Expanding debug arena
+    MEMORY_ALLOCATOR DebugArena = {};
+    DebugArena.Create(MEMORY_ALLOCATOR_ARENA, "Debug Expanding Arena", MEMORY_ARENA_NORMAL);
+
+    // Allocate
+    debug_state *GlobalDebugState = 0;
+    GlobalDebugTable = 0;
+    GlobalDebugTable = (debug_table *) DebugArena.Alloc(sizeof(debug_table));
+    GlobalDebugState = (debug_state *) DebugArena.Alloc(sizeof(debug_state));
+	DEBUGSetEventRecording(true);
+    DEBUGInit(GlobalDebugState);
+#endif
 
     //Create memory pools for voice memory
     POLAR_POOL Pools = {};
-    Pools.Names.Init(SourceArena.Alloc(Megabytes(10), MEMORY_ARENA_ALIGNMENT), Megabytes(10), (sizeof(char) * MAX_STRING_LENGTH), MEMORY_POOL_ALIGNMENT);
-    Pools.Buffers.Init(SourceArena.Alloc(Megabytes(10), MEMORY_ARENA_ALIGNMENT), Megabytes(10), (sizeof(f32) * MAX_BUFFER_SIZE), MEMORY_POOL_ALIGNMENT);
-    Pools.Breakpoints.Init(SourceArena.Alloc(Megabytes(10), MEMORY_ARENA_ALIGNMENT), Megabytes(10), (sizeof(CMP_BREAKPOINT_POINT) * MAX_BREAKPOINTS), MEMORY_POOL_ALIGNMENT);
-    Assert(Pools.Names.Data && Pools.Buffers.Data && Pools.Breakpoints.Data, "win32: Failed to create source memory pools!");
+    Pools.Names.CreateFixedSize("Source Names Pool", MEMORY_POOL_FIXED_SIZE, (sizeof(char) * MAX_STRING_LENGTH), SourceArena.Push(Megabytes(10)), Megabytes(10));
+    Pools.Buffers.CreateFixedSize("Source Buffer Pool", MEMORY_POOL_FIXED_SIZE, (sizeof(f32) * MAX_BUFFER_SIZE), SourceArena.Push(Megabytes(10)), Megabytes(10));
+    Pools.Partials.CreateFixedSize("Source Partials Pool", MEMORY_POOL_FIXED_SIZE, (sizeof(CMP_CUDA_PHASOR) * MAX_PARTIALS), SourceArena.Push(Megabytes(10)), Megabytes(10));
+    Pools.Phases.CreateFixedSize("Source Phases Pool", MEMORY_POOL_FIXED_SIZE, (sizeof(f32) * MAX_BUFFER_SIZE), SourceArena.Push(Megabytes(10)), Megabytes(10));
+    Pools.Breakpoints.CreateFixedSize("Source Breakpoints Pool", MEMORY_POOL_FIXED_SIZE, (sizeof(CMP_BREAKPOINT_POINT) * MAX_BREAKPOINTS), SourceArena.Push(Megabytes(10)), Megabytes(10));
+    Pools.WAVs.CreateFixedSize("Source WAVs Pool", MEMORY_POOL_FIXED_SIZE, (sizeof(f32) * MAX_WAV_SIZE), SourceArena.Push(Megabytes(10)), Megabytes(10));
 
-    //Create memory pool for mixers
-    MEMORY_POOL MixerIntermediatePool = {};
-    MixerIntermediatePool.Init(SourceArena.Alloc(Megabytes(10), MEMORY_ARENA_ALIGNMENT), Megabytes(10), (sizeof(f32) * MAX_BUFFER_SIZE), MEMORY_POOL_ALIGNMENT);
-    Assert(MixerIntermediatePool.Data, "win32: Failed to create mixer memory pools!");
+    Pools.Bubble.Generators.CreateFixedSize("Source Bubble Generators Pool", MEMORY_POOL_FIXED_SIZE, (sizeof(CMP_BUBBLES_MODEL) * MAX_BUBBLE_COUNT), SourceArena.Push(Megabytes(10)), Megabytes(10));
+    Pools.Bubble.Radii.CreateFixedSize("Source Bubble Radii Pool", MEMORY_POOL_FIXED_SIZE, (sizeof(f64) * MAX_BUBBLE_COUNT), SourceArena.Push(Megabytes(10)), Megabytes(10));
+    Pools.Bubble.Lambda.CreateFixedSize("Source Bubble Lambda Pool", MEMORY_POOL_FIXED_SIZE, (sizeof(f64) * MAX_BUBBLE_COUNT), SourceArena.Push(Megabytes(10)), Megabytes(10));
 
     //Create window and it's rendering handle
     WNDCLASSEX WindowClass = {sizeof(WNDCLASSEX), 
@@ -463,20 +494,7 @@ int main()
 
         //Define engine update rate
         POLAR_ENGINE Engine = {};
-        Engine.UpdateRate = (MonitorRefresh / DEFAULT_LATENCY_FRAMES);
-        f32 TargetSecondsPerFrame = 1.0f / (f32) Engine.UpdateRate;        
-
-#if MICROPROFILE
-        MicroProfileOnThreadCreate("Main");
-        MicroProfileSetEnableAllGroups(true);
-        MicroProfileSetForceMetaCounters(true);
-        MicroProfileStartAutoFlip(Engine.UpdateRate);
-        Info("Microprofiler: Started profiler with autoflip");
-#endif
-
-        //PCG Random Setup
-        i32 Rounds = 5;
-        pcg32_srandom(time(NULL) ^ (intptr_t) &printf, (intptr_t) &Rounds);
+        Engine.Init((u32) WallTime(), (MonitorRefresh / DEFAULT_LATENCY_FRAMES));
 
         //Create GUI context
         IMGUI_CHECKVERSION();
@@ -497,7 +515,7 @@ int main()
             
         //Start WASAPI
         WASAPI WASAPI = {};
-        WASAPI.Create(&EngineArena, DEFAULT_SAMPLERATE, 2, 16, DEFAULT_SAMPLERATE);
+        WASAPI.Create(&EngineHeap, DEFAULT_SAMPLERATE, 2, 16, DEFAULT_SAMPLERATE);
 
         //Fill out engine properties
         Engine.NoiseFloor           = DB(-120);
@@ -513,7 +531,7 @@ int main()
         //The sample count to write for each callback is the LatencySamples - any padding from the audio D3Device
         
         //Create ringbuffer with a specified block count (default is 3)
-        Engine.CallbackBuffer.Create(&EngineArena, sizeof(i16), 4096, 3);
+        Engine.CallbackBuffer.Create(&EngineHeap, sizeof(i16), 4096, 3);
         Assert(Engine.CallbackBuffer.Data, "win32: Failed to create callback buffer!");
         
         //OSC setup
@@ -521,27 +539,38 @@ int main()
         UdpSocket OSCSocket = polar_OSC_StartServer(4795);
 
         //Create systems
-        Engine.VoiceSystem.Create(&SourceArena, MAX_SOURCES);
-        Engine.Systems.Play.Create(&SourceArena, MAX_SOURCES);
-        Engine.Systems.Mix.Create(&SourceArena, MAX_SOURCES);
-        Engine.Systems.Fade.Create(&SourceArena, MAX_SOURCES);
-        Engine.Systems.Breakpoint.Create(&SourceArena, MAX_SOURCES);
-        Engine.Systems.ADSR.Create(&SourceArena, MAX_SOURCES);
+        Engine.VoiceSystem.Create(&EngineHeap, MAX_SOURCES);
+        Engine.Systems.Play.Create(&EngineHeap, MAX_SOURCES);
+        Engine.Systems.Position.Create(&EngineHeap, MAX_SOURCES);
+        Engine.Systems.Mix.Create(&EngineHeap, MAX_SOURCES);
+        Engine.Systems.Fade.Create(&EngineHeap, MAX_SOURCES);
+        Engine.Systems.Crossfade.Create(&EngineHeap, MAX_SOURCES);
+        Engine.Systems.Breakpoint.Create(&EngineHeap, MAX_SOURCES);
+        Engine.Systems.ADSR.Create(&EngineHeap, MAX_SOURCES);
+        Engine.Systems.Filter.Create(&EngineHeap, MAX_SOURCES);
 
-        Engine.Systems.Oscillator.Sine.Create(&SourceArena, MAX_SOURCES);
-        Engine.Systems.Oscillator.Square.Create(&SourceArena, MAX_SOURCES);
-        Engine.Systems.Oscillator.Triangle.Create(&SourceArena, MAX_SOURCES);
-        Engine.Systems.Oscillator.Sawtooth.Create(&SourceArena, MAX_SOURCES);
-        Engine.Systems.Noise.White.Create(&SourceArena, MAX_SOURCES);
-        Engine.Systems.Noise.Brown.Create(&SourceArena, MAX_SOURCES);
+        Engine.Systems.Oscillator.Sine.Create(&EngineHeap, MAX_SOURCES);
+        Engine.Systems.Oscillator.Square.Create(&EngineHeap, MAX_SOURCES);
+        Engine.Systems.Oscillator.Triangle.Create(&EngineHeap, MAX_SOURCES);
+        Engine.Systems.Oscillator.Sawtooth.Create(&EngineHeap, MAX_SOURCES);
+        Engine.Systems.Noise.White.Create(&EngineHeap, MAX_SOURCES);
+        Engine.Systems.Noise.Brown.Create(&EngineHeap, MAX_SOURCES);
+
+        Engine.Systems.WAV.Create(&EngineHeap, MAX_SOURCES);
+
+        Engine.Systems.Cuda.Create(&EngineHeap, MAX_SOURCES);
+        Engine.Systems.Bubbles.Create(&EngineHeap, MAX_SOURCES);
+
+        Engine.Systems.FFT.Create(&EngineHeap, MAX_SOURCES);
+        Engine.Systems.Grain.Create(&EngineHeap, MAX_SOURCES);
 
         //Create entities
         ENTITY_SOURCES SoundSources = {};
-        SoundSources.Create(&SourceArena, MAX_SOURCES);
+        SoundSources.Create(&EngineHeap, MAX_SOURCES);
 
         //Create voices
         ENTITY_VOICES SoundVoices = {};
-        SoundVoices.Create(&SourceArena, MAX_VOICES);
+        SoundVoices.Create(&EngineHeap, MAX_VOICES);
 
         //!TODO: Fix WAV hash parser
         // FILE *File = 0;
@@ -549,57 +578,28 @@ int main()
         // int done = 0;
         // int err = 0;
 
-        // for(u32 i = 0; i < MAX_SOURCES && done != 1; ++i)
-        // {
-        //     char *Line = fread_csv_line(File, MAX_STRING_LENGTH, &done, &err);
-        //     if(done != 1)
-        //     {
-        //         char **Values = split_on_unescaped_newlines(Line);
-
-        //         if(!err)
-        //         {
-        //             ID_SOURCE Hash;
-        //             char WAV[MAX_STRING_LENGTH];
-        //             sscanf(*Values, "%llu,%s", &Hash, WAV);
-    
-        //             ID_SOURCE Source = SoundSources.AddByHash(Hash);
-
-        //             //Allocate wav
-        //             SoundSources.WAVs[i].Init(WAV);
-        //             SoundSources.Flags[i] |= ENTITY_SOURCES::WAV;  
-
-        //             //Add to play system
-        //             SoundSources.Buffers[i].CreateFromPool(&SourcePoolBuffers, sizeof(f32), MAX_BUFFER_SIZE);
-        //             SoundSources.Flags[i] |= ENTITY_SOURCES::BUFFER;
-        //             PlaySystem.Add(Source);     
-
-        //             //Add to fade system
-        //             SoundSources.Amplitudes[i].Init(0.1);
-        //             SoundSources.Flags[i] |= ENTITY_SOURCES::AMPLITUDE;
-        //             FadeSystem.Add(Source);
-
-        //             //Add to mixer
-        //             GlobalMixer.Mixes[0]->Add(Source);     
-        //         }
-        //     }
-        // }   
-        // fclose(File);
 
         //Start timings
         LARGE_INTEGER LastCounter = win32_WallClock();
         LARGE_INTEGER FlipWallClock = win32_WallClock();
         u64 LastCycleCount = __rdtsc();
 
+        u32 ExpectedFramesPerUpdate = 1;
+        f32 TargetSecondsPerFrame = ExpectedFramesPerUpdate / (f32) Engine.UpdateRate;
+
+        //!Had to make these permanent allocations for now as memset after a sleep causes memory overwrites (SystemVoiceCount reset to 0, effecting other structs)
+        f32 *MixerChannel0 = (f32 *) EngineHeap.Alloc((sizeof(f32) * MAX_BUFFER_SIZE), HEAP_TAG_MIXER);
+        f32 *MixerChannel1 = (f32 *) EngineHeap.Alloc((sizeof(f32) * MAX_BUFFER_SIZE), HEAP_TAG_MIXER);
+
+        f32 *SineTemp = (f32 *) EngineHeap.Alloc((sizeof(f32) * MAX_BUFFER_SIZE), HEAP_TAG_MIXER);
+        f32 *PulseTemp = (f32 *) EngineHeap.Alloc((sizeof(f32) * MAX_BUFFER_SIZE), HEAP_TAG_MIXER);
+
         //Loop
-        i64 i = 0;
         GlobalTime = 0;
         GlobalRunning = true;
         Info("Polar: Playback\n");
         while(GlobalRunning)
         {
-            //Updates
-            ++i;
-
             //Process incoming mouse/keyboard messages, check for QUIT command
             win32_ProcessMessages();
             if(!GlobalRunning) break;
@@ -634,77 +634,60 @@ int main()
             f64 MinPeriod = ((f64) SamplesToWrite / (f64) Engine.Format.SampleRate);
 
             //Get current time for update functions
-            GlobalTime = core_WallTime();
+            GlobalTime = WallTime();
 
             //Get OSC messages from Unreal
             //!Uses std::vector for message allocation: replace with pool allocations
-            polar_OSC_UpdateMessages(GlobalTime, OSCSocket, 1);
+            polar_OSC_UpdateMessages(&SoundSources, &SoundVoices, &GlobalListener, GlobalTime, OSCSocket, 10);
 
-            if(i == 25)
+            if(GlobalFireEvent == true)
             {
+                GlobalFireEvent = false;
+                GlobalEditEvent = true;          
                 //Create source
-                HANDLE_SOURCE Source = SoundSources.AddByHash(FastHash("sine1"));
+                HANDLE_SOURCE Source = SoundSources.AddByHash(FastHash("SO_Bubbles"));
 
                 //Add to playback system - set format then add to the voice system to spawn future voices 
                 SoundSources.Formats[Source.Index].Init(DEFAULT_SAMPLERATE, DEFAULT_CHANNELS);
                 SoundSources.Flags[Source.Index] |= ENTITY_SOURCES::PLAYBACK;
                 Engine.VoiceSystem.Add(Source.ID);
 
-                //Add to ADSR system
-                SoundSources.Flags[Source.Index] |= ENTITY_SOURCES::ADSR;
-
-                //Add to breakpoint system
-                SoundSources.Flags[Source.Index] |= ENTITY_SOURCES::BREAKPOINT;
+                //Add to distance system
+                SoundSources.Distances[Source.Index].Init();
+                SoundSources.Flags[Source.Index] |= ENTITY_SOURCES::POSITION;
+                SoundSources.Positions[Source.Index].Init();
 
                 //Add to fade system
                 SoundSources.Flags[Source.Index] |= ENTITY_SOURCES::AMPLITUDE;
-                SoundSources.Amplitudes[Source.Index].Init(0.5);
+                SoundSources.Amplitudes[Source.Index].Init(0.9);
 
                 //Add to pan system
                 SoundSources.Flags[Source.Index] |= ENTITY_SOURCES::PAN;
-                SoundSources.Pans[Source.Index].Init(CMP_PAN::MODE::WIDE, 0.0);           
+                SoundSources.Pans[Source.Index].Init(CMP_PAN::MODE::STEREO, 0.0);           
 
-                //Add to oscillator system
-                SoundSources.Flags[Source.Index] |= ENTITY_SOURCES::OSCILLATOR;
-                SoundSources.Types[Source.Index].Oscillator.Init(CMP_OSCILLATOR::SINE, SoundSources.Formats[Source.Index].SampleRate, 440);
-
-                //Add to noise system
-                // SoundSources.Flags[Source.Index] |= ENTITY_SOURCES::NOISE;
-                // SoundSources.Types[Source.Index].Noise.Init(CMP_NOISE::WHITE);
-
-                // //Create modulator
-                // SoundSources.Modulators[Source.Index].Init(CMP_MODULATOR::TYPE::LFO_OSCILLATOR, CMP_MODULATOR::ASSIGNMENT::FREQUENCY);
-                // SoundSources.Flags[Source.Index] |= ENTITY_SOURCES::MODULATOR;
-                // if(SoundSources.Modulators[Source.Index].Flag & CMP_MODULATOR::TYPE::LFO_OSCILLATOR)
-                // {
-                //     SoundSources.Modulators[Source.Index].Oscillator.Init(CMP_OSCILLATOR::SINE, SoundSources.Playbacks[Source.Index].Format.SampleRate, 40);
-                // }
+                // SoundSources.Flags[Source.Index] |= ENTITY_SOURCES::CUDA_SINE;
+                SoundSources.Flags[Source.Index] |= ENTITY_SOURCES::CUDA_BUBBLE;
+                SoundSources.Bubbles[Source.Index].Init(SoundSources.Formats[Source.Index].SampleRate, GlobalBubbleCount, GlobalBubblesPerSec, GlobalRadius, GlobalAmplitude, GlobalProbability, GlobalRiseCutoff);
 
                 //Play
-                ID_VOICE Voice = Engine.VoiceSystem.Spawn(&SoundSources, &SoundVoices, Source.ID, false, &Engine.Systems, &Pools);
-                Engine.Systems.Play.Start(&SoundVoices, Voice, 2.0, 0);
-                // Engine.Systems.Fade.Start(&SoundVoices, Voice, GlobalTime, 0.1, 2.0);
-                // Engine.Systems.Breakpoint.CreateFromFile(&SoundVoices, Voice, "data/testpoints.csv");
-                Engine.Systems.ADSR.Edit(&SoundVoices, Voice, 48000, 0.9, 4.0, 1.0, 0.7, 5.0);
+                GlobalBubbleVoice = Engine.VoiceSystem.Spawn(&SoundSources, &SoundVoices, Source.ID, Engine.Format.SampleRate, RandomU32(&Engine.RNG), false, &Engine.Systems, &Pools);
+                Engine.Systems.Bubbles.ComputeBubbles(&SoundVoices, GlobalBubbleVoice, Engine.Format.SampleRate, SamplesToWrite, &Engine.RNG);
+                Engine.Systems.Bubbles.ComputeEvents(&SoundVoices, GlobalBubbleVoice, Engine.Format.SampleRate);
+                
+                Engine.Systems.Play.Start(&SoundVoices, GlobalBubbleVoice, 50.0, -1);
             }
 
-
-            if(i == 300)
-            {
-                HANDLE_SOURCE Source = SoundSources.RetrieveHandle(FastHash("sine1"));
-                ID_VOICE Voice = Engine.VoiceSystem.Spawn(&SoundSources, &SoundVoices, Source.ID, false, &Engine.Systems, &Pools);
-                Engine.Systems.Play.Start(&SoundVoices, Voice, 2.0, 0);
-                // Engine.Systems.Fade.Start(&SoundVoices, Voice, GlobalTime, 0.1, 2.0);
-                Engine.Systems.Breakpoint.CreateFromFile(&SoundVoices, Voice, "data/testpoints.csv");
+            if(GlobalEditEvent)
+            {             
+                Engine.Systems.Bubbles.Edit(&SoundVoices, GlobalBubbleVoice, Engine.Format.SampleRate, SamplesToWrite, &Engine.RNG, GlobalBubbleCount, GlobalBubblesPerSec, GlobalRadius, GlobalAmplitude, GlobalProbability, GlobalRiseCutoff);
             }
-
 
             //Update & Render
             //Write data
             if(Engine.CallbackBuffer.CanWrite())
             {
                 //Update systems
-                //Voices
+                BEGIN_BLOCK("Systems Update");
                 //Check for voices that need to be spawned as a result of the play system update, add any to the mixer system
                 Engine.VoiceSystem.Update(&SoundSources, &SoundVoices, &Engine.Systems, &Pools);
 
@@ -719,22 +702,38 @@ int main()
                 Engine.Systems.Oscillator.Sawtooth.Update(&SoundVoices, SamplesToWrite);
                 
                 //Noise generators
-                Engine.Systems.Noise.White.Update(&SoundVoices, SamplesToWrite);
-                Engine.Systems.Noise.Brown.Update(&SoundVoices, SamplesToWrite);           
+                Engine.Systems.Noise.White.Update(&SoundVoices, &Engine.RNG, SamplesToWrite);
+                Engine.Systems.Noise.Brown.Update(&SoundVoices, &Engine.RNG, SamplesToWrite);           
                 
-                // //Files
-                // WavSystem.Update(&SoundSources, 1.0, SamplesToWrite);
-                
+
+                Engine.Systems.Cuda.Update(&SoundVoices, SineTemp, SamplesToWrite);
+                Engine.Systems.Bubbles.Update(&SoundVoices, Engine.Format.SampleRate, &Engine.RNG, PulseTemp, SamplesToWrite);
+
+                //Files
+                Engine.Systems.WAV.Update(&SoundVoices, 1.0, SamplesToWrite);
+
+                // Engine.Systems.Grain.Update(&SoundVoices, SamplesToWrite, GrainParameter);
+
+                //Filters
+                Engine.Systems.Filter.Update(&SoundVoices, SamplesToWrite);
+
                 //Amplitudes
                 Engine.Systems.Breakpoint.Update(&SoundVoices, &Engine.Systems.Fade, GlobalTime);
                 Engine.Systems.ADSR.Update(&SoundVoices, SamplesToWrite);
-                Engine.Systems.Fade.Update(&SoundVoices, GlobalTime);
-                // Engine.Systems.Parameter.Update(&SoundVoices, GlobalTime);
                 
+                // Engine.Systems.Parameter.Update(&SoundVoices, GlobalTime);
+
+                //World positions
+                Engine.Systems.Position.Update(&SoundVoices, &GlobalListener, Engine.NoiseFloor);
+
+
+                Engine.Systems.Crossfade.Update(&SoundVoices, SamplesToWrite);
+                Engine.Systems.Fade.Update(&SoundVoices, GlobalTime);
+
+                END_BLOCK();
+                BEGIN_BLOCK("Mixing");
 
                 //Clear mixer channels to 0
-                f32 *MixerChannel0 = (f32 *) MixerIntermediatePool.Alloc();
-                f32 *MixerChannel1 = (f32 *) MixerIntermediatePool.Alloc();
                 memset(MixerChannel0, 0, (sizeof(f32) * SamplesToWrite));
                 memset(MixerChannel1, 0, (sizeof(f32) * SamplesToWrite));
 
@@ -763,15 +762,14 @@ int main()
                     *ConvertedSamples++ = IntSample;        
                 }
 
-                //Free mixer channels
-                MixerIntermediatePool.Free(MixerChannel0);
-                MixerIntermediatePool.Free(MixerChannel1);
-
                 //Update ringbuffer addresses
                 Engine.CallbackBuffer.FinishWrite();
+
+                END_BLOCK();
             }
 
             //Read data
+            BEGIN_BLOCK("OS Device Callback");
             if(Engine.CallbackBuffer.CanRead())
             {
                 //Fill WASAPI BYTE buffer
@@ -781,19 +779,77 @@ int main()
                 Engine.CallbackBuffer.FinishRead();
             }
 
+            END_BLOCK();
+            BEGIN_BLOCK("GUI Render");
+
             //Start GUI frame
             ImGui_ImplDX9_NewFrame();
             ImGui_ImplWin32_NewFrame();
+            
+            // Any application code here
             ImGui::NewFrame();
+            ImGui::Begin("Debug");
+#if CORE_PROFILE            
+            ImGui::LabelText("Total Frame Count", "%d", GlobalDebugState->TotalFrameCount);
+            ImGui::LabelText("Target Frame Time", "%f", TargetSecondsPerFrame);
+            ImGui::LabelText("Last Frame Time", "%f", GlobalDebugState->Frames[GlobalDebugState->ViewingFrameOrdinal].WallSecondsElapsed);
+            ImGui::LabelText("Difference", "%f", (GlobalDebugState->Frames[GlobalDebugState->ViewingFrameOrdinal].WallSecondsElapsed - TargetSecondsPerFrame));
+            if(GlobalDebugState->TotalFrameCount > 1)
+            {
+                u64 MinDuration = ((u64)-1);
+                u64 MaxDuration = 0;
+                u64 CurDuration = 0;
+                u64 TotalDuration = 0;
+                u32 TotalCount = 5;                
+                u64 Duration = 0;
+                for(size_t i = 0; i < TotalCount; i += 2)
+                {
+                    Duration += GlobalDebugState->StoredEvents[i].ClockDuration;
+                    if(MinDuration > Duration)
+                    {
+                        MinDuration = Duration;
+                    }
+                    
+                    if(MaxDuration < Duration)
+                    {
+                        MaxDuration = Duration;
+                    }
+
+                    TotalDuration += Duration;
+                }
+
+                u32 MinKilocycles = (u32) (MinDuration / 1000);
+                u32 MaxKilocycles = (u32) (MaxDuration / 1000);
+                u32 AvgKilocycles = (u32) SafeRatio0((f32) TotalDuration, (1000.0f * (f32) TotalCount));                
+
+                ImGui::LabelText("Breakdown", "Min: %u | Max: %u | Avg: %u", MinKilocycles, MaxKilocycles, AvgKilocycles);
+                if(GlobalEventCount > 0)
+                {
+                    for(size_t ei = 0; ei < GlobalEventCount - 1; ei += 2)
+                    {
+                        ImGui::LabelText(GlobalDebugState->StoredEvents[ei].Name, "%u", (u32) GlobalDebugState->StoredEvents[ei].ClockDuration);
+                    }
+                }
+            }
+#endif            
+            ImGui::End();
+            ImGui::Begin("Bubbles");
+            ImGui::SliderInt("Count", &GlobalBubbleCount, 1, MAX_BUBBLE_COUNT);
+            ImGui::SliderFloat("BPS", &GlobalBubblesPerSec, 1, 10000);
+            ImGui::SliderFloat("Maximum Radius", &GlobalRadius, 0.0001, 20);
+            ImGui::SliderFloat("Probability", &GlobalProbability, 0.5, 5.0);
+            ImGui::SliderFloat("Rise Threshold", &GlobalRiseCutoff, 0.1, 0.9);
+            ImGui::SliderFloat("Amplitude", &GlobalAmplitude, 0.0000001, 1.0);
+            ImGui::End();
+            ImGui::EndFrame();
 
             // Rendering
-            ImGui::EndFrame();
             D3Device->SetRenderState(D3DRS_ZENABLE, false);
             D3Device->SetRenderState(D3DRS_ALPHABLENDENABLE, false);
             D3Device->SetRenderState(D3DRS_SCISSORTESTENABLE, false);
             D3DCOLOR clear_col_dx = D3DCOLOR_RGBA((int)(clear_color.x*255.0f), (int)(clear_color.y*255.0f), (int)(clear_color.z*255.0f), (int)(clear_color.w*255.0f));
             D3Device->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, clear_col_dx, 1.0f, 0);
-            if (D3Device->BeginScene() >= 0)
+            if(D3Device->BeginScene() >= 0)
             {
                 ImGui::Render();
                 ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
@@ -804,6 +860,9 @@ int main()
             // Handle loss of D3D9 device
             if (result == D3DERR_DEVICELOST && D3Device->TestCooperativeLevel() == D3DERR_DEVICENOTRESET)
                 ResetDevice();
+
+            END_BLOCK();
+            BEGIN_BLOCK("Sleep");
 
             //End performance timings
             FlipWallClock = win32_WallClock();
@@ -832,22 +891,35 @@ int main()
                 while(SecondsElapsedForFrame < TargetSecondsPerFrame)
                 {                            
                     SecondsElapsedForFrame = win32_SecondsElapsed(LastCounter, win32_WallClock());
-#if MICROPROFILE                    
-                    MicroProfileTick();
-#endif
                 }
             }
 
             else
             {
-                //!Missed frame rate!
                 f32 Difference = (SecondsElapsedForFrame - TargetSecondsPerFrame);
                 Fatal("win32: Missed frame rate!\tDifference: %f\t[Current: %f, Target: %f]", Difference, SecondsElapsedForFrame, TargetSecondsPerFrame);
             } 
 
+            END_BLOCK();
+
+            // Record frame time
+            FRAME_MARKER(SecondsElapsedForFrame);
+            
+#if CORE_PROFILE
+            GlobalDebugTable->CurrentEventArrayIndex = !GlobalDebugTable->CurrentEventArrayIndex;
+            u64 ArrayIndex_EventIndex = AtomicExchangeU64(&GlobalDebugTable->EventArrayIndex_EventIndex, (u64)GlobalDebugTable->CurrentEventArrayIndex << 32);
+            u32 EventArrayIndex = ArrayIndex_EventIndex >> 32;
+            Assert(EventArrayIndex <= 1, "");
+            GlobalEventCount = ArrayIndex_EventIndex & 0xFFFFFFFF;
+
+            DEBUGStart(GlobalDebugState);
+            CollateDebugRecords(GlobalDebugState, GlobalEventCount, GlobalDebugTable->Events[EventArrayIndex]);
+            DEBUGEnd(GlobalDebugState);
+#endif
+
             //Prepare timers before next loop
-            LARGE_INTEGER EndCounter = win32_WallClock();
-            LastCounter = EndCounter;         
+            LARGE_INTEGER EndCounter        = win32_WallClock();
+            LastCounter = EndCounter;    
         }
 
         ImGui_ImplDX9_Shutdown();
@@ -856,6 +928,15 @@ int main()
 
         Engine.CallbackBuffer.Destroy();
         WASAPI.Destroy();
+
+        //! TEMP
+        for(size_t i = 0; i < SoundSources.Count; ++i)
+        {
+            if(SoundSources.Flags[i] & ENTITY_SOURCES::WAV)
+            {
+                SoundSources.Types[i].WAV.Destroy();
+            } 
+        }
 
         CleanupDeviceD3D();
         DestroyWindow(WindowHandle);
@@ -870,21 +951,34 @@ int main()
     }
 
     //Free pools
-    Pools.Names.FreeAll();
-    Pools.Buffers.FreeAll();
-    Pools.Breakpoints.FreeAll();
+    Pools.Names.Destroy();
+    Pools.Buffers.Destroy();
+    Pools.Partials.Destroy();
+    Pools.Phases.Destroy();
+    Pools.WAVs.Destroy();
+    Pools.Bubble.Generators.Destroy();
+    Pools.Bubble.Radii.Destroy();
+    Pools.Bubble.Lambda.Destroy();
+    Pools.Breakpoints.Destroy();
 
     //Free arenas
-    SourceArena.FreeAll();
-    EngineArena.FreeAll();
-    VirtualFree(SourceBlock, 0, MEM_RELEASE);
-    VirtualFree(EngineBlock, 0, MEM_RELEASE);
-
-#if MICROPROFILE
-    MicroProfileStopAutoFlip();
-    Info("Microprofiler: Results @ localhost:%d", MicroProfileWebServerPort());
-    MicroProfileShutdown();
+    SourceArena.Destroy();
+    EngineHeap.Free(0, HEAP_TAG_MIXER);
+    EngineHeap.Free(0, HEAP_TAG_PLATFORM);
+    EngineHeap.Free(0, HEAP_TAG_ENTITY_SOURCE);
+    EngineHeap.Free(0, HEAP_TAG_ENTITY_VOICE);
+    EngineHeap.Free(0, HEAP_TAG_SYSTEM_VOICE, HEAP_TAG_SYSTEM_GRAIN);
+    EngineHeap.Free(0, HEAP_TAG_UNDEFINED);
+    EngineHeap.Destroy();
+#if CORE_PROFILE
+    DebugArena.Free(0);
+    DebugArena.Destroy();
 #endif
+
+    // Destroy virtual alloctor
+    Win32Allocator.Free(SourceBlock, Megabytes(100));
+    Win32Allocator.Free(EngineBlock, Megabytes(900));
+    Win32Allocator.Destroy();
 
     //Destroy logging function - close file
     core_DestroyLogger();

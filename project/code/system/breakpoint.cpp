@@ -1,14 +1,14 @@
 
 
-void SYS_ENVELOPE_BREAKPOINT::Create(MEMORY_ARENA *Arena, size_t Size)
+void SYS_ENVELOPE_BREAKPOINT::Create(MEMORY_ALLOCATOR *Allocator, size_t Size)
 {
-    SystemVoices = (ID_VOICE *) Arena->Alloc((sizeof(ID_VOICE) * Size), MEMORY_ARENA_ALIGNMENT);
+    SystemVoices = (ID_VOICE *) Allocator->Alloc((sizeof(ID_VOICE) * Size), HEAP_TAG_SYSTEM_BREAKPOINT);
     SystemCount = 0;
 }
 
-void SYS_ENVELOPE_BREAKPOINT::Destroy(MEMORY_ARENA *Arena)
+void SYS_ENVELOPE_BREAKPOINT::Destroy(MEMORY_ALLOCATOR *Allocator)
 {
-    Arena->FreeAll();
+    Allocator->Free(0, HEAP_TAG_SYSTEM_BREAKPOINT);
 }
 
 void SYS_ENVELOPE_BREAKPOINT::Add(ID_VOICE ID)

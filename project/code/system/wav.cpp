@@ -1,28 +1,28 @@
 
-void SYS_WAV::Create(MEMORY_ARENA *Arena, size_t Size)
+void SYS_WAV::Create(MEMORY_ALLOCATOR *Allocator, size_t Size)
 {
-    SystemSources = (ID_SOURCE *) Arena->Alloc((sizeof(ID_SOURCE) * Size), MEMORY_ARENA_ALIGNMENT);
+    SystemVoices = (ID_VOICE *) Allocator->Alloc((sizeof(ID_VOICE) * Size), HEAP_TAG_SYSTEM_WAV);
     SystemCount = 0;
 }
 
-void SYS_WAV::Destroy(MEMORY_ARENA *Arena)
+void SYS_WAV::Destroy(MEMORY_ALLOCATOR *Allocator)
 {
-    Arena->FreeAll();
+    Allocator->Free(0, HEAP_TAG_SYSTEM_WAV);
 }
 
-void SYS_WAV::Add(ID_SOURCE ID)
+void SYS_WAV::Add(ID_VOICE ID)
 {
-    SystemSources[SystemCount] = ID;
+    SystemVoices[SystemCount] = ID;
     ++SystemCount;
 }
 
-bool SYS_WAV::Remove(ID_SOURCE ID)
+bool SYS_WAV::Remove(ID_VOICE ID)
 {
     for(size_t i = 0; i <= SystemCount; ++i)
     {
-        if(SystemSources[i] == ID)
+        if(SystemVoices[i] == ID)
         {
-            SystemSources[i] = 0;
+            SystemVoices[i] = 0;
             --SystemCount;
             return true;
         }
@@ -34,7 +34,6 @@ bool SYS_WAV::Remove(ID_SOURCE ID)
 void SYS_WAV::RenderToBuffer(CMP_WAV &WAV, CMP_BUFFER &Buffer, i32 Rate, size_t BufferCount)
 {
     //Positions in the file
-    u64 Position = 0;
     u64 SamplesRemaining = (WAV.Length - WAV.ReadIndex);
 
     //Adjust buffer size to the remaining samples
@@ -52,39 +51,38 @@ void SYS_WAV::RenderToBuffer(CMP_WAV &WAV, CMP_BUFFER &Buffer, i32 Rate, size_t 
 
     for(size_t i = 0; i < BufferCount; ++i)
     {
-        f64 Sample = 0;
-        Sample = WAV.Data[Position];
-        Buffer.Data[i] = Sample;
-        
-		Position = ++WAV.ReadIndex * WAV.Channels;
-		//Position = (WAV.ReadIndex += i * Rate);
+        f32 Sample      = 0;
+        Sample          = WAV.Data[WAV.ReadIndex];
+        Buffer.Data[i]  = Sample;
+		WAV.ReadIndex   += WAV.Channels;
     }
 }
 
-void SYS_WAV::Update(ENTITY_SOURCES *Sources, f64 Pitch, size_t BufferCount)
+void SYS_WAV::Update(ENTITY_VOICES *Voices, f64 Pitch, size_t BufferCount)
 {
     //Loop through every source that was added to the system
     for(size_t SystemIndex = 0; SystemIndex <= SystemCount; ++SystemIndex)
     {
         //Find active sources in the system
-        ID_SOURCE Source = SystemSources[SystemIndex];
-        if(Source != 0)
+        ID_VOICE Voice = SystemVoices[SystemIndex];
+        if(Voice != 0)
         {
-            //Source is valid - check for component
-            size_t SourceIndex = Sources->RetrieveIndex(Source);
-            if(Sources->Flags[SourceIndex] & ENTITY_SOURCES::WAV)
-            {
-                //Rate is File rate / Mixer rate * Pitch
-                //!Truncated to int!
-                //TODO: Add interpolation for .f values
-                i32 Rate = 48000 / (f64) 48000 * Pitch;
-                if(Rate <= 0)
-                {
-                    Rate = 1;
-                }
-
-                // RenderToBuffer(Sources->WAVs[SourceIndex], Sources->Playbacks[SourceIndex].Buffer, Rate, BufferCount);
-            }
+            //Source is valid - get component
+            size_t VoiceIndex = Voices->RetrieveIndex(Voice);            
+            RenderToBuffer(Voices->Types[VoiceIndex].WAV, Voices->Playbacks[VoiceIndex].Buffer, 1, BufferCount);
+            
+            //! WIP Pitch resampler
+            // if(Voices->Flags[VoiceIndex] & ENTITY_VOICES::WAV)
+            // {
+            //     //Rate is File rate / Mixer rate * Pitch
+            //     //!Truncated to int!
+            //     //TODO: Add interpolation for .f values
+            //     i32 Rate = 48000 / (f64) 48000 * Pitch;
+            //     if(Rate <= 0)
+            //     {
+            //         Rate = 1;
+            //     }
+            // }
         }
     }
 }

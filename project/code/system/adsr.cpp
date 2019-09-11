@@ -1,13 +1,13 @@
 
-void SYS_ENVELOPE_ADSR::Create(MEMORY_ARENA *Arena, size_t Size)
+void SYS_ENVELOPE_ADSR::Create(MEMORY_ALLOCATOR *Allocator, size_t Size)
 {
-    SystemVoices = (ID_VOICE *) Arena->Alloc((sizeof(ID_VOICE) * Size), MEMORY_ARENA_ALIGNMENT);
+    SystemVoices = (ID_VOICE *) Allocator->Alloc((sizeof(ID_VOICE) * Size), HEAP_TAG_SYSTEM_ADSR);
     SystemCount = 0;
 }
 
-void SYS_ENVELOPE_ADSR::Destroy(MEMORY_ARENA *Arena)
+void SYS_ENVELOPE_ADSR::Destroy(MEMORY_ALLOCATOR *Allocator)
 {
-    Arena->FreeAll();
+    Allocator->Free(0, HEAP_TAG_SYSTEM_ADSR);
 }
 
 void SYS_ENVELOPE_ADSR::Add(ID_VOICE ID)
@@ -32,7 +32,7 @@ bool SYS_ENVELOPE_ADSR::Remove(ID_VOICE ID)
 }
 
 void SYS_ENVELOPE_ADSR::Edit(ENTITY_VOICES *Voices, ID_VOICE ID, f64 ControlRate, f64 MaxAmplitude, f64 Attack, f64 Decay, f64 SustainAmplitude, f64 Release, bool IsAligned)
-{
+{    
     //Loop through every source that was added to the system
     for(size_t SystemIndex = 0; SystemIndex <= SystemCount; ++SystemIndex)
     {

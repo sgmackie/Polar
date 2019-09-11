@@ -1,29 +1,36 @@
 
 
-void ENTITY_SOURCES::Create(MEMORY_ARENA *Arena, size_t Size)
+void ENTITY_SOURCES::Create(MEMORY_ALLOCATOR *Allocator, size_t Size)
 {
     //Allocate space for components
-    Names           = (char **)                 Arena->Alloc((sizeof(char **) * Size), MEMORY_ARENA_ALIGNMENT);
-    IDs             = (ID_SOURCE *)             Arena->Alloc((sizeof(ID_SOURCE) * Size), MEMORY_ARENA_ALIGNMENT);
-    Voices          = (CMP_VOICEMAP *)          Arena->Alloc((sizeof(CMP_VOICEMAP) * Size), MEMORY_ARENA_ALIGNMENT);
-    Formats         = (CMP_FORMAT *)            Arena->Alloc((sizeof(CMP_FORMAT) * Size), MEMORY_ARENA_ALIGNMENT);
-    Positions       = (CMP_POSITION *)          Arena->Alloc((sizeof(CMP_POSITION) * Size), MEMORY_ARENA_ALIGNMENT);
-    Amplitudes      = (CMP_FADE *)              Arena->Alloc((sizeof(CMP_FADE) * Size), MEMORY_ARENA_ALIGNMENT);
-    Amps            = (CMP_PARAMETER *)         Arena->Alloc((sizeof(CMP_PARAMETER) * Size), MEMORY_ARENA_ALIGNMENT);
-    Pans            = (CMP_PAN *)               Arena->Alloc((sizeof(CMP_PAN) * Size), MEMORY_ARENA_ALIGNMENT);
-    Types           = (TPL_TYPE *)              Arena->Alloc((sizeof(TPL_TYPE) * Size), MEMORY_ARENA_ALIGNMENT);
-    ADSRs           = (CMP_ADSR *)              Arena->Alloc((sizeof(CMP_ADSR) * Size), MEMORY_ARENA_ALIGNMENT);
-    Breakpoints     = (CMP_BREAKPOINT *)        Arena->Alloc((sizeof(CMP_BREAKPOINT) * Size), MEMORY_ARENA_ALIGNMENT);
-    Modulators      = (CMP_MODULATOR *)         Arena->Alloc((sizeof(CMP_MODULATOR) * Size), MEMORY_ARENA_ALIGNMENT);
-    Flags           = (i32 *)                   Arena->Alloc((sizeof(i32) * Size), MEMORY_ARENA_ALIGNMENT);
+    Names           = (char **)                 Allocator->Alloc((sizeof(char **) * Size), HEAP_TAG_ENTITY_SOURCE);
+    IDs             = (ID_SOURCE *)             Allocator->Alloc((sizeof(ID_SOURCE) * Size), HEAP_TAG_ENTITY_SOURCE);
+    Voices          = (CMP_VOICEMAP *)          Allocator->Alloc((sizeof(CMP_VOICEMAP) * Size), HEAP_TAG_ENTITY_SOURCE);
+    Formats         = (CMP_FORMAT *)            Allocator->Alloc((sizeof(CMP_FORMAT) * Size), HEAP_TAG_ENTITY_SOURCE);
+    Positions       = (CMP_POSITION *)          Allocator->Alloc((sizeof(CMP_POSITION) * Size), HEAP_TAG_ENTITY_SOURCE);
+    Distances       = (CMP_DISTANCE *)          Allocator->Alloc((sizeof(CMP_DISTANCE) * Size), HEAP_TAG_ENTITY_SOURCE);
+    Amplitudes      = (CMP_FADE *)              Allocator->Alloc((sizeof(CMP_FADE) * Size), HEAP_TAG_ENTITY_SOURCE);
+    Crossfades      = (CMP_CROSSFADE *)         Allocator->Alloc((sizeof(CMP_CROSSFADE) * Size), HEAP_TAG_ENTITY_SOURCE);
+    Pans            = (CMP_PAN *)               Allocator->Alloc((sizeof(CMP_PAN) * Size), HEAP_TAG_ENTITY_SOURCE);
+    Types           = (TPL_TYPE *)              Allocator->Alloc((sizeof(TPL_TYPE) * Size), HEAP_TAG_ENTITY_SOURCE);
+    ADSRs           = (CMP_ADSR *)              Allocator->Alloc((sizeof(CMP_ADSR) * Size), HEAP_TAG_ENTITY_SOURCE);
+    Filters         = (TPL_FILTER *)            Allocator->Alloc((sizeof(TPL_FILTER) * Size), HEAP_TAG_ENTITY_SOURCE);
+    Breakpoints     = (CMP_BREAKPOINT *)        Allocator->Alloc((sizeof(CMP_BREAKPOINT) * Size), HEAP_TAG_ENTITY_SOURCE);
+    Modulators      = (CMP_MODULATOR *)         Allocator->Alloc((sizeof(CMP_MODULATOR) * Size), HEAP_TAG_ENTITY_SOURCE);
+    Sines           = (CMP_CUDA_SINE *)         Allocator->Alloc((sizeof(CMP_CUDA_SINE) * Size), HEAP_TAG_ENTITY_SOURCE);
+    Bubbles         = (TPL_BUBBLES *)           Allocator->Alloc((sizeof(TPL_BUBBLES) * Size), HEAP_TAG_ENTITY_SOURCE);
+    //! This structs are over 4mb!
+    // Grains          = (CMP_GRAIN *)             Allocator->Alloc((sizeof(CMP_GRAIN) * Size), HEAP_TAG_ENTITY_SOURCE);    
+    // FFTs            = (CMP_FFT *)               Allocator->Alloc((sizeof(CMP_FFT) * Size), HEAP_TAG_ENTITY_SOURCE);
+    Flags           = (i32 *)                   Allocator->Alloc((sizeof(i32) * Size), HEAP_TAG_ENTITY_SOURCE);
 
     //Initialise
     Count = 0;
 }
 
-void ENTITY_SOURCES::Destroy(MEMORY_ARENA *Arena)
+void ENTITY_SOURCES::Destroy(MEMORY_ALLOCATOR *Allocator)
 {
-    Arena->FreeAll();
+    Allocator->Free(0, HEAP_TAG_ENTITY_SOURCE);
 }
 
 void ENTITY_SOURCES::Init(size_t Index)
@@ -39,7 +46,7 @@ ID_SOURCE ENTITY_SOURCES::AddByName(MEMORY_POOL *Pool, char *Name)
     Init(Count);
 
     //Assign name
-    Names[Count] = (char *) Pool->Alloc();
+    Names[Count] = (char *) Pool->Retrieve();
     memcpy(Names[Count], Name, MAX_STRING_LENGTH);
 	
     //Assign ID
@@ -80,7 +87,7 @@ bool ENTITY_SOURCES::Remove(MEMORY_POOL *Pool, ID_SOURCE ID)
         if(ID == IDs[i])
         {
             //Free and reset
-            Pool->Free(Names[i]);
+            Pool->Release(Names[i]);
             Init(Count);
 
             //Decrement total count

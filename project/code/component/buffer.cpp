@@ -1,14 +1,15 @@
 
-void CMP_BUFFER::CreateFromArena(MEMORY_ARENA *Arena, size_t Type, size_t InputCount)
-{
-    Count   = InputCount;
-    Data    = (f32 *) Arena->Alloc((Type * Count), MEMORY_ARENA_ALIGNMENT);
-}
 
 void CMP_BUFFER::CreateFromPool(MEMORY_POOL *Pool, size_t InputCount)
 {
     Count   = InputCount;
-    Data    = (f32 *) Pool->Alloc();
+    Data    = (f32 *) Pool->Retrieve();
+}
+
+void CMP_BUFFER::FreeFromPool(MEMORY_POOL *Pool)
+{
+    Pool->Release(Data);
+    Destroy();
 }
 
 void CMP_BUFFER::Destroy()

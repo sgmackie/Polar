@@ -1,13 +1,13 @@
 
-void SYS_OSCILLATOR_TRIANGLE::Create(MEMORY_ARENA *Arena, size_t Size)
+void SYS_OSCILLATOR_TRIANGLE::Create(MEMORY_ALLOCATOR *Allocator, size_t Size)
 {
-    SystemVoices = (ID_VOICE *) Arena->Alloc((sizeof(ID_VOICE) * Size), MEMORY_ARENA_ALIGNMENT);
+    SystemVoices = (ID_VOICE *) Allocator->Alloc((sizeof(ID_VOICE) * Size), HEAP_TAG_SYSTEM_OSC_TRIANGLE);
     SystemCount = 0;
 }
 
-void SYS_OSCILLATOR_TRIANGLE::Destroy(MEMORY_ARENA *Arena)
+void SYS_OSCILLATOR_TRIANGLE::Destroy(MEMORY_ALLOCATOR *Allocator)
 {
-    Arena->FreeAll();
+    Allocator->Free(0, HEAP_TAG_SYSTEM_OSC_TRIANGLE);
 }
 
 void SYS_OSCILLATOR_TRIANGLE::Add(ID_VOICE ID)
