@@ -165,11 +165,11 @@ void SYS_PLAY::Update(ENTITY_VOICES *Voices, f64 Time, u32 PreviousSamplesWritte
                     }
                 }
             }
-            else if(Duration.FrameDelay < 0)
-            {
-				State.Play = PLAYING;
-                Duration.FrameDelay = 0;
-            }
+            // else if(Duration.FrameDelay < 0)
+            // {
+				// State.Play = PLAYING;
+                // Duration.FrameDelay = 0;
+            // }
             else
             {
                 State.Play = PAUSED;

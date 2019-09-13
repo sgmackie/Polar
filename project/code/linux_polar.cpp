@@ -89,7 +89,7 @@ f32 linux_SecondsElapsed(timespec Start, timespec End)
 #define ERR_TO_RETURN(Result, Text, Type)				                    \
 	if(Result < 0)								                            \
 	{												                        \
-		printf(Text "\t[%s]\n", snd_strerror(Result));   	                \
+        Fatal("%s\t[%s]", Text, snd_strerror(Result));  	                \
 		return Type;								                        \
 	}
 

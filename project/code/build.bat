@@ -37,7 +37,7 @@ REM set CompilerOpt=-O3 -march=native
 set CompilerOpt=-O0
 
 :: Set CUDA flags
-set CUDAFlags=-DCUDA=1 -DPARTIALS_GPU=0 -DBUBBLES_GPU=1 -DTEST=0
+set CUDAFlags=-DCUDA=1 -DPARTIALS_GPU=0 -DBUBBLES_GPU=0
 
 :: Set logging flags
 set LogFlags=-DLOGGER_ERROR=1 -DLOGGER_PROFILE=0
@@ -50,6 +50,7 @@ set Libs=-lUser32.lib -lOle32.lib -lAvrt.lib -lWinmm.lib -ld3d9.lib -lGdi32.lib 
 
 :: Set path for CUDA function library
 set CUDAFunctions=-lcudart.lib -lcurand.lib -lpolar_cuda.lib
+REM set CUDAFunctions=
 
 :: Run Clang compiler
 clang %CompilerFlags% %CUDAPaths% %CommonWarnings% %CompilerOpt% %CUDAFlags% %LogFlags% %ProfileFlags% %Libs% %CUDAFunctions% %PlatformFiles% -o %Platform%.exe

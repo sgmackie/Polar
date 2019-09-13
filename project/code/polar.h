@@ -2,10 +2,8 @@
 #include "co/core.h"
 
 //CUDA
-#if CUDA
 #include "polar_cuda.h"
 #include "cuda/polar_cuda_error.h"
-#endif
 
 //External functions
 #include "../external/xxhash.c"     //Fast hasing function
@@ -31,13 +29,17 @@
 #define MAX_VOICES_PER_SOURCE   8
 #define MAX_STRING_LENGTH       128
 #define MAX_BUFFER_SIZE         2048
-#define MAX_BUBBLE_COUNT        512
+#define MAX_BUBBLE_COUNT        256
 #define MAX_PARTIALS            16
 #define MAX_BREAKPOINTS         64
 #define MAX_WAV_SIZE            ((48000 * 600) * 2)
 #define MAX_GRAINS              512 * 4
 #define MAX_GRAIN_LENGTH        4800
 #define MAX_GRAIN_PLAYLIST      6
+
+#define GPU_WARP_SIZE           32
+#define GPU_SM_COUNT            13
+#define GPU_THREADS             1024
 
 // Memory tags
 #define HEAP_TAG_DEBUG                  1
@@ -67,6 +69,11 @@
 #define HEAP_TAG_SYSTEM_GRAIN           25
 
 #define HEAP_TAG_UNDEFINED              64
+
+// Timer names
+#define TIMER_BUBBLE_MODEL 0
+#define TIMER_BUBBLE_EVENTS 1
+#define TIMER_BUBBLE_UPDATE 2
 
 
 typedef u64 ID_SOURCE;
@@ -1220,6 +1227,8 @@ typedef struct SYS_BUBBLE_CPU
                 size_t Index                    = Voices->RetrieveIndex(Voice);
                 TPL_BUBBLES &Bubbles            = Voices->Bubbles[Index];
 
+                TIMER_START(TIMER_BUBBLE_MODEL);
+
                 // Find radius ranges
                 f64 LogMinimum                  = log(Bubbles.RadiusMinimum / 1000);
                 f64 LogMaximum                  = log(Bubbles.RadiusMaximum / 1000);
@@ -1270,7 +1279,9 @@ typedef struct SYS_BUBBLE_CPU
 
                     // Calculate coeffiecients for the pulse generator
                     ComputeCoefficients(Bubbles.Generators[k].Model, SampleRate); 
-                }        
+                }      
+
+                TIMER_STOP();  
             }
         }
     }
@@ -1287,6 +1298,9 @@ typedef struct SYS_BUBBLE_CPU
                 //Source is valid - get component
                 size_t Index                    = Voices->RetrieveIndex(Voice);
                 TPL_BUBBLES &Bubbles            = Voices->Bubbles[Index];
+
+                TIMER_START(TIMER_BUBBLE_EVENTS);
+
                 f64 Average                     = Bubbles.LambdaSum;
                 if(Average == 0)
                 {
@@ -1298,6 +1312,8 @@ typedef struct SYS_BUBBLE_CPU
                     f64 Mean = Average * (Bubbles.BubblesPerSec * Bubbles.Lambda[i]);
                     Bubbles.Generators[i].Pulse.Density = Mean * Bubbles.ProbabilityExponent;
                 }
+
+                TIMER_STOP();
             }
         }
     }
@@ -1471,12 +1487,16 @@ typedef struct SYS_BUBBLE_CPU
                 size_t VoiceIndex       = Voices->RetrieveIndex(Voice);
                 TPL_BUBBLES &Bubbles    = Voices->Bubbles[VoiceIndex];
 
+                TIMER_START(TIMER_BUBBLE_UPDATE);
+
                 memset(Voices->Playbacks[VoiceIndex].Buffer.Data, 0.0f, (sizeof(f32) * BufferCount));
                 for(size_t i = 0; i < Bubbles.Count; ++i)
                 {        
                     RenderPulse(Bubbles.Generators[i].Pulse, SampleRate, RNG, Bubbles.Amplitude, PulseTemp, BufferCount);
 				    RenderToBuffer(Bubbles.Generators[i].Model, PulseTemp, Voices->Playbacks[VoiceIndex].Buffer, Bubbles.RiseCutoff, SampleRate, BufferCount);
                 }
+
+                TIMER_STOP();
             }
         }
     }
@@ -1543,9 +1563,9 @@ typedef struct SYS_BUBBLE_GPU
                 //Source is valid - get component
                 size_t Index                    = Voices->RetrieveIndex(Voice);
 
-                BEGIN_BLOCK("Cuda - Bubbles");
+                TIMER_START(TIMER_BUBBLE_MODEL);
                 cuda_BubblesComputeModel(GPU, &Voices->Bubbles[Index], SampleRate, SamplesToWrite);    
-                END_BLOCK();      
+                TIMER_STOP();
             }
         }
     }
@@ -1562,9 +1582,9 @@ typedef struct SYS_BUBBLE_GPU
                 //Source is valid - get component
                 size_t Index = Voices->RetrieveIndex(Voice);
 
-                BEGIN_BLOCK("Cuda - Events");
+                TIMER_START(TIMER_BUBBLE_EVENTS);
                 cuda_BubblesComputeEvents(GPU, &Voices->Bubbles[Index]);
-                END_BLOCK();                
+                TIMER_STOP();
             }
         }
     }
@@ -1638,13 +1658,9 @@ typedef struct SYS_BUBBLE_GPU
                 size_t VoiceIndex       = Voices->RetrieveIndex(Voice);
                 memset(Voices->Playbacks[VoiceIndex].Buffer.Data, 0.0f, (sizeof(f32) * BufferCount));
 
-                BEGIN_BLOCK("Cuda - Update");
-                for(size_t i = 0; i < BufferCount; ++i)
-                {
-                    PulseTemp[i] = RandomF32(RNG);
-                }                
-                cuda_BubblesUpdate(GPU, &Voices->Bubbles[VoiceIndex], SampleRate, RandomU32(RNG), PulseTemp, Voices->Playbacks[VoiceIndex].Buffer.Data, BufferCount);
-                END_BLOCK();              
+                TIMER_START(TIMER_BUBBLE_UPDATE);
+                cuda_BubblesUpdate(GPU, &Voices->Bubbles[VoiceIndex], SampleRate, RandomU32(RNG), Voices->Playbacks[VoiceIndex].Buffer.Data, BufferCount);
+                TIMER_STOP();     
            
             }
         }
@@ -2226,11 +2242,11 @@ typedef struct POLAR_ENGINE
         BytesPerSample      = 0;
         BufferFrames        = 0;
         LatencyFrames       = 0;
-        RNG                 = {};
-        Format              = {};
-        CallbackBuffer      = {};
-        VoiceSystem         = {};
-        Systems             = {};    
+        ClearStruct(RNG);
+        ClearStruct(Format);
+        ClearStruct(CallbackBuffer);
+        ClearStruct(VoiceSystem);
+        ClearStruct(Systems);  
 
         // PCG seed
         RandomSeed(&RNG, Seed);
@@ -2242,10 +2258,70 @@ typedef struct POLAR_ENGINE
 } POLAR_ENGINE;
 
 
+void TimerBuildReport(const char *Path)
+{
+    // Open file
+    FILE_WRITER Writer;
+    FileOpenToWrite(&Writer, Path);
+
+    size_t Function1SaveIndex = 0;
+    size_t Function2SaveIndex = 0;
+    size_t Function3SaveIndex = 0;
+    f64 Function1Save[4096];
+    f64 Function2Save[4096];
+    f64 Function3Save[4096];
+
+    for(u64 i = 0; i < GlobalTimerTable->Index; ++i)
+    {
+        if(GlobalTimerTable->Events[i].Type == Timer_Stop)
+        {
+            switch(GlobalTimerTable->Events[i].Name)
+            {
+                case TIMER_BUBBLE_EVENTS:
+                {
+                    Function1Save[Function1SaveIndex] = GlobalTimerTable->Events[i].Value;
+                    ++Function1SaveIndex;
+                }
+                case TIMER_BUBBLE_MODEL:
+                {
+                    Function2Save[Function2SaveIndex] = GlobalTimerTable->Events[i].Value;
+                    ++Function2SaveIndex;
+                }            
+                case TIMER_BUBBLE_UPDATE:
+                {
+                    Function3Save[Function3SaveIndex] = GlobalTimerTable->Events[i].Value;
+                    ++Function3SaveIndex;
+                }               
+            }
+        }
+    }
+
+    // Bubble Events
+    f64 EventMin = FindMin64(Function1Save, Function1SaveIndex);
+    f64 EventMax = FindMax64(Function1Save, Function1SaveIndex);
+    f64 EventAvg = FindAvg64(Function1Save, Function1SaveIndex);
+
+    // Bubble Model
+    f64 ModelMin = FindMin64(Function2Save, Function2SaveIndex);
+    f64 ModelMax = FindMax64(Function2Save, Function2SaveIndex);
+    f64 ModelAvg = FindAvg64(Function2Save, Function2SaveIndex);
+
+    // Bubble Update
+    f64 UpdateMin = FindMin64(Function3Save, Function3SaveIndex);
+    f64 UpdateMax = FindMax64(Function3Save, Function3SaveIndex);
+    f64 UpdateAvg = FindAvg64(Function3Save, Function3SaveIndex);
+
+    Fatal("Events: Avg %f\tMin %f\tMax %f\t", EventAvg, EventMin, EventMax);
+    Fatal("Model: Avg %f\tMin %f\tMax %f\t", ModelAvg, ModelMin, ModelMax);
+    Fatal("Update: Avg %f\tMin %f\tMax %f\t", UpdateAvg, UpdateMin, UpdateMax);
+
+    // Close
+    FileCloseFromWrite(&Writer); 
+}
+
 
 //Utility code
 #include "polar_dsp.cpp"
-#include "polar_source.cpp"
 
 #if _WIN32
 #include "polar_OSC.cpp"

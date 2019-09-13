@@ -10,6 +10,9 @@
 #define DEFAULT_AMPLITUDE 0.8
 #define DEFAULT_LATENCY_FRAMES 4
 
+#define BENCH_TIME      1800
+#define BENCH_OFFSET    30
+
 //Latency frames determines update rate - 4 @ 120HZ = 30FPS
 
 //IMGUI implementation - DirectX9
@@ -36,12 +39,12 @@ static u32                      GlobalEventCount = 0;
 
 static bool                     GlobalEditEvent = false;
 static ID_VOICE                 GlobalBubbleVoice = 0;
-static i32                      GlobalBubbleCount = 4;
-static f32                      GlobalBubblesPerSec = 100;
+static i32                      GlobalBubbleCount = 32;
+static f32                      GlobalBubblesPerSec = 1;
 static f32                      GlobalRadius = 10;
 static f32                      GlobalAmplitude = 0.9;
-static f32                      GlobalProbability = 1.0;
-static f32                      GlobalRiseCutoff = 0.5;
+static f32                      GlobalProbability = 0.5;
+static f32                      GlobalRiseCutoff = 0.75;
 
 //D3D9 contexts for GUI rendering
 static LPDIRECT3D9              D3D9 = NULL;
@@ -231,9 +234,7 @@ static const TCHAR *wasapi_HRString(HRESULT Result)
 #define HR_TO_RETURN(Result, Text, Type)				                    \
 	if(FAILED(Result))								                        \
 	{												                        \
-		char HRBuffer[256];													\
-		OutputDebugString(HRBuffer);										\
-		sprintf_s(HRBuffer, Text "\t[%s]\n", wasapi_HRString(Result));   	\
+        Fatal("%s\t[%s]", Text, wasapi_HRString(Result));                   \
 		return Type;								                        \
 	}
 
@@ -317,6 +318,14 @@ typedef struct WASAPI
             Warning("WASAPI: Sample rate does not equal the requested rate, resampling\t Result: %lu\t Requested: %lu", MixFormat->Format.nSamplesPerSec, DeviceFormat->Format.nSamplesPerSec);
             Flags = AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
         }
+
+		//Channel check
+		if(MixFormat->Format.nChannels != DeviceFormat->Format.nChannels)
+		{
+			DeviceFormat->Format.nChannels		= MixFormat->Format.nChannels;
+			DeviceFormat->dwChannelMask			= MixFormat->dwChannelMask;
+			DeviceFormat->Format.nBlockAlign	= (WORD) (DeviceFormat->Format.nChannels * DeviceFormat->Format.wBitsPerSample / 8);
+		}
 
         //Free reference format
         CoTaskMemFree(MixFormat);
@@ -411,7 +420,6 @@ int main()
     }
 #endif
 
-
     // Create allocators
     // Platform allocator for getting the fixed blocks
     MEMORY_ALLOCATOR Win32Allocator = {};
@@ -440,6 +448,14 @@ int main()
     GlobalDebugState = (debug_state *) DebugArena.Alloc(sizeof(debug_state));
 	DEBUGSetEventRecording(true);
     DEBUGInit(GlobalDebugState);
+
+    // Timer
+    GlobalTimer         = 0;
+    GlobalTimerTable    = 0;
+    GlobalTimer         = (TIMER_WIN32 *) DebugArena.Alloc(sizeof(TIMER_WIN32));
+    GlobalTimerTable    = (TIMER_EVENT_TABLE *) DebugArena.Alloc(sizeof(TIMER_EVENT_TABLE));
+    TimerStartRecording(true);
+
 #endif
 
     //Create memory pools for voice memory
@@ -598,8 +614,19 @@ int main()
         GlobalTime = 0;
         GlobalRunning = true;
         Info("Polar: Playback\n");
-        while(GlobalRunning)
+        while(GlobalRunning)  
         {
+#if CORE_PROFILE            
+            if(GlobalDebugState->TotalFrameCount == BENCH_OFFSET)
+            {
+                GlobalFireEvent = true;
+            }
+            if(GlobalDebugState->TotalFrameCount == BENCH_TIME + BENCH_OFFSET)
+            {
+                GlobalRunning = false;
+            }
+#endif
+
             //Process incoming mouse/keyboard messages, check for QUIT command
             win32_ProcessMessages();
             if(!GlobalRunning) break;
@@ -640,7 +667,7 @@ int main()
             //!Uses std::vector for message allocation: replace with pool allocations
             polar_OSC_UpdateMessages(&SoundSources, &SoundVoices, &GlobalListener, GlobalTime, OSCSocket, 10);
 
-            if(GlobalFireEvent == true)
+            if(GlobalFireEvent == true)        
             {
                 GlobalFireEvent = false;
                 GlobalEditEvent = true;          
@@ -693,7 +720,7 @@ int main()
 
                 //Sample counts
                 Engine.Systems.Play.Update(&SoundVoices, GlobalTime, GlobalSamplesWritten, SamplesToWrite);
-                
+
                 //Source types
                 //Oscillators
                 Engine.Systems.Oscillator.Sine.Update(&SoundVoices, SamplesToWrite);
@@ -725,7 +752,6 @@ int main()
 
                 //World positions
                 Engine.Systems.Position.Update(&SoundVoices, &GlobalListener, Engine.NoiseFloor);
-
 
                 Engine.Systems.Crossfade.Update(&SoundVoices, SamplesToWrite);
                 Engine.Systems.Fade.Update(&SoundVoices, GlobalTime);
@@ -835,9 +861,9 @@ int main()
             ImGui::End();
             ImGui::Begin("Bubbles");
             ImGui::SliderInt("Count", &GlobalBubbleCount, 1, MAX_BUBBLE_COUNT);
-            ImGui::SliderFloat("BPS", &GlobalBubblesPerSec, 1, 10000);
-            ImGui::SliderFloat("Maximum Radius", &GlobalRadius, 0.0001, 20);
-            ImGui::SliderFloat("Probability", &GlobalProbability, 0.5, 5.0);
+            ImGui::SliderFloat("BPS", &GlobalBubblesPerSec, 1, 1000, "%.2f");
+            ImGui::SliderFloat("Maximum Radius", &GlobalRadius, 1.0, 20);
+            ImGui::SliderFloat("Repeat Probability", &GlobalProbability, 0.5, 5.0);
             ImGui::SliderFloat("Rise Threshold", &GlobalRiseCutoff, 0.1, 0.9);
             ImGui::SliderFloat("Amplitude", &GlobalAmplitude, 0.0000001, 1.0);
             ImGui::End();
@@ -949,6 +975,10 @@ int main()
         UnregisterClass(WindowClass.lpszClassName, WindowClass.hInstance);
         Fatal("win32: Failed to create window!");
     }
+
+#if CORE_PROFILE
+    TimerBuildReport("timer_log.txt");
+#endif
 
     //Free pools
     Pools.Names.Destroy();

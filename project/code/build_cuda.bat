@@ -21,7 +21,7 @@ set CUDAFiles="%~dp0\cuda\%Kernel%.cu"
 set CUDAPaths=--include-path "..\..\external\CUDA_Common"
 
 :: Set compiler flags:
-set CompilerFlags=--lib --debug --generate-line-info -DCORE_PROFILE=1
+set CompilerFlags=--lib --debug --generate-line-info -DCUDA=1 -DCORE_PROFILE=1
 
 :: Set Compiler optimsation level
 set CompilerOpt=-O0

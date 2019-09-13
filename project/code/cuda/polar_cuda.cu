@@ -198,106 +198,73 @@ void PhasorProcess(f32 *Buffer, size_t Frames, f32 *Phases, f32 Frequency, f32 A
     return;
 }
 
-__device__ void cuda_ComputeCoefficients(CMP_BUBBLES_MODEL &Model, f64 SampleRate) 
-{
-    f64 R               = exp(-Model.Damping / SampleRate);
-    Model.R2            = R * R;
-    Model.R2CosTheta    = (2 * cos(TWO_PI32 * Model.Frequency / SampleRate) * R);
-    Model.C             = sin((TWO_PI32 * Model.Frequency / SampleRate) * R);
-    Model.R             = Model.C * Model.Amplitude;
-}    
 
+// #if __CUDA_ARCH__ < 600
+// __device__ double atomicAddF64(double* address, double val)
+// {
+//     unsigned long long int* address_as_ull =
+//                               (unsigned long long int*)address;
+//     unsigned long long int old = *address_as_ull, assumed;
 
+//     do {
+//         assumed = old;
+//         old = atomicCAS(address_as_ull, assumed,
+//                         __double_as_longlong(val +
+//                                __longlong_as_double(assumed)));
 
-#define WARP_SIZE 32
-#define SM_COUNT 13
+//     // Note: uses integer comparison to avoid hang in case of NaN (since NaN != NaN)
+//     } while (assumed != old);
 
+//     return __longlong_as_double(old);
+// }
+// #endif
 
-__global__ void cuda_kernel_Radii(f64 *Lambda, f64 *Radii, f64 LogMinimum, f64 LogSize, f64 RadiusMinimum, f64 LambdaExponent, int Count)
-{
-    __syncthreads();
-    int GlobalIndex = blockIdx.x * blockDim.x + threadIdx.x;
-
-    while(GlobalIndex < Count)
-    {
-        // Calculate radius from minimum size
-        Radii[GlobalIndex] = exp(LogMinimum + GlobalIndex * LogSize);
-
-        // Calculate lambda values and sum together
-        Lambda[GlobalIndex] = 1.0 / pow((1000 * Radii[GlobalIndex] / RadiusMinimum), LambdaExponent); 
-
-        // Jump index ahead 1024 * SMs count
-        GlobalIndex += blockDim.x * gridDim.x;
-        __syncthreads();
-    }    
-}
-
-#if __CUDA_ARCH__ < 600
-__device__ double atomicAddF64(double* address, double val)
-{
-    unsigned long long int* address_as_ull =
-                              (unsigned long long int*)address;
-    unsigned long long int old = *address_as_ull, assumed;
-
-    do {
-        assumed = old;
-        old = atomicCAS(address_as_ull, assumed,
-                        __double_as_longlong(val +
-                               __longlong_as_double(assumed)));
-
-    // Note: uses integer comparison to avoid hang in case of NaN (since NaN != NaN)
-    } while (assumed != old);
-
-    return __longlong_as_double(old);
-}
-#endif
-
-__global__ void cuda_kernel_LambdaAdd(f64 *Lambda, f64 Curve, f64 *LambdaSum, int Count)
-{
-    //Holds intermediates in shared memory reduction
-    __syncthreads();
-    __shared__ f64 SharedBuffer[WARP_SIZE];
-    int GlobalIndex = blockIdx.x * blockDim.x + threadIdx.x;
-    int ThreadLane = threadIdx.x % WARP_SIZE;
-    f64 Temporary;
-    while(GlobalIndex < Count)
-    {   
-        Lambda[GlobalIndex] /= Curve;
+// __global__ void cuda_kernel_LambdaAdd(f64 *Lambda, f64 Curve, f64 *LambdaSum, int Count)
+// {
+//     //Holds intermediates in shared memory reduction
+//     __syncthreads();
+//     __shared__ f64 SharedBuffer[WARP_SIZE];
+//     int GlobalIndex = blockIdx.x * blockDim.x + threadIdx.x;
+//     int ThreadLane = threadIdx.x % WARP_SIZE;
+//     f64 Temporary;
+//     while(GlobalIndex < Count)
+//     {   
+//         Lambda[GlobalIndex] /= Curve;
         
 
-    	// All threads in a block of 1024 take an element
-        Temporary = Lambda[GlobalIndex];
-        // All warps in this block (32) compute the sum of all
-        // threads in their warp
-        for(int delta = WARP_SIZE/2; delta > 0; delta /= 2)
-        {
-            Temporary+= __shfl_xor_sync(0xffffffff, Temporary, delta);
-        }
-        // Write all 32 of these partial sums to shared memory
-        if(ThreadLane == 0)
-        {
-            SharedBuffer[threadIdx.x / WARP_SIZE] = Temporary;
-        }
-        __syncthreads();
-        // Add the remaining 32 partial sums using a single warp
-        if(threadIdx.x < WARP_SIZE) 
-        {
-            Temporary = SharedBuffer[threadIdx.x];
-            for(int delta = WARP_SIZE / 2; delta > 0; delta /= 2)
-            {  
-                Temporary += __shfl_xor_sync(0xffffffff, Temporary, delta);
-            }
-        }
-        // Add this block's sum to the total sum
-        if(threadIdx.x == 0)
-        {
-            atomicAddF64(LambdaSum, Temporary);
-        }
-        // Jump ahead 1024 * #SMs to the next region of numbers to sum
-        GlobalIndex += blockDim.x * gridDim.x;
-        __syncthreads();
-    } 
-}
+//     	// All threads in a block of 1024 take an element
+//         Temporary = Lambda[GlobalIndex];
+//         // All warps in this block (32) compute the sum of all
+//         // threads in their warp
+//         for(int delta = WARP_SIZE/2; delta > 0; delta /= 2)
+//         {
+//             Temporary+= __shfl_xor_sync(0xffffffff, Temporary, delta);
+//         }
+//         // Write all 32 of these partial sums to shared memory
+//         if(ThreadLane == 0)
+//         {
+//             SharedBuffer[threadIdx.x / WARP_SIZE] = Temporary;
+//         }
+//         __syncthreads();
+//         // Add the remaining 32 partial sums using a single warp
+//         if(threadIdx.x < WARP_SIZE) 
+//         {
+//             Temporary = SharedBuffer[threadIdx.x];
+//             for(int delta = WARP_SIZE / 2; delta > 0; delta /= 2)
+//             {  
+//                 Temporary += __shfl_xor_sync(0xffffffff, Temporary, delta);
+//             }
+//         }
+//         // Add this block's sum to the total sum
+//         if(threadIdx.x == 0)
+//         {
+//             atomicAddF64(LambdaSum, Temporary);
+//         }
+//         // Jump ahead 1024 * #SMs to the next region of numbers to sum
+//         GlobalIndex += blockDim.x * gridDim.x;
+//         __syncthreads();
+//     } 
+// }
 
 
 __device__ void cuda_device_Coefficients(CMP_BUBBLES_MODEL *Model, f64 SampleRate)
@@ -381,7 +348,7 @@ void cuda_BubblesComputeModel(CUDA_BUBBLES *GPU, TPL_BUBBLES *Bubbles, f64 Sampl
     cudaMemcpy(GPU->DeviceRadii, Bubbles->Radii, (sizeof(f64) * Count), cudaMemcpyHostToDevice);
 
     // Launch kernel
-    cuda_kernel_ComputeModel<<<32 * SM_COUNT, 1024>>>(GPU->DeviceGenerators, GPU->DeviceRadii, Bubbles->RadiusMaximum, Bubbles->AmplitudeExponent, SampleRate, SamplesToWrite, Count);
+    cuda_kernel_ComputeModel<<<GPU_WARP_SIZE * GPU_SM_COUNT, 1024>>>(GPU->DeviceGenerators, GPU->DeviceRadii, Bubbles->RadiusMaximum, Bubbles->AmplitudeExponent, SampleRate, SamplesToWrite, Count);
     // cuda_kernel_ComputeModel<<<1, 1>>>(DeviceGenerators, DeviceRadii, Bubbles->RadiusMaximum, Bubbles->AmplitudeExponent, SampleRate, SamplesToWrite, Count);
 
     // Copy back to host mmemory
@@ -425,7 +392,7 @@ void cuda_BubblesComputeEvents(CUDA_BUBBLES *GPU, TPL_BUBBLES *Bubbles)
     cudaMemcpy(GPU->DeviceLambda, Bubbles->Lambda, (sizeof(f64) * Count), cudaMemcpyHostToDevice);
 
     // Launch kernel
-    cuda_kernel_ComputeEvents<<<32 * SM_COUNT, 1024>>>(GPU->DeviceGenerators, GPU->DeviceLambda, BubblesPerSec, ProbabilityExponent, Average, Count);
+    cuda_kernel_ComputeEvents<<<GPU_WARP_SIZE * GPU_SM_COUNT, 1024>>>(GPU->DeviceGenerators, GPU->DeviceLambda, BubblesPerSec, ProbabilityExponent, Average, Count);
     // cuda_kernel_ComputeEvents<<<1, 1>>>(DeviceGenerators, DeviceLambda, BubblesPerSec, ProbabilityExponent, Average, Count);
 
     // Copy back to host mmemory
@@ -433,34 +400,6 @@ void cuda_BubblesComputeEvents(CUDA_BUBBLES *GPU, TPL_BUBBLES *Bubbles)
     cudaMemcpy(Bubbles->Lambda, GPU->DeviceLambda, (sizeof(f64) * Count), cudaMemcpyDeviceToHost);
 }
 
-__global__ void initialise_curand_on_kernels(curandState * state, unsigned long seed)
-{
-    int idx = blockIdx.x*blockDim.x+threadIdx.x;
-    curand_init(seed, idx, 0, &state[idx]);
-}
-
-__device__ float generate(curandState* globalState, int ind)
-{
-    //copy state to local mem
-    curandState localState = globalState[ind];
-    //apply uniform distribution with calculated random
-    float rndval = curand_uniform( &localState );
-    //update state
-    globalState[ind] = localState;
-    //return value
-    return rndval;
-}
- 
-__global__ void set_random_number_from_kernels(float* _ptr, curandState* globalState, const unsigned int _points)
-{
-    int idx = blockIdx.x*blockDim.x+threadIdx.x;
-    //only call gen on the kernels we have inited
-    //(one per device container element)
-    if (idx < _points)
-    {
-        _ptr[idx] = generate(globalState, idx);
-    }
-}
 
 __device__ f32 cuda_device_PulseSample(CMP_BUBBLES_PULSE *Pulse, f32 RNG)
 {
@@ -484,16 +423,7 @@ __device__ f32 cuda_device_PulseSample(CMP_BUBBLES_PULSE *Pulse, f32 RNG)
 }
 
 
-__device__ void device_ComputeCoefficients(CMP_BUBBLES_MODEL *Model, f64 SampleRate) 
-{
-    f64 R               = exp(-Model->Damping / SampleRate);
-    Model->R2            = R * R;
-    Model->R2CosTheta    = (2 * cos(TWO_PI32 * Model->Frequency / SampleRate) * R);
-    Model->C             = sin((TWO_PI32 * Model->Frequency / SampleRate) * R);
-    Model->R             = Model->C * Model->Amplitude;
-}    
-
-__global__ void cuda_kernel_Pulse(CMP_BUBBLES_GENERATOR *Generators, f32 *RNG, f32 *MixBuffer, f32 MasterAmplitude, f32 SampleRate, f32 RiseCutoff, size_t i, int BufferCount)
+__global__ void cuda_kernel_Pulse(CMP_BUBBLES_GENERATOR *Generators, curandState *DeviceRNGStates, f32 *MixBuffer, u32 Seed, f32 MasterAmplitude, f32 SampleRate, f32 RiseCutoff, size_t i, int BufferCount)
 {
     // Grid-stride loop
     int Start           = blockIdx.x * blockDim.x + threadIdx.x;
@@ -502,12 +432,18 @@ __global__ void cuda_kernel_Pulse(CMP_BUBBLES_GENERATOR *Generators, f32 *RNG, f
     // Locals
     __shared__ f32 PulseBuffer[MAX_BUFFER_SIZE];
     f32 Sample = 0.0f;
+    f32 Random = 0.0f;
     f32 Impulse = 0;
     f32 Threshold = 0.00000001;
 
+    // RNG initialise
+    curandState *State = DeviceRNGStates + Start;
+    curand_init(Seed, Start, 0, State);
+
     for(int k = Start; k < BufferCount; k += ThreadsPerGrid) 
     {
-        Sample = cuda_device_PulseSample(&Generators[i].Pulse, RNG[k]);
+        Random = curand_uniform(State);
+        Sample = cuda_device_PulseSample(&Generators[i].Pulse, Random);
         Sample *= MasterAmplitude;
         PulseBuffer[k] = Sample;
         
@@ -517,7 +453,7 @@ __global__ void cuda_kernel_Pulse(CMP_BUBBLES_GENERATOR *Generators, f32 *RNG, f
             Generators[i].Model.IsSilent = false;
             Generators[i].Model.RiseCounter = 0;
             Generators[i].Model.Frequency = Generators[i].Model.FrequencyBase;
-            device_ComputeCoefficients(&Generators[i].Model, SampleRate);
+            cuda_device_Coefficients(&Generators[i].Model, SampleRate);
 
             if(Impulse > RiseCutoff) 
             {
@@ -552,7 +488,7 @@ __global__ void cuda_kernel_Silence(CMP_BUBBLES_GENERATOR *Generators, f32 Sampl
             Generators[i].Model.Frequency = 
             (f64) (Generators[i].Model.FrequencyBase * (1.0 + (++Generators[i].Model.RiseCounter) / 
             Generators[i].Model.RiseFactor));
-            device_ComputeCoefficients(&Generators[i].Model, SampleRate);
+            cuda_device_Coefficients(&Generators[i].Model, SampleRate);
         }
 
         // Final check if silent using the last filter chache values
@@ -566,7 +502,8 @@ __global__ void cuda_kernel_Silence(CMP_BUBBLES_GENERATOR *Generators, f32 Sampl
     }
 }    
 
-__global__ void cuda_kernel_Model(CMP_BUBBLES_GENERATOR *Generators, f32 *RNG, f32 *MixBuffer, f32 MasterAmplitude, f32 SampleRate, f32 RiseCutoff, size_t i, int BufferCount)
+
+__global__ void cuda_kernel_Model(CMP_BUBBLES_GENERATOR *Generators, f32 *MixBuffer, size_t i, int BufferCount)
 {
     // Grid-stride loop
     int Start           = blockIdx.x * blockDim.x + threadIdx.x;
@@ -587,7 +524,9 @@ __global__ void cuda_kernel_Model(CMP_BUBBLES_GENERATOR *Generators, f32 *RNG, f
         Sample      = (Generators[i].Model.R2CosTheta * TempY1 - Generators[i].Model.R2 * TempY2 + Generators[i].Model.R * Pulse);
         TempY2          = TempY1;
         TempY1          = Sample;
+        
         MixBuffer[k]    += Sample;
+        // reduceOutputs(MixBuffer, i, k, BufferCount, Sample);
 
         // __syncthreads();
         // atomicAdd(&MixBuffer[k], PulseBuffer[k]);
@@ -597,56 +536,25 @@ __global__ void cuda_kernel_Model(CMP_BUBBLES_GENERATOR *Generators, f32 *RNG, f
     Generators[i].Model.Y2 = TempY2;    
 }
 
-
-
-void cuda_BubblesUpdate(CUDA_BUBBLES *GPU, TPL_BUBBLES *Bubbles, f32 SampleRate, u32 Seed, f32 *RNG, f32 *Output, size_t BufferCount)
-{
-
-    //naively setting the threads per block and block per grid sizes, where 100 is the amount of rngs
-    int threadsPerBlock = 1024;
-    // int RNGCount = BufferCount * Bubbles->Count;
-    int RNGCount = BufferCount;
-    int nBlocks = RNGCount/threadsPerBlock + 1;
-
-    //alocate space for each kernels curandState
-    curandState* deviceStates;
-    cudaMalloc(&deviceStates, RNGCount*sizeof(curandState));
-    
-    //call curand_init on each kernel with the same random seed
-    //and init the rng states
-    initialise_curand_on_kernels<<<nBlocks, threadsPerBlock>>>(deviceStates, Seed);
-    
-    //allocate space for the device container of rns
-    float* d_random_floats;
-    cudaMalloc((void**) &d_random_floats, sizeof(float)* RNGCount);
-    cudaMemcpy(d_random_floats, RNG, sizeof(float)* RNGCount, cudaMemcpyHostToDevice);
-
-    //calculate per element of the container a rn
-    // set_random_number_from_kernels<<<nBlocks, threadsPerBlock>>>(d_random_floats, deviceStates, RNGCount);
-    
+void cuda_BubblesUpdate(CUDA_BUBBLES *GPU, TPL_BUBBLES *Bubbles, f32 SampleRate, u32 Seed, f32 *Output, size_t BufferCount)
+{    
     // Copy host to device memory
     cudaMemcpy(GPU->DeviceGenerators, Bubbles->Generators, (sizeof(CMP_BUBBLES_GENERATOR) * Bubbles->Count), cudaMemcpyHostToDevice);
     cudaMemcpy(GPU->DeviceMixBuffer, Output, (sizeof(f32) * BufferCount), cudaMemcpyHostToDevice);
+    
     // Launch kernels
     for(size_t i = 0; i < Bubbles->Count; ++i)
     {
-        cuda_kernel_Pulse<<<1, 1>>>(GPU->DeviceGenerators, d_random_floats, GPU->DeviceMixBuffer, Bubbles->Amplitude, SampleRate, Bubbles->RiseCutoff, i, BufferCount);
-        cuda_kernel_Model<<<1, 1>>>(GPU->DeviceGenerators, d_random_floats, GPU->DeviceMixBuffer, Bubbles->Amplitude, SampleRate, Bubbles->RiseCutoff, i, BufferCount);
-
-        // cuda_kernel_Pulse<<<1, 1>>>(GPU->DeviceGenerators, d_random_floats, GPU->DeviceMixBuffer, Bubbles->Amplitude, SampleRate, Bubbles->RiseCutoff, i, BufferCount);
-        // cuda_kernel_Model<<<1, 1>>>(GPU->DeviceGenerators, d_random_floats, GPU->DeviceMixBuffer, Bubbles->Amplitude, SampleRate, Bubbles->RiseCutoff, i, BufferCount);        
+        cuda_kernel_Pulse<<<1, 1>>>(GPU->DeviceGenerators, GPU->DeviceRNGStates, GPU->DeviceMixBuffer, Seed, Bubbles->Amplitude, SampleRate, Bubbles->RiseCutoff, i, BufferCount);
+        cuda_kernel_Model<<<1, 1>>>(GPU->DeviceGenerators, GPU->DeviceMixBuffer, i, BufferCount);     
     }
 
     // Silence check delayed
-    cuda_kernel_Silence<<<32 * SM_COUNT, 1024>>>(GPU->DeviceGenerators, SampleRate, Bubbles->Count);
+    cuda_kernel_Silence<<<32 * GPU_SM_COUNT, 1024>>>(GPU->DeviceGenerators, SampleRate, Bubbles->Count);
 
     // Copy back to host mmemory
     cudaMemcpy(Output, GPU->DeviceMixBuffer, (sizeof(f32) * BufferCount), cudaMemcpyDeviceToHost);
     cudaMemcpy(Bubbles->Generators, GPU->DeviceGenerators, (sizeof(CMP_BUBBLES_GENERATOR) * Bubbles->Count), cudaMemcpyDeviceToHost);
-
-    //cleanup
-    cudaFree(d_random_floats);
-    cudaFree(deviceStates);
 }
 
 void cuda_BubblesCreate(CUDA_BUBBLES *GPU)
@@ -655,6 +563,7 @@ void cuda_BubblesCreate(CUDA_BUBBLES *GPU)
     cudaMalloc((void **) &GPU->DeviceLambda, (sizeof(f64) * MAX_BUBBLE_COUNT));
     cudaMalloc((void **) &GPU->DeviceRadii, (sizeof(f64) * MAX_BUBBLE_COUNT));
     cudaMalloc((void **) &GPU->DeviceMixBuffer, (sizeof(f32) * MAX_BUFFER_SIZE));
+    cudaMalloc((void **) &GPU->DeviceRNGStates, (sizeof(curandState) * GPU_WARP_SIZE * GPU_SM_COUNT * GPU_THREADS));
 }
 
 void cuda_BubblesDestroy(CUDA_BUBBLES *GPU)
@@ -663,6 +572,7 @@ void cuda_BubblesDestroy(CUDA_BUBBLES *GPU)
     cudaFree(GPU->DeviceLambda);
     cudaFree(GPU->DeviceRadii);
     cudaFree(GPU->DeviceMixBuffer);
+    cudaFree(GPU->DeviceRNGStates);
 }
 
 
