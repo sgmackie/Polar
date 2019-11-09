@@ -27,14 +27,14 @@ if not exist %ObjDir% mkdir %ObjDir%
 set CUDAPaths=-I"%CUDA_PATH%\include" -L="%CUDA_PATH%\lib\x64"
 
 :: Set compiler flags:
-set CompilerFlags=-g -gcodeview -pedantic
+set CompilerFlags=-g -gcodeview -pedantic -Wpadded
 
 :: Set warning labels:
 set CommonWarnings=-Wall -Werror -Wno-language-extension-token -Wno-deprecated-declarations -Wno-unused-variable -Wno-unused-function -Wno-writable-strings -Wno-gnu-anonymous-struct
 
 :: Set Compiler optimsation level
-REM set CompilerOpt=-O3 -march=native
-set CompilerOpt=-O0
+set CompilerOpt=-O3 -march=native
+REM set CompilerOpt=-O0
 
 :: Set CUDA flags
 set CUDAFlags=-DCUDA=1 -DPARTIALS_GPU=0 -DBUBBLES_GPU=0

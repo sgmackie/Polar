@@ -1230,13 +1230,19 @@ typedef struct SYS_BUBBLE_CPU
                 TIMER_START(TIMER_BUBBLE_MODEL);
 
                 // Find radius ranges
-                f64 LogMinimum                  = log(Bubbles.RadiusMinimum / 1000);
+                f64 RadiusMinimum               = (3000 / (SampleRate / 2));
+                f64 LogMinimum                  = log(RadiusMinimum / 1000);
                 f64 LogMaximum                  = log(Bubbles.RadiusMaximum / 1000);
                 f64 LogSize                     = (LogMaximum - LogMinimum) / (Bubbles.Count - 1);
 
                 // Reset sum
                 Bubbles.LambdaSum = 0;
                 f64 Curve = 0;
+
+                // Locals 
+                f64 AmplitudeExponent = 1.5;
+                f64 LambdaExponent = 1.0;
+                f64 RiseAmplitude = 0.1;
 
                 // Calculate radii and lambda values
                 for(size_t i = 0; i < Bubbles.Count; ++i)
@@ -1245,7 +1251,7 @@ typedef struct SYS_BUBBLE_CPU
                     Bubbles.Radii[i] = exp(LogMinimum + i * LogSize);
                     
                     // Calculate lambda values and sum together
-                    Bubbles.Lambda[i] = 1.0 / pow((1000 * Bubbles.Radii[i] / Bubbles.RadiusMinimum), Bubbles.LambdaExponent);
+                    Bubbles.Lambda[i] = 1.0 / pow((1000 * Bubbles.Radii[i] / RadiusMinimum), LambdaExponent);
 
                     // Save max value
                     if(Bubbles.Lambda[i] > Curve) 
@@ -1267,7 +1273,7 @@ typedef struct SYS_BUBBLE_CPU
                 {
                     // Calculate frequency, amplitude and damping according to bubble radius
                     f64 Frequency                               = (f64) 3 / Bubbles.Radii[k];
-                    f64 Amplitude                               = (f64) (pow(Bubbles.Radii[k] / (Bubbles.RadiusMaximum / 1000), Bubbles.AmplitudeExponent));
+                    f64 Amplitude                               = (f64) (pow(Bubbles.Radii[k] / (Bubbles.RadiusMaximum / 1000), AmplitudeExponent));
                     f64 Damping                                 = (f64) (Frequency * (0.043 + sqrt(Frequency) / 721));
 
                     // Assign and find rising frequency factor
@@ -1275,7 +1281,7 @@ typedef struct SYS_BUBBLE_CPU
                     Bubbles.Generators[k].Model.FrequencyBase   = Frequency;
                     Bubbles.Generators[k].Model.Amplitude       = Amplitude;
                     Bubbles.Generators[k].Model.Damping         = Damping;
-                    Bubbles.Generators[k].Model.RiseFactor      = ((SampleRate / SamplesToWrite) / (Bubbles.Generators[k].Model.RiseAmplitude * Damping));
+                    Bubbles.Generators[k].Model.RiseFactor      = ((SampleRate / SamplesToWrite) / (RiseAmplitude * Damping));
 
                     // Calculate coeffiecients for the pulse generator
                     ComputeCoefficients(Bubbles.Generators[k].Model, SampleRate); 
@@ -1307,10 +1313,13 @@ typedef struct SYS_BUBBLE_CPU
                     Average = 1;
                 }
 
+                // Locals
+                f64 ProbabilityExponent = 0.75;
+
                 for(size_t i = 0; i < Bubbles.Count; ++i)
                 {
                     f64 Mean = Average * (Bubbles.BubblesPerSec * Bubbles.Lambda[i]);
-                    Bubbles.Generators[i].Pulse.Density = Mean * Bubbles.ProbabilityExponent;
+                    Bubbles.Generators[i].Pulse.Density = Mean * ProbabilityExponent;
                 }
 
                 TIMER_STOP();
@@ -1319,8 +1328,7 @@ typedef struct SYS_BUBBLE_CPU
     }
 
     void Edit(ENTITY_VOICES *Voices, ID_VOICE ID, f64 SampleRate, size_t SamplesToWrite, RANDOM_PCG *RNG, 
-    u32 BubbleCount, f64 InputBubblesPerSec, f64 InputRadius, f64 InputAmplitude, 
-    f64 InputProbability, f64 InputRiseCutoff)
+    u32 BubbleCount, f64 InputBubblesPerSec, f64 InputRadius, f64 InputRiseCutoff)
     {
         //Loop through every source that was added to the system
         for(size_t SystemIndex = 0; SystemIndex <= SystemCount; ++SystemIndex)
@@ -1348,17 +1356,7 @@ typedef struct SYS_BUBBLE_CPU
                 {
                     Bubbles.RadiusMaximum = InputRadius;
                     NeedsCompute = true;
-                }
-                if(Bubbles.Amplitude != InputAmplitude)
-                {
-                    Bubbles.Amplitude = InputAmplitude;
-                    NeedsCompute = true;
-                }
-                if(Bubbles.ProbabilityExponent != InputProbability)
-                {
-                    Bubbles.ProbabilityExponent = InputProbability;
-                    NeedsCompute = true;
-                }       
+                }    
                 if(Bubbles.RiseCutoff != InputRiseCutoff)
                 {
                     Bubbles.RiseCutoff = InputRiseCutoff;
@@ -1393,7 +1391,8 @@ typedef struct SYS_BUBBLE_CPU
         RandomValue         = (f32) Pulse.RandomSeed * Normalisation;
 
         // Multiply result
-        Result = Pulse.Amplitude * (RandomValue < Pulse.Threshold ? RandomValue * Pulse.Scale - 1.0 : 0.0);
+        f32 Amplitude = 0.9f;
+        Result = Amplitude * (RandomValue < Pulse.Threshold ? RandomValue * Pulse.Scale - 1.0 : 0.0);
 
         return Result;
     }
@@ -1492,7 +1491,7 @@ typedef struct SYS_BUBBLE_CPU
                 memset(Voices->Playbacks[VoiceIndex].Buffer.Data, 0.0f, (sizeof(f32) * BufferCount));
                 for(size_t i = 0; i < Bubbles.Count; ++i)
                 {        
-                    RenderPulse(Bubbles.Generators[i].Pulse, SampleRate, RNG, Bubbles.Amplitude, PulseTemp, BufferCount);
+                    RenderPulse(Bubbles.Generators[i].Pulse, SampleRate, RNG, 0.9, PulseTemp, BufferCount);
 				    RenderToBuffer(Bubbles.Generators[i].Model, PulseTemp, Voices->Playbacks[VoiceIndex].Buffer, Bubbles.RiseCutoff, SampleRate, BufferCount);
                 }
 
@@ -1590,8 +1589,7 @@ typedef struct SYS_BUBBLE_GPU
     }
 
     void Edit(ENTITY_VOICES *Voices, ID_VOICE ID, f64 SampleRate, size_t SamplesToWrite, RANDOM_PCG *RNG, 
-    u32 BubbleCount, f64 InputBubblesPerSec, f64 InputRadius, f64 InputAmplitude, 
-    f64 InputProbability, f64 InputRiseCutoff)
+    u32 BubbleCount, f64 InputBubblesPerSec, f64 InputRadius, f64 InputRiseCutoff)
     {
         //Loop through every source that was added to the system
         for(size_t SystemIndex = 0; SystemIndex <= SystemCount; ++SystemIndex)
@@ -1619,17 +1617,7 @@ typedef struct SYS_BUBBLE_GPU
                 {
                     Bubbles.RadiusMaximum = InputRadius;
                     NeedsCompute = true;
-                }
-                if(Bubbles.Amplitude != InputAmplitude)
-                {
-                    Bubbles.Amplitude = InputAmplitude;
-                    NeedsCompute = true;
-                }
-                if(Bubbles.ProbabilityExponent != InputProbability)
-                {
-                    Bubbles.ProbabilityExponent = InputProbability;
-                    NeedsCompute = true;
-                }       
+                }     
                 if(Bubbles.RiseCutoff != InputRiseCutoff)
                 {
                     Bubbles.RiseCutoff = InputRiseCutoff;

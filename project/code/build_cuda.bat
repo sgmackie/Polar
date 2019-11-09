@@ -21,10 +21,11 @@ set CUDAFiles="%~dp0\cuda\%Kernel%.cu"
 set CUDAPaths=--include-path "..\..\external\CUDA_Common"
 
 :: Set compiler flags:
-set CompilerFlags=--lib --debug --generate-line-info -DCUDA=1 -DCORE_PROFILE=1
+set CompilerFlags=--lib --debug --generate-line-info -DCUDA=1 -DCORE_PROFILE=1 -DCUV2=1 -DCUV3=0
 
 :: Set Compiler optimsation level
-set CompilerOpt=-O0
+REM set CompilerOpt=-O0
+set CompilerOpt=-O3 --gpu-architecture=sm_52
 
 :: Run NVCC compiler
 nvcc %CompilerFlags% %CUDAPaths% %CompilerOpt% %CUDAFiles% -o %Kernel%.lib
